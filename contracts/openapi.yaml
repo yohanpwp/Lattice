@@ -1,0 +1,41 @@
+openapi: 3.1.0
+info:
+  title: Product custom API
+  version: 1.0.0
+  description: >
+    Custom routes served under /v1. PocketBase's own /api/* endpoints are NOT
+    described here; clients reach them through the SDK (which wraps the
+    PocketBase JS SDK).
+servers:
+  - url: https://{tenant}.app.example.com
+    variables:
+      tenant:
+        default: acme
+paths:
+  /v1/health:
+    get:
+      operationId: getHealth
+      summary: Liveness check
+      responses:
+        "200":
+          description: Service is up
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [status]
+                properties:
+                  status:
+                    type: string
+                    enum: [ok]
+  /v1/config:
+    get:
+      operationId: getConfig
+      summary: Public tenant configuration for clients
+      responses:
+        "200":
+          description: Tenant config (no secrets)
+          content:
+            application/json:
+              schema:
+                $ref: ./schemas/app-config.json

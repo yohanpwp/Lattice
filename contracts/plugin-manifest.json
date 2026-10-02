@@ -1,0 +1,16 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "title": "PluginManifest",
+  "description": "Manifest every plugin ships with. Checked by the registry at startup.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["name", "version", "interface_version", "license"],
+  "properties": {
+    "name": { "type": "string", "pattern": "^[a-z][a-z0-9-]{1,48}$" },
+    "version": { "type": "string", "pattern": "^\\d+\\.\\d+\\.\\d+$" },
+    "interface_version": { "type": "integer", "minimum": 1, "description": "Version of the plugin interface this plugin implements." },
+    "license": { "type": "string", "minLength": 1 },
+    "requires": { "type": "array", "uniqueItems": true, "items": { "type": "string", "minLength": 1 } },
+    "permissions": { "type": "array", "uniqueItems": true, "items": { "type": "string", "pattern": "^[a-z_]+:[a-z0-9_*]+$" } }
+  }
+}

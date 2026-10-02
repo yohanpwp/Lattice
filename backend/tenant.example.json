@@ -1,0 +1,11 @@
+{
+  "version": 1,
+  "tenant_id": "tenant_dev",
+  "backend_url": "http://127.0.0.1:8090",
+  "realtime_url": "http://127.0.0.1:8090/api/realtime",
+  "app_key": "pk_dev_000000",
+  "schema_version": "20260101_01",
+  "min_client_version": "0.1.0",
+  "features": [],
+  "collections": []
+}

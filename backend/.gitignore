@@ -1,0 +1,9 @@
+# PocketBase runtime data (per tenant, never commit)
+pb_data/
+
+# Local tenant config (the example file is committed)
+tenant.json
+
+# Build output
+bin/
+/server

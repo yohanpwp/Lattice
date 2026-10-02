@@ -1,0 +1,59 @@
+# Binaries and Executables
+bin/
+backend/bin/
+*.exe
+*.exe~
+*.dll
+*.so
+*.dylib
+/gateway
+
+# Go Test and Coverage
+*.out
+*.test
+*.prof
+
+# Environment Variables and Credentials
+.env
+.env.*
+!.env.example
+*.pem
+*.key
+id_ed25519*
+
+# IDEs and Editors
+.idea/
+.vscode/
+*.suo
+*.ntvs*
+*.njsproj
+*.sln
+*.sw?
+.agents/skills
+skills-lock.json
+
+# Ignore local pnpm store (only created if using isolated/local store configuration)
+.pnpm-store/
+
+# Ignore pnpm log files
+pnpm-debug.log
+
+# OS Files
+.DS_Store
+Thumbs.db
+.tmp
+
+# Dependencies (if any vendored, though go.mod handles standard deps)
+vendor/
+
+# Local Dev Databases / Containers
+/data/
+/pgdata/
+/redisdata/
+
+# Session Recordings
+/backend/recordings/
+/backend/recordings
+*.cast
+
+/third_party
