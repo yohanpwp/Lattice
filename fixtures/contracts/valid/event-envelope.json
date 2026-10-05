@@ -1,0 +1,1 @@
+{"id":"evt_1","type":"order.created","version":1,"occurred_at":"2026-10-02T10:00:00Z","tenant_id":"tenant_dev","data":{"order_id":"o1"}}
