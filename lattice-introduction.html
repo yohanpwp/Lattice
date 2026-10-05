@@ -1,0 +1,5621 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Lattice — Build with blocks, not bloat.</title>
+    <meta
+      name="description"
+      content="Lattice is a working software studio & engineering school. Modular tracks, honest code review, one guild. Build with blocks, not bloat."
+    />
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link
+      href="https://fonts.googleapis.com/css2?family=Archivo:wght@500;600;700;800;900&family=Fraunces:ital,opsz,wght@1,9..144,400;1,9..144,500;1,9..144,600&family=Inter:wght@400;500;600&family=JetBrains+Mono:wght@400;500;600;700&display=swap"
+      rel="stylesheet"
+    />
+    <style>
+      /* ============ TOKENS ============ */
+      :root {
+        --ink: #0a1633;
+        --ink-2: #3d4a6b;
+        --mute: #6b7a99;
+        --paper: #fff;
+        --mist: #f4f7fd;
+        --line: #e3eaf6;
+        --blue-50: #eef4ff;
+        --blue-100: #d8e5ff;
+        --blue-300: #8fb4ff;
+        --blue-500: #2d6bf5;
+        --blue-600: #1b4fe0;
+        --blue-700: #123bb5;
+        --blue-800: #0c2a80;
+        --navy: #0a1330;
+        --navy-2: #0d1a3e;
+        --nline: #1d2c56;
+        --font-head: "Archivo", sans-serif;
+        --font-body: "Inter", sans-serif;
+        --font-mono: "JetBrains Mono", monospace;
+        --font-serif: "Fraunces", serif;
+      }
+      * {
+        box-sizing: border-box;
+      }
+      html {
+        scroll-behavior: smooth;
+      }
+      body {
+        margin: 0;
+        background: var(--paper);
+        color: var(--ink);
+        font: 400 15px/1.62 var(--font-body);
+        -webkit-font-smoothing: antialiased;
+      }
+      ::selection {
+        background: var(--blue-600);
+        color: #fff;
+      }
+      :focus-visible {
+        outline: 2px solid var(--blue-500);
+        outline-offset: 2px;
+      }
+      img {
+        max-width: 100%;
+      }
+      a {
+        color: var(--blue-700);
+      }
+      .wrap {
+        max-width: 1180px;
+        margin: 0 auto;
+        padding: 0 28px;
+      }
+      section {
+        padding: 78px 0;
+        scroll-margin-top: 72px;
+      }
+      .sr-only {
+        position: absolute;
+        width: 1px;
+        height: 1px;
+        overflow: hidden;
+        clip: rect(0 0 0 0);
+        white-space: nowrap;
+      }
+
+      /* ============ TYPE PATTERNS ============ */
+      .kicker {
+        display: inline-flex;
+        align-items: center;
+        gap: 10px;
+        font: 600 11px var(--font-mono);
+        letter-spacing: 0.2em;
+        text-transform: uppercase;
+        color: var(--blue-700);
+      }
+      .kicker::before {
+        content: "";
+        width: 9px;
+        height: 9px;
+        background: linear-gradient(135deg, var(--blue-300), var(--blue-600));
+        border-radius: 2px;
+      }
+      h2 {
+        font: 800 clamp(28px, 3.4vw, 42px)/1.06 var(--font-head);
+        letter-spacing: -0.02em;
+        margin: 14px 0 14px;
+      }
+      h2 em,
+      .h1 em {
+        font-family: var(--font-serif);
+        font-style: italic;
+        font-weight: 500;
+        color: var(--blue-600);
+        letter-spacing: 0;
+      }
+      .lede {
+        max-width: 620px;
+        color: var(--ink-2);
+        font-size: 15.5px;
+      }
+      .mono-note {
+        font: 500 11.5px var(--font-mono);
+        color: var(--mute);
+        letter-spacing: 0.05em;
+      }
+
+      /* ============ BUTTONS / CHIPS ============ */
+      .btn {
+        display: inline-flex;
+        align-items: center;
+        gap: 10px;
+        font: 600 14px var(--font-body);
+        padding: 13px 22px;
+        border-radius: 10px;
+        border: 1px solid transparent;
+        cursor: pointer;
+        text-decoration: none;
+        transition:
+          transform 0.25s,
+          box-shadow 0.25s,
+          background 0.25s,
+          border-color 0.25s;
+      }
+      .btn-primary {
+        background: var(--blue-600);
+        color: #fff;
+        box-shadow: 0 10px 24px -10px rgba(27, 79, 224, 0.55);
+      }
+      .btn-primary:hover {
+        background: var(--blue-700);
+        transform: translateY(-1px);
+      }
+      .btn-ghost {
+        border-color: var(--line);
+        color: var(--ink);
+        background: #fff;
+      }
+      .btn-ghost:hover {
+        border-color: var(--blue-300);
+        color: var(--blue-700);
+      }
+      .btn-white {
+        background: #fff;
+        color: var(--blue-700);
+      }
+      .btn-white:hover {
+        transform: translateY(-1px);
+      }
+      .chip {
+        display: inline-flex;
+        align-items: center;
+        gap: 6px;
+        font: 600 11.5px var(--font-mono);
+        padding: 4px 9px;
+        border-radius: 6px;
+        background: var(--blue-50);
+        color: var(--blue-700);
+        border: 1px solid #d4e2fc;
+      }
+      .chip.low {
+        background: #fff3f0;
+        color: #c2402f;
+        border-color: #f8d9d2;
+      }
+
+      /* ============ HEADER ============ */
+      header {
+        position: sticky;
+        top: 0;
+        z-index: 50;
+        background: rgba(255, 255, 255, 0.88);
+        backdrop-filter: blur(10px);
+        border-bottom: 1px solid var(--line);
+      }
+      .nav {
+        display: flex;
+        align-items: center;
+        gap: 22px;
+        height: 64px;
+      }
+      .brand {
+        display: flex;
+        align-items: center;
+        gap: 10px;
+        font: 800 20px var(--font-head);
+        letter-spacing: -0.01em;
+        color: var(--ink);
+        text-decoration: none;
+      }
+      .logo-cubes {
+        width: 29px;
+        height: auto;
+        display: block;
+      }
+      .nav-links {
+        display: flex;
+        gap: 2px;
+        margin-left: auto;
+      }
+      .nav-links a {
+        font: 500 13.5px var(--font-body);
+        padding: 8px 12px;
+        border-radius: 8px;
+        color: var(--ink-2);
+        text-decoration: none;
+        transition: 0.2s;
+      }
+      .nav-links a:hover {
+        background: var(--blue-50);
+        color: var(--blue-700);
+      }
+      .nav-links a.active {
+        background: var(--blue-50);
+        color: var(--blue-700);
+      }
+      .sound-btn {
+        display: inline-flex;
+        align-items: center;
+        gap: 7px;
+        font: 600 11.5px var(--font-mono);
+        color: var(--ink-2);
+        background: #fff;
+        border: 1px solid var(--line);
+        padding: 8px 13px;
+        border-radius: 999px;
+        cursor: pointer;
+        transition: 0.25s;
+      }
+      .sound-btn:hover {
+        border-color: var(--blue-300);
+      }
+      .sound-btn.on {
+        background: var(--blue-600);
+        color: #fff;
+        border-color: var(--blue-600);
+      }
+      .sound-btn .wave {
+        opacity: 0;
+        transition: 0.25s;
+      }
+      .sound-btn.on .wave {
+        opacity: 1;
+      }
+      .nav .btn {
+        padding: 10px 18px;
+      }
+
+      /* ============ HERO — layered color atmosphere ============ */
+      .hero {
+        padding: 66px 0 62px;
+        overflow: hidden;
+        position: relative;
+        background: linear-gradient(180deg, #f6f9ff, #ffffff 42%);
+      }
+      /* slowly drifting blue aura — the "little color effect" */
+      .hero::after {
+        content: "";
+        position: absolute;
+        inset: -15%;
+        pointer-events: none;
+        z-index: 0;
+        background:
+          radial-gradient(
+            620px 420px at 14% 6%,
+            rgba(46, 107, 245, 0.14),
+            transparent 62%
+          ),
+          radial-gradient(
+            520px 400px at 86% -6%,
+            rgba(143, 180, 255, 0.22),
+            transparent 65%
+          ),
+          radial-gradient(
+            760px 520px at 68% 108%,
+            rgba(27, 79, 224, 0.08),
+            transparent 62%
+          );
+        animation: auraDrift 18s ease-in-out infinite alternate;
+      }
+      @keyframes auraDrift {
+        from {
+          transform: translate3d(-2%, -1.5%, 0) scale(1);
+        }
+        to {
+          transform: translate3d(2.5%, 1.5%, 0) scale(1.05);
+        }
+      }
+      /* upper fade shadow — a soft veil falling from the top edge */
+      .hero::before {
+        content: "";
+        position: absolute;
+        top: 0;
+        left: 0;
+        right: 0;
+        height: 190px;
+        pointer-events: none;
+        z-index: 1;
+        background: linear-gradient(
+          180deg,
+          rgba(10, 30, 90, 0.1),
+          rgba(10, 30, 90, 0.035) 46%,
+          transparent
+        );
+      }
+      .hero .wrap {
+        position: relative;
+        z-index: 2;
+      }
+      /* blurred bokeh blocks drifting in the upper region */
+      .hero-bokeh {
+        position: absolute;
+        inset: 0;
+        pointer-events: none;
+        z-index: 1;
+      }
+      .bk {
+        position: absolute;
+        border-radius: 24%;
+        filter: blur(44px);
+        animation: bokehDrift 12s ease-in-out infinite alternate;
+      }
+      .bk.b1 {
+        width: 170px;
+        height: 170px;
+        top: -36px;
+        left: 7%;
+        opacity: 0.5;
+        background: linear-gradient(135deg, #5b92ff, #123bb5);
+      }
+      .bk.b2 {
+        width: 120px;
+        height: 120px;
+        top: 2%;
+        right: 24%;
+        opacity: 0.55;
+        background: linear-gradient(135deg, #9cc0ff, #2d6bf5);
+        animation-delay: -4s;
+        animation-duration: 14s;
+      }
+      .bk.b3 {
+        width: 95px;
+        height: 95px;
+        top: -26px;
+        right: 7%;
+        opacity: 0.38;
+        background: linear-gradient(135deg, #2d6bf5, #0c2a80);
+        animation-delay: -8s;
+        animation-duration: 16s;
+      }
+      @keyframes bokehDrift {
+        from {
+          transform: translate3d(0, 0, 0) rotate(0);
+        }
+        to {
+          transform: translate3d(16px, 12px, 0) rotate(10deg);
+        }
+      }
+      .hero .grid {
+        display: grid;
+        grid-template-columns: 1.05fr 0.95fr;
+        gap: 52px;
+        align-items: center;
+      }
+      .h1 {
+        font: 900 clamp(42px, 6.4vw, 82px)/0.98 var(--font-head);
+        letter-spacing: -0.025em;
+        text-transform: uppercase;
+        margin: 16px 0 20px;
+      }
+      .h1 em {
+        text-transform: none;
+        font-size: 1.02em;
+      }
+      .hero-sub {
+        max-width: 540px;
+        color: var(--ink-2);
+        font-size: 16px;
+        margin: 0 0 26px;
+      }
+      .hero-cta {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 14px;
+        align-items: center;
+      }
+      .hero-note {
+        margin: 16px 0 0;
+        font: 500 11.5px var(--font-mono);
+        color: var(--mute);
+        letter-spacing: 0.04em;
+      }
+      .stats {
+        display: grid;
+        grid-template-columns: repeat(4, 1fr);
+        border: 1px solid var(--line);
+        border-radius: 14px;
+        margin-top: 34px;
+        overflow: hidden;
+        background: #fff;
+        box-shadow: 0 24px 48px -32px rgba(12, 42, 128, 0.35);
+      }
+      .stat {
+        padding: 14px 18px;
+        border-left: 1px solid var(--line);
+      }
+      .stat:first-child {
+        border-left: 0;
+      }
+      .stat b {
+        display: block;
+        font: 800 23px var(--font-head);
+        letter-spacing: -0.02em;
+        color: var(--ink);
+      }
+      .stat span {
+        font: 500 10.5px var(--font-mono);
+        color: var(--mute);
+        text-transform: uppercase;
+        letter-spacing: 0.08em;
+      }
+
+      /* hero visual — the breathing lattice, now lifted by a faded shadow */
+      .stage {
+        position: relative;
+        border: 1px solid var(--line);
+        border-radius: 22px;
+        padding: 16px;
+        box-shadow: 0 34px 70px -34px rgba(27, 79, 224, 0.42);
+        background:
+          radial-gradient(#c4d4f2 1.1px, transparent 1.3px) 0 0/26px 26px,
+          linear-gradient(180deg, #fafcff, #edf3fe);
+      }
+      .stage-inner {
+        animation: breathe 4s ease-in-out infinite;
+        transform-origin: 52% 55%;
+      }
+      .stage-inner svg {
+        display: block;
+        width: 100%;
+        height: auto;
+      }
+      @keyframes breathe {
+        0%,
+        100% {
+          transform: scale(1);
+        }
+        50% {
+          transform: scale(1.028);
+        }
+      }
+      .drift {
+        animation: floaty 6s ease-in-out infinite;
+      }
+      .drift.d2 {
+        animation-duration: 7.5s;
+        animation-delay: -2.5s;
+      }
+      @keyframes floaty {
+        0%,
+        100% {
+          transform: translateY(0);
+        }
+        50% {
+          transform: translateY(-9px);
+        }
+      }
+      .chip-float {
+        position: absolute;
+        display: flex;
+        align-items: center;
+        gap: 8px;
+        background: rgba(255, 255, 255, 0.94);
+        border: 1px solid var(--line);
+        box-shadow: 0 12px 28px -14px rgba(12, 42, 128, 0.4);
+        border-radius: 10px;
+        padding: 8px 11px;
+        font: 600 11px var(--font-mono);
+        color: var(--blue-800);
+        animation: floaty 5.5s ease-in-out infinite;
+      }
+      .chip-float .b {
+        width: 10px;
+        height: 10px;
+        background: linear-gradient(135deg, var(--blue-300), var(--blue-700));
+        border-radius: 2.5px;
+        flex: none;
+      }
+      .c1 {
+        top: 18px;
+        right: 18px;
+        animation-delay: -1.2s;
+      }
+      .c2 {
+        top: 20px;
+        left: 18px;
+        animation-delay: -3s;
+      }
+      .stage-cap {
+        text-align: center;
+        margin: 12px 0 0;
+        font: 500 12px var(--font-mono);
+        color: var(--mute);
+      }
+
+      /* ============ TICKER ============ */
+      .ticker {
+        background: var(--navy);
+        overflow: hidden;
+        padding: 13px 0;
+        border-block: 1px solid #0c1a40;
+      }
+      .ticker-track {
+        display: flex;
+        width: max-content;
+        animation: scroll 30s linear infinite;
+      }
+      .ticker:hover .ticker-track {
+        animation-play-state: paused;
+      }
+      @keyframes scroll {
+        to {
+          transform: translateX(-50%);
+        }
+      }
+      .tick-set {
+        display: flex;
+        align-items: center;
+        gap: 44px;
+        padding-right: 44px;
+        flex: none;
+      }
+      .tick-set span {
+        font: 600 12px var(--font-mono);
+        letter-spacing: 0.16em;
+        text-transform: uppercase;
+        color: var(--blue-300);
+        white-space: nowrap;
+      }
+      .tick-set b {
+        width: 6px;
+        height: 6px;
+        background: var(--blue-500);
+        transform: rotate(45deg);
+        flex: none;
+      }
+
+      /* ============ CURRICULUM — SLIDING EXPLORER ============ */
+      #curriculum {
+        background: var(--mist);
+      }
+      .tnum {
+        font: 700 11px var(--font-mono);
+        color: var(--blue-600);
+        letter-spacing: 0.14em;
+      }
+      .track-goal {
+        font-family: var(--font-serif);
+        font-style: italic;
+        font-size: 16px;
+        color: var(--blue-700);
+        margin: 0;
+      }
+      .explorer {
+        display: grid;
+        grid-template-columns: 300px 1fr;
+        gap: 24px;
+        margin-top: 36px;
+        align-items: stretch;
+      }
+
+      /* --- vertical "you are here" rail (accordion) --- */
+      .xrail {
+        display: flex;
+        flex-direction: column;
+        gap: 10px;
+      }
+      .xr-item {
+        border: 1px solid var(--line);
+        border-radius: 14px;
+        background: #fff;
+        overflow: hidden;
+        transition:
+          border-color 0.35s,
+          box-shadow 0.35s;
+      }
+      .xr-item.active {
+        border-color: var(--blue-300);
+        box-shadow: 0 18px 40px -22px rgba(12, 42, 128, 0.3);
+      }
+      .xr-head {
+        display: grid;
+        grid-template-columns: auto 1fr auto;
+        align-items: center;
+        gap: 12px;
+        width: 100%;
+        padding: 14px 16px;
+        background: none;
+        border: 0;
+        cursor: pointer;
+        text-align: left;
+        font: inherit;
+      }
+      .xr-head:hover {
+        background: var(--blue-50);
+      }
+      .xr-num {
+        font: 700 11px var(--font-mono);
+        color: var(--blue-600);
+      }
+      .xr-item.active .xr-num {
+        color: #fff;
+        background: var(--blue-600);
+        padding: 3px 7px;
+        border-radius: 6px;
+      }
+      .xr-name {
+        font: 800 15px/1.2 var(--font-head);
+        letter-spacing: -0.01em;
+      }
+      .xr-dur {
+        font: 500 10.5px var(--font-mono);
+        color: var(--mute);
+      }
+      .xr-body {
+        display: grid;
+        grid-template-rows: 0fr;
+        transition: grid-template-rows 0.5s cubic-bezier(0.4, 0, 0.2, 1);
+      }
+      .xr-item.active .xr-body {
+        grid-template-rows: 1fr;
+      }
+      .xr-inner {
+        overflow: hidden;
+      }
+      .xr-pad {
+        padding: 2px 16px 16px;
+      }
+      .youare {
+        display: inline-flex;
+        align-items: center;
+        gap: 7px;
+        font: 700 10px var(--font-mono);
+        letter-spacing: 0.14em;
+        color: #fff;
+        background: var(--blue-600);
+        border-radius: 6px;
+        padding: 5px 10px;
+      }
+      .youare i {
+        width: 6px;
+        height: 6px;
+        border-radius: 50%;
+        background: #9cc0ff;
+        animation: pulse 1.6s ease-in-out infinite;
+      }
+      @keyframes pulse {
+        0%,
+        100% {
+          opacity: 1;
+          transform: scale(1);
+        }
+        50% {
+          opacity: 0.35;
+          transform: scale(0.65);
+        }
+      }
+      .xr-blocks {
+        list-style: none;
+        margin: 13px 0 0;
+        padding: 0;
+        display: flex;
+        flex-direction: column;
+        gap: 7px;
+      }
+      .xr-blocks li {
+        display: flex;
+        align-items: center;
+        gap: 9px;
+        font: 500 11px var(--font-mono);
+        color: var(--mute);
+        transition: color 0.3s;
+      }
+      .xr-blocks li::before {
+        content: "";
+        width: 9px;
+        height: 9px;
+        border: 1.5px solid var(--blue-300);
+        border-radius: 2.5px;
+        flex: none;
+        transition: 0.3s;
+      }
+      .xr-blocks li.on {
+        color: var(--ink);
+      }
+      .xr-blocks li.on::before {
+        background: var(--blue-600);
+        border-color: var(--blue-600);
+      }
+      .xr-meta {
+        margin-top: 13px;
+        font: 500 10.5px/1.7 var(--font-mono);
+        color: var(--mute);
+        letter-spacing: 0.03em;
+      }
+      .xr-meta b {
+        color: var(--blue-700);
+      }
+      .xr-cta {
+        display: inline-block;
+        margin-top: 10px;
+        font: 600 11.5px var(--font-mono);
+        color: var(--blue-700);
+        text-decoration: none;
+      }
+      .xr-cta:hover {
+        text-decoration: underline;
+      }
+
+      /* --- slide stage (shared by both decks) --- */
+      .xstage {
+        position: relative;
+        overflow: hidden;
+        border: 1px solid var(--line);
+        border-radius: 20px;
+        background: #fff;
+        min-height: 600px;
+        cursor: grab;
+        user-select: none;
+        -webkit-user-select: none;
+        touch-action: pan-y;
+      }
+      .xstage.dragging {
+        cursor: grabbing;
+      }
+      .xtrack {
+        display: flex;
+        height: 100%;
+        transition: transform 0.7s cubic-bezier(0.22, 1, 0.36, 1);
+        will-change: transform;
+      }
+      .xstage.no-anim .xtrack,
+      .xstage.no-anim .ghost {
+        transition: none;
+      }
+      .xslide {
+        flex: 0 0 100%;
+        min-width: 100%;
+        padding: 32px 36px 100px;
+        position: relative;
+        display: flex;
+        flex-direction: column;
+        gap: 16px;
+        background: radial-gradient(#eaf1fb 1px, transparent 1.15px) 0 0/22px
+          22px;
+      }
+      .xslide .shead {
+        max-width: 76%;
+      }
+      .xslide h3 {
+        font: 800 clamp(26px, 2.6vw, 34px)/1.08 var(--font-head);
+        letter-spacing: -0.02em;
+        margin: 7px 0 6px;
+      }
+      .ghost {
+        position: absolute;
+        top: -8px;
+        right: 18px;
+        font: 900 168px/1 var(--font-head);
+        letter-spacing: -0.05em;
+        color: #edf3fd;
+        pointer-events: none;
+        transition: transform 0.7s cubic-bezier(0.22, 1, 0.36, 1);
+        user-select: none;
+      }
+      @supports (-webkit-text-stroke: 2px #000) {
+        .ghost {
+          color: transparent;
+          -webkit-text-stroke: 2px #d9e6ff;
+        }
+      }
+
+      /* staggered content entrance (reverses direction when sliding back) */
+      .xslide .shead,
+      .xslide .blk,
+      .xslide .sfoot,
+      .xslide .idemo {
+        opacity: 0;
+        transform: translateX(30px);
+        transition:
+          opacity 0.45s ease,
+          transform 0.45s ease;
+      }
+      .xstage.rev .xslide .shead,
+      .xstage.rev .xslide .blk,
+      .xstage.rev .xslide .sfoot,
+      .xstage.rev .xslide .idemo {
+        transform: translateX(-30px);
+      }
+      .xslide.is-active .shead {
+        opacity: 1;
+        transform: none;
+        transition-delay: 0.08s;
+      }
+      .xslide.is-active .idemo {
+        opacity: 1;
+        transform: none;
+        transition-delay: 0.2s;
+      }
+      .xslide.is-active .blk {
+        opacity: 1;
+        transform: none;
+      }
+      .xslide.is-active .blk:nth-child(1) {
+        transition-delay: 0.16s;
+      }
+      .xslide.is-active .blk:nth-child(2) {
+        transition-delay: 0.22s;
+      }
+      .xslide.is-active .blk:nth-child(3) {
+        transition-delay: 0.28s;
+      }
+      .xslide.is-active .blk:nth-child(4) {
+        transition-delay: 0.34s;
+      }
+      .xslide.is-active .blk:nth-child(5) {
+        transition-delay: 0.4s;
+      }
+      .xslide.is-active .sfoot {
+        opacity: 1;
+        transform: none;
+        transition-delay: 0.46s;
+      }
+
+      /* blocks accordion inside curriculum slides */
+      .xslide .blocks {
+        display: flex;
+        flex-direction: column;
+        gap: 8px;
+      }
+      .blk {
+        border: 1px solid var(--line);
+        border-radius: 12px;
+        background: #fff;
+        overflow: hidden;
+        transition:
+          border-color 0.3s,
+          box-shadow 0.3s,
+          opacity 0.45s ease,
+          transform 0.45s ease;
+      }
+      .blk.open {
+        border-color: var(--blue-300);
+        box-shadow: 0 10px 26px -16px rgba(27, 79, 224, 0.35);
+      }
+      .blk-head {
+        display: grid;
+        grid-template-columns: auto 1fr auto;
+        align-items: center;
+        gap: 12px;
+        width: 100%;
+        padding: 12px 14px;
+        background: none;
+        border: 0;
+        cursor: pointer;
+        text-align: left;
+        font: inherit;
+      }
+      .blk-head:hover {
+        background: var(--blue-50);
+      }
+      .bk2 {
+        width: 12px;
+        height: 12px;
+        border-radius: 3px;
+        background: linear-gradient(135deg, var(--blue-300), var(--blue-600));
+        flex: none;
+      }
+      .blk-name b {
+        display: block;
+        font: 700 13.5px var(--font-mono);
+        color: var(--ink);
+      }
+      .blk-name span {
+        font: 500 11px var(--font-mono);
+        color: var(--mute);
+      }
+      .bchev {
+        color: var(--blue-600);
+        transition: transform 0.35s;
+        flex: none;
+      }
+      .blk.open .bchev {
+        transform: rotate(180deg);
+      }
+      .blk-body {
+        display: grid;
+        grid-template-rows: 0fr;
+        transition: grid-template-rows 0.45s cubic-bezier(0.4, 0, 0.2, 1);
+      }
+      .blk.open .blk-body {
+        grid-template-rows: 1fr;
+      }
+      .blk-inner {
+        overflow: hidden;
+      }
+      .blk-inner p {
+        margin: 0;
+        padding: 0 14px 5px 38px;
+        font-size: 13.5px;
+        color: var(--ink-2);
+      }
+      .blk-meta {
+        display: block;
+        padding: 0 14px 13px 38px;
+        font: 600 10px var(--font-mono);
+        letter-spacing: 0.12em;
+        color: var(--blue-600);
+      }
+      .sfoot {
+        margin-top: auto;
+        display: flex;
+        flex-wrap: wrap;
+        align-items: center;
+        gap: 10px 16px;
+        padding-top: 16px;
+        border-top: 1px dashed var(--line);
+      }
+      .sfoot .btn {
+        margin-left: auto;
+        padding: 11px 18px;
+      }
+
+      /* stage chrome: hint, dots, counter, arrows, progress */
+      .xhint {
+        position: absolute;
+        top: 14px;
+        left: 50%;
+        transform: translateX(-50%);
+        display: flex;
+        align-items: center;
+        gap: 9px;
+        background: var(--navy);
+        color: #fff;
+        font: 600 10.5px var(--font-mono);
+        letter-spacing: 0.12em;
+        padding: 7px 13px;
+        border-radius: 99px;
+        z-index: 3;
+        opacity: 0.92;
+        transition:
+          opacity 0.5s,
+          transform 0.5s;
+        pointer-events: none;
+      }
+      .xhint.hide {
+        opacity: 0;
+        transform: translateX(-50%) translateY(-8px);
+      }
+      .xbar {
+        position: absolute;
+        left: 20px;
+        right: 20px;
+        bottom: 16px;
+        display: flex;
+        align-items: center;
+        gap: 14px;
+        z-index: 3;
+      }
+      .xdots {
+        display: flex;
+        gap: 7px;
+      }
+      .xdot {
+        width: 9px;
+        height: 9px;
+        border-radius: 99px;
+        border: 0;
+        background: #cbd9f2;
+        cursor: pointer;
+        padding: 0;
+        transition: 0.35s;
+      }
+      .xdot:hover {
+        background: var(--blue-300);
+      }
+      .xdot.on {
+        width: 26px;
+        background: var(--blue-600);
+      }
+      .xcount {
+        font: 600 12px var(--font-mono);
+        color: var(--mute);
+        letter-spacing: 0.08em;
+        margin-left: auto;
+        transition: color 0.7s;
+      }
+      .xcount b {
+        color: var(--ink);
+      }
+      .xarrow {
+        width: 34px;
+        height: 34px;
+        border-radius: 10px;
+        border: 1px solid var(--line);
+        background: #fff;
+        cursor: pointer;
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        color: var(--blue-700);
+        transition: 0.25s;
+      }
+      .xarrow:hover:not(:disabled) {
+        background: var(--blue-600);
+        color: #fff;
+        border-color: var(--blue-600);
+      }
+      .xarrow:disabled {
+        opacity: 0.35;
+        cursor: default;
+      }
+      .xprogress {
+        position: absolute;
+        left: 0;
+        bottom: 0;
+        height: 3px;
+        width: 100%;
+        background: rgba(226, 235, 250, 0.6);
+        z-index: 3;
+        transition: background-color 0.7s;
+      }
+      .xprogress i {
+        display: block;
+        height: 100%;
+        background: var(--blue-600);
+        transition: width 0.7s cubic-bezier(0.22, 1, 0.36, 1);
+      }
+
+      .includes {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 12px 26px;
+        margin-top: 26px;
+        padding: 18px 22px;
+        border: 1px dashed var(--line);
+        border-radius: 14px;
+        background: #fff;
+      }
+      .includes span {
+        display: inline-flex;
+        align-items: center;
+        gap: 9px;
+        font: 600 12.5px var(--font-mono);
+        color: var(--ink-2);
+      }
+      .inc-ck {
+        width: 16px;
+        height: 16px;
+        flex: none;
+        border-radius: 5px;
+        background: var(--blue-600);
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+      }
+
+      /* ============ STUDIO (navy) ============ */
+      .navy {
+        background: linear-gradient(180deg, var(--navy), #0c1a3e);
+        color: #e8efff;
+      }
+      .navy .kicker {
+        color: var(--blue-300);
+      }
+      .navy h2 {
+        color: #fff;
+      }
+      .navy h2 em {
+        color: var(--blue-300);
+      }
+      .navy .lede {
+        color: #b9c8e8;
+      }
+      #studio .grid {
+        display: grid;
+        grid-template-columns: 1.05fr 0.95fr;
+        gap: 44px;
+        margin-top: 8px;
+      }
+      #studio .lede + .lede {
+        margin-top: 14px;
+      }
+      .certs {
+        display: grid;
+        grid-template-columns: 1fr 1fr;
+        gap: 10px;
+        margin-top: 24px;
+      }
+      .cert {
+        display: flex;
+        align-items: center;
+        gap: 11px;
+        border: 1px solid var(--nline);
+        background: var(--navy-2);
+        padding: 13px 15px;
+        border-radius: 10px;
+        font: 600 12.5px var(--font-body);
+        color: #dce8ff;
+      }
+      .cert svg {
+        flex: none;
+        color: var(--blue-300);
+      }
+      .tl {
+        margin: 26px 0 0;
+        border-left: 2px solid var(--nline);
+        padding-left: 20px;
+        display: flex;
+        flex-direction: column;
+        gap: 14px;
+      }
+      .tl-row {
+        display: grid;
+        grid-template-columns: 52px 1fr;
+        gap: 14px;
+        align-items: baseline;
+      }
+      .tl-row b {
+        font: 700 12.5px var(--font-mono);
+        color: var(--blue-300);
+      }
+      .tl-row span {
+        font-size: 13.5px;
+        color: #b9c8e8;
+      }
+      .stats.dark {
+        background: var(--navy-2);
+        border-color: var(--nline);
+        margin-top: 36px;
+      }
+      .stats.dark .stat {
+        border-left-color: var(--nline);
+      }
+      .stats.dark .stat b {
+        color: #fff;
+      }
+      .stats.dark .stat span {
+        color: var(--blue-300);
+      }
+
+      /* photos — B&W + duotone + Ken Burns */
+      .photo {
+        position: relative;
+        overflow: hidden;
+        border-radius: 16px;
+        background: #e7eefb;
+      }
+      .photo img {
+        width: 100%;
+        height: 100%;
+        object-fit: cover;
+        display: block;
+        filter: grayscale(1) contrast(1.12) brightness(0.96);
+        transform: scale(1.03);
+        transition:
+          transform 6s cubic-bezier(0.22, 0.61, 0.36, 1),
+          filter 0.6s;
+        will-change: transform;
+      }
+      .photo::after {
+        content: "";
+        position: absolute;
+        inset: 0;
+        background: linear-gradient(
+          160deg,
+          rgba(27, 79, 224, 0.16),
+          rgba(12, 42, 128, 0.3)
+        );
+        mix-blend-mode: multiply;
+        pointer-events: none;
+        transition: opacity 0.6s;
+      }
+      .photo:hover img {
+        transform: scale(1.15) translate(1.6%, -1.2%);
+        filter: grayscale(1) contrast(1.18) brightness(1);
+      }
+      .photo:hover::after {
+        opacity: 0.6;
+      }
+      .photo.noimg::before {
+        content: "";
+        position: absolute;
+        inset: 0;
+        background: repeating-linear-gradient(
+          45deg,
+          #dfe9fb 0 16px,
+          #cfddf7 16px 32px
+        );
+        z-index: 0;
+      }
+      #studio .photo {
+        aspect-ratio: 4/4.7;
+      }
+      .photo-cap {
+        position: absolute;
+        left: 14px;
+        bottom: 14px;
+        z-index: 2;
+        background: rgba(10, 19, 48, 0.74);
+        backdrop-filter: blur(6px);
+        color: #dce8ff;
+        font: 500 11.5px var(--font-mono);
+        padding: 9px 12px;
+        border-radius: 10px;
+        border: 1px solid rgba(143, 180, 255, 0.28);
+        margin: 0;
+      }
+
+      /* ============ MENTORS ============ */
+      .mentors {
+        display: grid;
+        grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
+        gap: 20px;
+        margin-top: 34px;
+      }
+      .mentor {
+        border: 1px solid var(--line);
+        border-radius: 16px;
+        overflow: hidden;
+        background: #fff;
+        transition:
+          transform 0.35s,
+          box-shadow 0.35s,
+          border-color 0.35s;
+        cursor: pointer;
+      }
+      .mentor:hover {
+        transform: translateY(-4px);
+        box-shadow: 0 24px 48px -24px rgba(12, 42, 128, 0.28);
+        border-color: var(--blue-300);
+      }
+      .mentor .photo {
+        border-radius: 0;
+        aspect-ratio: 3/3.3;
+      }
+      .mentor-body {
+        padding: 16px 16px 18px;
+      }
+      .mname {
+        font: 800 17px var(--font-head);
+        letter-spacing: -0.01em;
+      }
+      .mrole {
+        font: 500 10.5px var(--font-mono);
+        color: var(--mute);
+        text-transform: uppercase;
+        letter-spacing: 0.08em;
+        margin-top: 3px;
+      }
+      .quote-zone {
+        margin-top: 13px;
+        min-height: 86px;
+        border-top: 1px dashed var(--line);
+        padding-top: 12px;
+      }
+      .quote-zone .hint {
+        font: 500 11px var(--font-mono);
+        color: var(--blue-600);
+      }
+      .quote-zone .qtext {
+        display: block;
+        font: italic 500 14.5px/1.5 var(--font-serif);
+        color: var(--ink);
+      }
+      .quote-zone.typing .qtext::after {
+        content: "▎";
+        color: var(--blue-500);
+        animation: blink 0.8s steps(1) infinite;
+      }
+      @keyframes blink {
+        50% {
+          opacity: 0;
+        }
+      }
+
+      /* ============ SCHEDULE ============ */
+      #schedule {
+        background: var(--mist);
+      }
+      .sched {
+        border: 1px solid var(--line);
+        border-radius: 16px;
+        background: #fff;
+        overflow: hidden;
+        margin-top: 32px;
+      }
+      .row {
+        border-top: 1px solid var(--line);
+      }
+      .row:first-child {
+        border-top: 0;
+      }
+      .row-head {
+        display: grid;
+        grid-template-columns: 1.7fr 1.2fr 0.9fr 0.8fr 40px;
+        align-items: center;
+        gap: 14px;
+        width: 100%;
+        padding: 16px 20px;
+        background: none;
+        border: 0;
+        cursor: pointer;
+        text-align: left;
+        font: inherit;
+        transition: background 0.25s;
+      }
+      .row-head:hover,
+      .row.open .row-head {
+        background: var(--blue-50);
+      }
+      .rtrack {
+        display: flex;
+        align-items: center;
+        gap: 12px;
+      }
+      .rtrack .mini-stack {
+        width: 20px;
+        margin: 0;
+        flex: none;
+      }
+      .rtrack b {
+        font: 800 15.5px var(--font-head);
+        display: block;
+      }
+      .rtrack i {
+        font: 500 11px var(--font-mono);
+        color: var(--mute);
+        font-style: normal;
+      }
+      .rrhythm {
+        font: 500 12px var(--font-mono);
+        color: var(--ink-2);
+      }
+      .chev {
+        justify-self: end;
+        transition: transform 0.35s;
+        color: var(--blue-600);
+      }
+      .row.open .chev {
+        transform: rotate(180deg);
+      }
+      .row-body {
+        display: grid;
+        grid-template-rows: 0fr;
+        transition: grid-template-rows 0.45s cubic-bezier(0.4, 0, 0.2, 1);
+      }
+      .row.open .row-body {
+        grid-template-rows: 1fr;
+      }
+      .row-inner {
+        overflow: hidden;
+      }
+      .row-detail {
+        display: grid;
+        grid-template-columns: 1.4fr 1.4fr 1fr auto;
+        gap: 18px;
+        padding: 8px 22px 22px 52px;
+        align-items: start;
+      }
+      .cell h5 {
+        margin: 0 0 5px;
+        font: 600 10px var(--font-mono);
+        letter-spacing: 0.14em;
+        text-transform: uppercase;
+        color: var(--blue-600);
+      }
+      .cell p {
+        margin: 0;
+        font-size: 13px;
+        color: var(--ink-2);
+        line-height: 1.55;
+      }
+      .mini-cta {
+        display: inline-flex;
+        align-items: center;
+        gap: 7px;
+        font: 600 12.5px var(--font-mono);
+        color: var(--blue-700);
+        text-decoration: none;
+        padding: 9px 14px;
+        border: 1px solid var(--blue-100);
+        border-radius: 8px;
+        background: #fff;
+        transition: 0.25s;
+        white-space: nowrap;
+      }
+      .mini-cta:hover {
+        background: var(--blue-600);
+        color: #fff;
+        border-color: var(--blue-600);
+      }
+
+      /* ============ STORIES ============ */
+      .stories {
+        display: grid;
+        grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
+        gap: 22px;
+        margin-top: 34px;
+      }
+      .story {
+        border: 1px solid var(--line);
+        border-radius: 16px;
+        overflow: hidden;
+        display: flex;
+        flex-direction: column;
+        transition:
+          transform 0.35s,
+          box-shadow 0.35s,
+          border-color 0.35s;
+      }
+      .story:hover {
+        transform: translateY(-4px);
+        box-shadow: 0 26px 52px -26px rgba(12, 42, 128, 0.28);
+        border-color: var(--blue-300);
+      }
+      .story .photo {
+        border-radius: 0;
+        aspect-ratio: 4/3.1;
+      }
+      .story-body {
+        padding: 18px;
+        display: flex;
+        flex-direction: column;
+        gap: 12px;
+        flex: 1;
+      }
+      .story-top {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: 10px;
+      }
+      .story-top b {
+        font: 800 16px var(--font-head);
+      }
+      .story-body > p {
+        margin: 0;
+        font-size: 14px;
+        color: var(--ink-2);
+      }
+      .pull {
+        margin: 2px 0 0;
+        padding: 8px 0 8px 14px;
+        border-left: 3px solid var(--blue-600);
+        font-family: var(--font-serif);
+        font-style: italic;
+        font-size: 16px;
+        line-height: 1.5;
+        color: var(--ink);
+      }
+      .story-metrics {
+        margin-top: auto;
+        display: flex;
+        flex-wrap: wrap;
+        gap: 7px;
+      }
+
+      /* ============ COMMUNITY BAND ============ */
+      .community {
+        background: linear-gradient(120deg, var(--blue-600), var(--blue-800));
+        color: #fff;
+        padding: 62px 0;
+      }
+      .community .grid {
+        display: grid;
+        grid-template-columns: 1.1fr 1fr;
+        gap: 48px;
+        align-items: center;
+      }
+      .community h2 {
+        color: #fff;
+        margin-top: 12px;
+      }
+      .community h2 em {
+        color: #cfe0ff;
+      }
+      .community p {
+        color: #cfe0ff;
+        max-width: 460px;
+      }
+      .com-list {
+        display: flex;
+        flex-direction: column;
+        gap: 14px;
+      }
+      .com-item {
+        display: flex;
+        align-items: center;
+        gap: 16px;
+        border: 1px solid rgba(255, 255, 255, 0.22);
+        background: rgba(255, 255, 255, 0.08);
+        border-radius: 14px;
+        padding: 15px 18px;
+      }
+      .com-item .ic {
+        width: 40px;
+        height: 40px;
+        flex: none;
+        border-radius: 11px;
+        background: rgba(255, 255, 255, 0.14);
+        display: flex;
+        align-items: center;
+        justify-content: center;
+      }
+      .com-item b {
+        display: block;
+        font: 800 15px var(--font-head);
+      }
+      .com-item span {
+        font: 500 12.5px var(--font-body);
+        color: #cfe0ff;
+      }
+
+      /* ==================================================================
+   INTERACTION DETAILS — six sliding windows, ambient bg cross-fade
+   ================================================================== */
+      #interactions {
+        background: #0a1330;
+        transition: background-color 0.8s ease;
+      }
+      #interactions .kicker {
+        transition: color 0.7s ease;
+      }
+      #interactions h2 {
+        transition: color 0.7s ease;
+      }
+      #interactions .lede {
+        transition: color 0.7s ease;
+      }
+      #interactions.idark .kicker {
+        color: var(--blue-300);
+      }
+      #interactions.idark h2 {
+        color: #fff;
+      }
+      #interactions.idark h2 em {
+        color: var(--blue-300);
+      }
+      #interactions.idark .lede {
+        color: #b9c8e8;
+      }
+      #interactions .xstage {
+        min-height: 500px;
+        background: transparent;
+        border-color: rgba(10, 22, 51, 0.1);
+        transition: border-color 0.7s;
+      }
+      #interactions .xstage.s-dark {
+        border-color: rgba(255, 255, 255, 0.18);
+      }
+      #interactions .xslide {
+        display: grid;
+        grid-template-columns: 0.92fr 1.08fr;
+        gap: 34px;
+        align-items: center;
+        min-height: 500px;
+      }
+      #interactions .xslide .shead {
+        max-width: none;
+      }
+      #interactions .xslide h3 {
+        font-size: clamp(24px, 2.4vw, 30px);
+      }
+      .ilede {
+        font: 400 14.5px/1.68 var(--font-body);
+        color: var(--ink-2);
+        max-width: 440px;
+        margin: 10px 0 16px;
+      }
+      .gdark .tnum {
+        color: var(--blue-300);
+      }
+      .gdark .ilede {
+        color: #b9c8e8;
+      }
+      .gdark .ghost {
+        color: rgba(255, 255, 255, 0.04);
+        -webkit-text-stroke: 2px rgba(143, 180, 255, 0.24);
+      }
+      .ispec {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 7px;
+      }
+      .sp {
+        font: 600 10px var(--font-mono);
+        letter-spacing: 0.12em;
+        padding: 5px 9px;
+        border-radius: 6px;
+        border: 1px solid rgba(27, 79, 224, 0.25);
+        color: var(--blue-700);
+        background: rgba(255, 255, 255, 0.75);
+      }
+      .gdark .sp {
+        background: rgba(255, 255, 255, 0.08);
+        color: #dce8ff;
+        border-color: rgba(143, 180, 255, 0.32);
+      }
+      .idemo {
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        min-height: 300px;
+      }
+      /* chrome adapts to dark slides */
+      .xstage.s-dark .xdot {
+        background: rgba(255, 255, 255, 0.35);
+      }
+      .xstage.s-dark .xdot:hover {
+        background: rgba(255, 255, 255, 0.6);
+      }
+      .xstage.s-dark .xdot.on {
+        background: #fff;
+      }
+      .xstage.s-dark .xcount {
+        color: rgba(255, 255, 255, 0.7);
+      }
+      .xstage.s-dark .xcount b {
+        color: #fff;
+      }
+      .xstage.s-dark .xarrow {
+        background: rgba(255, 255, 255, 0.1);
+        border-color: rgba(255, 255, 255, 0.28);
+        color: #fff;
+      }
+      .xstage.s-dark .xarrow:hover:not(:disabled) {
+        background: #fff;
+        color: var(--blue-700);
+        border-color: #fff;
+      }
+      .xstage.s-dark .xprogress {
+        background: rgba(255, 255, 255, 0.16);
+      }
+      .xstage.s-dark .xprogress i {
+        background: #fff;
+      }
+
+      /* demo 1 — breath */
+      .breath-demo {
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        gap: 12px;
+      }
+      .breath-demo svg {
+        width: min(240px, 60vw);
+        height: auto;
+        display: block;
+      }
+      .breath-ring {
+        stroke-dasharray: 364;
+        stroke-dashoffset: 364;
+        animation: ringfill 4s linear infinite;
+      }
+      @keyframes ringfill {
+        from {
+          stroke-dashoffset: 364;
+        }
+        to {
+          stroke-dashoffset: 0;
+        }
+      }
+      .breath-cubes {
+        animation: breathe 4s ease-in-out infinite;
+        transform-box: fill-box;
+        transform-origin: center;
+      }
+      .breath-label {
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        gap: 2px;
+      }
+      .breath-label b {
+        font: 800 22px var(--font-head);
+        color: #fff;
+        letter-spacing: -0.02em;
+      }
+      .breath-label span {
+        font: 600 10px var(--font-mono);
+        letter-spacing: 0.18em;
+        color: var(--blue-300);
+        text-transform: uppercase;
+      }
+
+      /* demo 2 — fade-up */
+      .fade-demo {
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        gap: 16px;
+        width: 100%;
+      }
+      .dstage {
+        width: min(100%, 430px);
+        border: 1px dashed var(--line);
+        border-radius: 14px;
+        background: var(--mist);
+        padding: 30px 26px;
+        display: flex;
+        flex-direction: column;
+        gap: 10px;
+      }
+      .dline {
+        margin: 0;
+        font: 700 19px/1.35 var(--font-head);
+        letter-spacing: -0.01em;
+        color: var(--ink);
+        opacity: 0;
+        transform: translateY(22px);
+        transition:
+          opacity 0.6s ease,
+          transform 0.6s ease;
+        transition-delay: var(--d, 0s);
+      }
+      .dline.up {
+        opacity: 1;
+        transform: none;
+      }
+      .dbtn {
+        display: inline-flex;
+        align-items: center;
+        gap: 8px;
+        font: 600 12px var(--font-mono);
+        color: var(--blue-700);
+        background: #fff;
+        border: 1px solid var(--blue-100);
+        padding: 10px 16px;
+        border-radius: 10px;
+        cursor: pointer;
+        transition: 0.25s;
+      }
+      .dbtn:hover {
+        background: var(--blue-600);
+        color: #fff;
+        border-color: var(--blue-600);
+      }
+
+      /* demo 3 — typed quote */
+      .mini-mentor {
+        display: flex;
+        gap: 16px;
+        align-items: flex-start;
+        background: #fff;
+        border: 1px solid var(--line);
+        border-radius: 16px;
+        padding: 20px;
+        width: min(100%, 440px);
+        box-shadow: 0 18px 40px -24px rgba(12, 42, 128, 0.35);
+        cursor: pointer;
+      }
+      .mini-ava {
+        width: 56px;
+        height: 56px;
+        border-radius: 14px;
+        background: linear-gradient(135deg, var(--blue-500), var(--blue-800));
+        color: #fff;
+        font: 800 18px var(--font-head);
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        flex: none;
+      }
+      .mini-body b {
+        font: 800 15px var(--font-head);
+        display: block;
+      }
+      .mini-body > span {
+        font: 500 10.5px var(--font-mono);
+        color: var(--mute);
+        text-transform: uppercase;
+        letter-spacing: 0.07em;
+      }
+      .mini-body .quote-zone {
+        min-height: 70px;
+      }
+
+      /* demo 4 — expanding rows */
+      .demo-rows {
+        width: min(100%, 430px);
+        background: #fff;
+        border: 1px solid #c7d8f5;
+        border-radius: 14px;
+        overflow: hidden;
+        box-shadow: 0 18px 40px -24px rgba(12, 42, 128, 0.35);
+      }
+      .drow + .drow {
+        border-top: 1px solid var(--line);
+      }
+      .drow-head {
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        gap: 12px;
+        width: 100%;
+        padding: 14px 16px;
+        background: none;
+        border: 0;
+        cursor: pointer;
+        font: 700 13px var(--font-mono);
+        color: var(--ink);
+        text-align: left;
+      }
+      .drow-head:hover,
+      .drow.open .drow-head {
+        background: var(--blue-50);
+      }
+      .drow-body {
+        display: grid;
+        grid-template-rows: 0fr;
+        transition: grid-template-rows 0.45s cubic-bezier(0.4, 0, 0.2, 1);
+      }
+      .drow.open .drow-body {
+        grid-template-rows: 1fr;
+      }
+      .drow-inner {
+        overflow: hidden;
+      }
+      .drow-detail {
+        display: grid;
+        grid-template-columns: 1fr 1fr;
+        gap: 14px;
+        padding: 2px 16px 15px;
+      }
+      .drow-detail h5 {
+        margin: 0 0 3px;
+        font: 600 10px var(--font-mono);
+        letter-spacing: 0.14em;
+        color: var(--blue-600);
+      }
+      .drow-detail p {
+        margin: 0;
+        font-size: 12.5px;
+        color: var(--ink-2);
+      }
+      .drow.open .bchev {
+        transform: rotate(180deg);
+      }
+
+      /* demo 5 — chime */
+      .chime-demo {
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        gap: 16px;
+        background: rgba(255, 255, 255, 0.09);
+        border: 1px solid rgba(255, 255, 255, 0.22);
+        border-radius: 18px;
+        padding: 34px 40px;
+        min-width: min(320px, 80vw);
+      }
+      .eq {
+        display: flex;
+        gap: 5px;
+        align-items: flex-end;
+        height: 36px;
+      }
+      .eq i {
+        width: 5px;
+        height: 6px;
+        background: #9cc0ff;
+        border-radius: 3px;
+      }
+      .eq.play i {
+        animation: eqb 0.8s ease-in-out infinite alternate;
+      }
+      .eq.play i:nth-child(2) {
+        animation-delay: 0.12s;
+      }
+      .eq.play i:nth-child(3) {
+        animation-delay: 0.24s;
+      }
+      .eq.play i:nth-child(4) {
+        animation-delay: 0.36s;
+      }
+      .eq.play i:nth-child(5) {
+        animation-delay: 0.48s;
+      }
+      @keyframes eqb {
+        from {
+          height: 6px;
+        }
+        to {
+          height: 34px;
+        }
+      }
+      .cbtn {
+        display: inline-flex;
+        align-items: center;
+        gap: 9px;
+        font: 700 12.5px var(--font-mono);
+        color: var(--blue-700);
+        background: #fff;
+        border: 0;
+        padding: 13px 22px;
+        border-radius: 11px;
+        cursor: pointer;
+        box-shadow: 0 12px 28px -12px rgba(4, 14, 50, 0.6);
+        transition: transform 0.25s;
+      }
+      .cbtn:hover {
+        transform: translateY(-2px);
+      }
+      .cnote {
+        font: 500 11px var(--font-mono);
+        color: rgba(220, 232, 255, 0.75);
+        letter-spacing: 0.04em;
+      }
+
+      /* demo 6 — Ken Burns */
+      .kb-demo {
+        width: min(100%, 470px);
+        aspect-ratio: 16/10;
+      }
+
+      /* ============ CTA ============ */
+      #trial {
+        background: linear-gradient(
+          140deg,
+          var(--blue-600) 0%,
+          var(--blue-800) 75%
+        );
+        position: relative;
+        overflow: hidden;
+        padding: 96px 0;
+      }
+      #trial::before {
+        content: "";
+        position: absolute;
+        inset: 0;
+        background:
+          radial-gradient(
+            circle at 12% 18%,
+            rgba(143, 180, 255, 0.28),
+            transparent 42%
+          ),
+          radial-gradient(
+            circle at 88% 85%,
+            rgba(6, 20, 66, 0.55),
+            transparent 55%
+          );
+      }
+      .cta-deco {
+        position: absolute;
+        right: -30px;
+        top: 50%;
+        transform: translateY(-50%);
+        width: 340px;
+        opacity: 0.9;
+        pointer-events: none;
+      }
+      .cta-card {
+        position: relative;
+        max-width: 640px;
+        margin: 0 auto;
+        background: #fff;
+        border-radius: 24px;
+        padding: 38px;
+        box-shadow: 0 40px 90px -30px rgba(4, 14, 50, 0.55);
+      }
+      .cta-card h2 {
+        margin: 10px 0 8px;
+      }
+      .cta-card .sub {
+        color: var(--ink-2);
+        margin: 0 0 22px;
+        font-size: 15px;
+      }
+      .cta-dates {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 8px 18px;
+        margin-bottom: 20px;
+        font: 600 11.5px var(--font-mono);
+        color: var(--blue-700);
+        letter-spacing: 0.06em;
+      }
+      form {
+        display: grid;
+        gap: 15px;
+      }
+      .frow {
+        display: grid;
+        grid-template-columns: 1fr 1fr;
+        gap: 15px;
+      }
+      .field label {
+        display: block;
+        margin-bottom: 6px;
+        font: 600 10.5px var(--font-mono);
+        letter-spacing: 0.14em;
+        text-transform: uppercase;
+        color: var(--mute);
+      }
+      .field input,
+      .field select {
+        width: 100%;
+        padding: 12px 14px;
+        border: 1.5px solid var(--line);
+        border-radius: 10px;
+        font: 500 14.5px var(--font-body);
+        background: #fbfdff;
+        color: var(--ink);
+        transition:
+          border-color 0.25s,
+          box-shadow 0.25s;
+      }
+      .field input:focus,
+      .field select:focus {
+        outline: none;
+        border-color: var(--blue-500);
+        box-shadow: 0 0 0 4px rgba(46, 107, 245, 0.14);
+      }
+      .seg {
+        display: flex;
+        gap: 0;
+        border: 1.5px solid var(--line);
+        border-radius: 10px;
+        overflow: hidden;
+        background: #fbfdff;
+      }
+      .seg input {
+        position: absolute;
+        opacity: 0;
+        pointer-events: none;
+      }
+      .seg label {
+        flex: 1;
+        text-align: center;
+        padding: 11px 8px;
+        font: 600 12.5px var(--font-mono);
+        color: var(--ink-2);
+        cursor: pointer;
+        transition: 0.2s;
+        border-left: 1.5px solid var(--line);
+      }
+      .seg label:first-of-type {
+        border-left: 0;
+      }
+      .seg input:checked + label {
+        background: var(--blue-600);
+        color: #fff;
+      }
+      .seg input:focus-visible + label {
+        outline: 2px solid var(--blue-500);
+        outline-offset: -2px;
+      }
+      .cta-card .btn {
+        width: 100%;
+        justify-content: center;
+        padding: 15px;
+        font-size: 15px;
+      }
+      .form-note {
+        text-align: center;
+        margin: 12px 0 0;
+        font: 500 11.5px var(--font-mono);
+        color: var(--mute);
+      }
+
+      /* ============ FOOTER ============ */
+      footer {
+        background: var(--navy);
+        color: #9fb4df;
+        padding: 56px 0 30px;
+      }
+      .f-grid {
+        display: grid;
+        grid-template-columns: 1.5fr 1fr 1fr 1fr;
+        gap: 36px;
+      }
+      .f-brand .brand {
+        color: #fff;
+      }
+      .f-brand p {
+        margin: 14px 0 0;
+        font: 500 12px var(--font-mono);
+        color: var(--blue-300);
+        letter-spacing: 0.08em;
+      }
+      .f-brand address {
+        font-style: normal;
+        margin-top: 16px;
+        font-size: 13px;
+        line-height: 1.8;
+        color: #9fb4df;
+      }
+      .f-col h5 {
+        margin: 0 0 14px;
+        font: 600 10.5px var(--font-mono);
+        letter-spacing: 0.16em;
+        text-transform: uppercase;
+        color: #fff;
+      }
+      .f-col a {
+        display: block;
+        color: #9fb4df;
+        text-decoration: none;
+        font-size: 13.5px;
+        padding: 4.5px 0;
+        transition: 0.2s;
+      }
+      .f-col a:hover {
+        color: var(--blue-300);
+        transform: translateX(3px);
+      }
+      .f-bottom {
+        margin-top: 44px;
+        padding-top: 22px;
+        border-top: 1px solid var(--nline);
+        display: flex;
+        flex-wrap: wrap;
+        gap: 12px 28px;
+        justify-content: space-between;
+        font: 500 11.5px var(--font-mono);
+        color: #5f7096;
+      }
+
+      /* ============ REVEAL & TOAST ============ */
+      .reveal {
+        opacity: 0;
+        transform: translateY(22px);
+        transition:
+          opacity 0.6s ease,
+          transform 0.6s ease;
+        transition-delay: var(--d, 0s);
+      }
+      .reveal.in {
+        opacity: 1;
+        transform: none;
+      }
+      .toast {
+        position: fixed;
+        left: 50%;
+        bottom: 28px;
+        transform: translate(-50%, 16px);
+        background: var(--navy);
+        color: #fff;
+        padding: 13px 20px;
+        border-radius: 12px;
+        font: 500 14px var(--font-body);
+        box-shadow: 0 20px 44px -14px rgba(10, 19, 48, 0.55);
+        opacity: 0;
+        pointer-events: none;
+        transition: 0.4s;
+        z-index: 100;
+        display: flex;
+        gap: 10px;
+        align-items: center;
+        max-width: min(90vw, 480px);
+      }
+      .toast.show {
+        opacity: 1;
+        transform: translate(-50%, 0);
+      }
+      .toast svg {
+        flex: none;
+        color: var(--blue-300);
+      }
+
+      /* ============ RESPONSIVE ============ */
+      @media (max-width: 1020px) {
+        .hero .grid {
+          grid-template-columns: 1fr;
+          gap: 44px;
+        }
+        .hero-visual {
+          max-width: 580px;
+          margin: 0 auto;
+          width: 100%;
+        }
+        #studio .grid {
+          grid-template-columns: 1fr;
+        }
+        .community .grid {
+          grid-template-columns: 1fr;
+          gap: 30px;
+        }
+        .explorer {
+          grid-template-columns: 1fr;
+        }
+        .xstage {
+          min-height: 0;
+        }
+        #interactions .xstage {
+          min-height: 0;
+        }
+      }
+      @media (max-width: 900px) {
+        .nav-links {
+          display: none;
+        }
+        .sound-btn span {
+          display: none;
+        }
+        .sound-btn {
+          padding: 9px;
+        }
+        .xrail {
+          flex-direction: row;
+          gap: 8px;
+        }
+        .xr-item {
+          flex: 1;
+        }
+        .xr-body {
+          display: none;
+        }
+        .xr-head {
+          grid-template-columns: auto 1fr;
+          padding: 11px 12px;
+        }
+        .xr-dur {
+          display: none;
+        }
+        .xslide {
+          padding: 24px 20px 100px;
+        }
+        .ghost {
+          font-size: 104px;
+          right: 6px;
+          top: -4px;
+        }
+        .xslide .shead {
+          max-width: 88%;
+        }
+        .sfoot .btn {
+          width: 100%;
+          justify-content: center;
+          margin-left: 0;
+        }
+        #interactions .xslide {
+          grid-template-columns: 1fr;
+          gap: 20px;
+          min-height: 0;
+          padding: 26px 20px 104px;
+        }
+        .idemo {
+          min-height: 0;
+        }
+        .bk {
+          filter: blur(30px);
+        }
+        .bk.b2 {
+          display: none;
+        }
+      }
+      @media (max-width: 820px) {
+        .row-head {
+          grid-template-columns: 1.4fr 40px;
+        }
+        .row-head .hm {
+          display: none;
+        }
+        .row-detail {
+          grid-template-columns: 1fr;
+          padding-left: 22px;
+        }
+        .certs {
+          grid-template-columns: 1fr;
+        }
+      }
+      @media (max-width: 700px) {
+        .stats {
+          grid-template-columns: 1fr 1fr;
+        }
+        .stat:nth-child(3) {
+          border-left: 0;
+        }
+        .stat {
+          border-top: 1px solid var(--line);
+        }
+        .stat:nth-child(-n + 2) {
+          border-top: 0;
+        }
+        .frow {
+          grid-template-columns: 1fr;
+        }
+        .f-grid {
+          grid-template-columns: 1fr 2fr;
+        }
+        .cta-card {
+          padding: 26px;
+        }
+        .cta-deco {
+          opacity: 0.35;
+        }
+      }
+      @media (max-width: 520px) {
+        .f-grid {
+          grid-template-columns: 1fr;
+        }
+        .hero-cta .btn {
+          width: 100%;
+          justify-content: center;
+        }
+      }
+      @media (prefers-reduced-motion: reduce) {
+        html {
+          scroll-behavior: auto;
+        }
+        .stage-inner,
+        .drift,
+        .chip-float,
+        .ticker-track,
+        .breath-ring,
+        .breath-cubes,
+        .hero::after,
+        .bk {
+          animation: none !important;
+        }
+        .reveal {
+          opacity: 1 !important;
+          transform: none !important;
+          transition: none !important;
+        }
+        .photo img {
+          transition: none !important;
+        }
+        .xtrack,
+        .ghost {
+          transition: none !important;
+        }
+        .xslide .shead,
+        .xslide .blk,
+        .xslide .sfoot,
+        .xslide .idemo {
+          opacity: 1 !important;
+          transform: none !important;
+          transition: none !important;
+        }
+        .dline {
+          opacity: 1 !important;
+          transform: none !important;
+          transition: none !important;
+        }
+      }
+    </style>
+  </head>
+  <body>
+    <!-- Shared SVG defs: the isometric Lattice cube + gradients (recreated from the logo) -->
+    <svg width="0" height="0" style="position: absolute" aria-hidden="true">
+      <defs>
+        <linearGradient id="gTop" x1="0" y1="0" x2="1" y2="1">
+          <stop offset="0" stop-color="#A9C8FF" />
+          <stop offset="1" stop-color="#6FA0FF" />
+        </linearGradient>
+        <linearGradient id="gLeft" x1="0" y1="0" x2="0" y2="1">
+          <stop offset="0" stop-color="#3E7BFF" />
+          <stop offset="1" stop-color="#2A5FEE" />
+        </linearGradient>
+        <linearGradient id="gRight" x1="0" y1="0" x2="0" y2="1">
+          <stop offset="0" stop-color="#1B4FE0" />
+          <stop offset="1" stop-color="#0C2A80" />
+        </linearGradient>
+        <linearGradient id="gBody" x1="0" y1="0" x2="1" y2="0">
+          <stop offset="0" stop-color="#5B92FF" />
+          <stop offset=".5" stop-color="#1B4FE0" />
+          <stop offset="1" stop-color="#0B2678" />
+        </linearGradient>
+        <linearGradient id="gCap" x1="0" y1="0" x2="0" y2="1">
+          <stop offset="0" stop-color="#C6DCFF" />
+          <stop offset="1" stop-color="#8FB4FF" />
+        </linearGradient>
+        <g id="cube">
+          <polygon points="0,0 26,15 0,30 -26,15" fill="url(#gTop)" />
+          <polygon points="-26,15 0,30 0,60 -26,45" fill="url(#gLeft)" />
+          <polygon points="26,15 0,30 0,60 26,45" fill="url(#gRight)" />
+        </g>
+      </defs>
+    </svg>
+
+    <!-- ============ HEADER ============ -->
+    <header>
+      <div class="wrap nav">
+        <a class="brand" href="#top" aria-label="Lattice home">
+          <svg class="logo-cubes" viewBox="-34 4 68 96" aria-hidden="true">
+            <use href="#cube" transform="translate(0,34)" />
+            <use href="#cube" transform="translate(3,12) scale(.62)" />
+          </svg>
+          Lattice
+        </a>
+        <nav class="nav-links" aria-label="Primary">
+          <a href="#curriculum">Curriculum</a>
+          <a href="#studio">Studio</a>
+          <a href="#mentors">Mentors</a>
+          <a href="#schedule">Schedule</a>
+          <a href="#stories">Stories</a>
+        </nav>
+        <button
+          class="sound-btn"
+          id="soundBtn"
+          aria-pressed="false"
+          title="Opt in — a tiny chime will play once on your first scroll"
+        >
+          <svg
+            width="15"
+            height="15"
+            viewBox="0 0 24 24"
+            fill="currentColor"
+            aria-hidden="true"
+          >
+            <path d="M3 9v6h4l5 4V5L7 9H3z" />
+            <path
+              class="wave"
+              d="M16 8.5a5 5 0 0 1 0 7M18.5 6a8.5 8.5 0 0 1 0 12"
+              fill="none"
+              stroke="currentColor"
+              stroke-width="2"
+              stroke-linecap="round"
+            />
+          </svg>
+          <span>Chime off</span>
+        </button>
+        <a class="btn btn-primary" href="#trial">Book a trial</a>
+      </div>
+    </header>
+
+    <main id="top">
+      <!-- ============ HERO ============ -->
+      <section class="hero">
+        <!-- blurred bokeh blocks — the upper visual with fade shadow -->
+        <div class="hero-bokeh" aria-hidden="true">
+          <span class="bk b1"></span>
+          <span class="bk b2"></span>
+          <span class="bk b3"></span>
+        </div>
+        <div class="wrap grid">
+          <div>
+            <span class="kicker reveal"
+              >Software studio &amp; engineering school — est. 2016</span
+            >
+            <h1 class="h1 reveal" style="--d: 0.06s">
+              Build with <em>blocks,</em><br />not bloat.
+            </h1>
+            <p class="hero-sub reveal" style="--d: 0.12s">
+              Lattice is a working software studio in Berlin &amp; Lisbon. We
+              teach the way we build: small solid blocks, stacked deliberately,
+              reviewed honestly. You leave with shipped software — and a guild
+              that stays.
+            </p>
+            <div class="hero-cta reveal" style="--d: 0.18s">
+              <a class="btn btn-primary" href="#trial">Book a trial class</a>
+              <a class="btn btn-ghost" href="#curriculum"
+                >Slide through the curriculum ↓</a
+              >
+            </div>
+            <p class="hero-note reveal" style="--d: 0.24s">
+              FREE · 90 MINUTES · NO CARD — NEXT TRIALS: THU 18:00 &amp; SAT
+              11:00
+            </p>
+            <div class="stats reveal" style="--d: 0.3s">
+              <div class="stat">
+                <b>2,400+</b><span>engineers shipped</span>
+              </div>
+              <div class="stat"><b>94%</b><span>hired in 6 months</span></div>
+              <div class="stat">
+                <b>38</b><span>OSS modules maintained</span>
+              </div>
+              <div class="stat">
+                <b>11 yrs</b><span>zero fluff, one craft</span>
+              </div>
+            </div>
+          </div>
+
+          <div class="hero-visual reveal" style="--d: 0.15s">
+            <div class="stage">
+              <div class="stage-inner">
+                <svg
+                  viewBox="0 0 560 520"
+                  role="img"
+                  aria-label="The Lattice stack — modular cubes and cylinders with globe, monitor and network icons"
+                >
+                  <ellipse
+                    cx="150"
+                    cy="436"
+                    rx="118"
+                    ry="16"
+                    fill="#0A1633"
+                    opacity=".08"
+                  />
+                  <ellipse
+                    cx="362"
+                    cy="436"
+                    rx="80"
+                    ry="12"
+                    fill="#0A1633"
+                    opacity=".08"
+                  />
+                  <ellipse
+                    cx="470"
+                    cy="430"
+                    rx="64"
+                    ry="10"
+                    fill="#0A1633"
+                    opacity=".08"
+                  />
+                  <ellipse
+                    cx="262"
+                    cy="424"
+                    rx="52"
+                    ry="9"
+                    fill="#0A1633"
+                    opacity=".08"
+                  />
+                  <path
+                    d="M168 238 C 220 158 300 168 344 230"
+                    fill="none"
+                    stroke="#8FB4FF"
+                    stroke-width="1.8"
+                    stroke-dasharray="2 8"
+                    stroke-linecap="round"
+                    opacity=".9"
+                  />
+                  <path
+                    d="M390 244 C 422 252 432 264 448 278"
+                    fill="none"
+                    stroke="#8FB4FF"
+                    stroke-width="1.8"
+                    stroke-dasharray="2 8"
+                    stroke-linecap="round"
+                    opacity=".9"
+                  />
+                  <use href="#cube" transform="translate(150,308) scale(1.9)" />
+                  <use
+                    href="#cube"
+                    transform="translate(153,258.5) scale(1.3)"
+                  />
+                  <use href="#cube" transform="translate(156,230) scale(.8)" />
+                  <g class="drift">
+                    <use
+                      href="#cube"
+                      transform="translate(240,128) scale(.55)"
+                    />
+                  </g>
+                  <g class="drift d2">
+                    <use
+                      href="#cube"
+                      transform="translate(64,196) scale(.38)"
+                    />
+                  </g>
+                  <path
+                    d="M308 240 H416 V415 A54 17 0 0 1 308 415 Z"
+                    fill="url(#gBody)"
+                  />
+                  <ellipse
+                    cx="362"
+                    cy="240"
+                    rx="54"
+                    ry="17"
+                    fill="url(#gCap)"
+                  />
+                  <circle
+                    cx="362"
+                    cy="238"
+                    r="23"
+                    fill="#fff"
+                    stroke="#D9E6FF"
+                  />
+                  <g
+                    stroke="#123BB5"
+                    stroke-width="1.7"
+                    fill="none"
+                    stroke-linecap="round"
+                  >
+                    <circle cx="362" cy="238" r="9" />
+                    <ellipse cx="362" cy="238" rx="4" ry="9" />
+                    <path d="M354 235h16M354 241h16" />
+                  </g>
+                  <path
+                    d="M426 286 H514 V412 A44 14 0 0 1 426 412 Z"
+                    fill="url(#gBody)"
+                  />
+                  <ellipse
+                    cx="470"
+                    cy="286"
+                    rx="44"
+                    ry="14"
+                    fill="url(#gCap)"
+                  />
+                  <circle
+                    cx="470"
+                    cy="285"
+                    r="21"
+                    fill="#fff"
+                    stroke="#D9E6FF"
+                  />
+                  <g
+                    stroke="#123BB5"
+                    stroke-width="1.7"
+                    fill="none"
+                    stroke-linecap="round"
+                  >
+                    <rect x="459" y="277" width="22" height="15" rx="3" />
+                    <path d="M470 292v5M464 297h12" />
+                  </g>
+                  <path
+                    d="M228 330 H296 V410 A34 11 0 0 1 228 410 Z"
+                    fill="url(#gBody)"
+                  />
+                  <ellipse
+                    cx="262"
+                    cy="330"
+                    rx="34"
+                    ry="11"
+                    fill="url(#gCap)"
+                  />
+                  <circle
+                    cx="262"
+                    cy="329"
+                    r="15"
+                    fill="#fff"
+                    stroke="#D9E6FF"
+                  />
+                  <g stroke="#123BB5" stroke-width="1.5">
+                    <path
+                      d="M262 329 254 334M262 329 269 322M262 329 270 336"
+                    />
+                  </g>
+                  <g fill="#123BB5">
+                    <circle cx="262" cy="329" r="2.8" />
+                    <circle cx="254" cy="334" r="2.8" />
+                    <circle cx="269" cy="322" r="2.8" />
+                    <circle cx="270" cy="336" r="2.8" />
+                  </g>
+                  <g
+                    stroke="#8FB4FF"
+                    stroke-width="2"
+                    stroke-linecap="round"
+                    opacity=".7"
+                  >
+                    <path d="M64 88v14M57 95h14" />
+                    <path d="M508 120v12M502 126h12" />
+                    <path d="M330 66v12M324 72h12" />
+                  </g>
+                  <g fill="#8FB4FF" opacity=".6">
+                    <circle cx="220" cy="76" r="3.5" />
+                    <circle cx="540" cy="220" r="3.5" />
+                    <circle cx="60" cy="300" r="3.5" />
+                    <circle cx="416" cy="120" r="3" />
+                  </g>
+                </svg>
+              </div>
+              <div class="chip-float c1">
+                <svg
+                  width="12"
+                  height="12"
+                  viewBox="0 0 12 12"
+                  aria-hidden="true"
+                >
+                  <path
+                    d="M2 6.5 4.8 9 10 3.5"
+                    stroke="#1B4FE0"
+                    stroke-width="2"
+                    fill="none"
+                    stroke-linecap="round"
+                    stroke-linejoin="round"
+                  />
+                </svg>
+                sync-engine v2 — 128 tests, 0 warnings
+              </div>
+              <div class="chip-float c2">
+                <i class="b"></i> block #042 locked → C-47
+              </div>
+            </div>
+            <p class="stage-cap">
+              Every course is a block — every block locks into the next.
+            </p>
+          </div>
+        </div>
+      </section>
+
+      <!-- ============ TICKER ============ -->
+      <div class="ticker" aria-hidden="true">
+        <div class="ticker-track">
+          <div class="tick-set">
+            <span>Modular by design</span><b></b
+            ><span>TypeScript · Go · Rust</span><b></b>
+            <span>React Native · Tauri</span><b></b
+            ><span>Postgres · Kafka · Kubernetes</span><b></b>
+            <span>WASM at the edge</span><b></b
+            ><span>Ship small, ship often</span><b></b>
+            <span>Cohort 47 now enrolling</span><b></b>
+          </div>
+          <div class="tick-set">
+            <span>Modular by design</span><b></b
+            ><span>TypeScript · Go · Rust</span><b></b>
+            <span>React Native · Tauri</span><b></b
+            ><span>Postgres · Kafka · Kubernetes</span><b></b>
+            <span>WASM at the edge</span><b></b
+            ><span>Ship small, ship often</span><b></b>
+            <span>Cohort 47 now enrolling</span><b></b>
+          </div>
+        </div>
+      </div>
+
+      <!-- ============ CURRICULUM — SLIDING EXPLORER ============ -->
+      <section id="curriculum">
+        <div class="wrap">
+          <div class="reveal">
+            <span class="kicker">01 — Curriculum</span>
+            <h2>Pick a goal. <em>Stack the blocks.</em></h2>
+            <p class="lede">
+              No 40-hour video libraries. Each track is one full slide — drag
+              it, scroll it, or work the rail. The rail on the left always shows
+              exactly where you are: the track, and the block you've opened
+              inside it.
+            </p>
+          </div>
+
+          <div class="explorer reveal" id="explorer" style="--d: 0.08s">
+            <aside class="xrail" aria-label="Curriculum position">
+              <div class="xr-item active">
+                <button class="xr-head" aria-expanded="true">
+                  <span class="xr-num">01</span>
+                  <span class="xr-name">Backend Management</span>
+                  <span class="xr-dur">16 WKS</span>
+                </button>
+                <div class="xr-body">
+                  <div class="xr-inner">
+                    <div class="xr-pad">
+                      <span class="youare"><i></i>YOU ARE HERE</span>
+                      <ul class="xr-blocks">
+                        <li>Postgres</li>
+                        <li>Go services</li>
+                        <li>gRPC + Kafka</li>
+                        <li>Observability</li>
+                        <li>Kubernetes</li>
+                      </ul>
+                      <div class="xr-meta">
+                        MON + WED 19:00 · HALL A, BERLIN<br /><b
+                          >6 SEATS LEFT</b
+                        >
+                      </div>
+                      <a class="xr-cta" href="#schedule">Open schedule →</a>
+                    </div>
+                  </div>
+                </div>
+              </div>
+              <div class="xr-item">
+                <button class="xr-head" aria-expanded="false">
+                  <span class="xr-num">02</span>
+                  <span class="xr-name">Mobile &amp; Desktop</span>
+                  <span class="xr-dur">14 WKS</span>
+                </button>
+                <div class="xr-body">
+                  <div class="xr-inner">
+                    <div class="xr-pad">
+                      <span class="youare"><i></i>YOU ARE HERE</span>
+                      <ul class="xr-blocks">
+                        <li>TypeScript</li>
+                        <li>React Native</li>
+                        <li>Tauri</li>
+                        <li>Sync engine</li>
+                        <li>Ship</li>
+                      </ul>
+                      <div class="xr-meta">
+                        TUE + THU 18:30 · STUDIO 2, LISBON<br /><b
+                          >11 SEATS LEFT</b
+                        >
+                      </div>
+                      <a class="xr-cta" href="#schedule">Open schedule →</a>
+                    </div>
+                  </div>
+                </div>
+              </div>
+              <div class="xr-item">
+                <button class="xr-head" aria-expanded="false">
+                  <span class="xr-num">03</span>
+                  <span class="xr-name">Full-Stack Craft</span>
+                  <span class="xr-dur">20 WKS</span>
+                </button>
+                <div class="xr-body">
+                  <div class="xr-inner">
+                    <div class="xr-pad">
+                      <span class="youare"><i></i>YOU ARE HERE</span>
+                      <ul class="xr-blocks">
+                        <li>Rust</li>
+                        <li>WASM</li>
+                        <li>Design systems</li>
+                        <li>CI/CD</li>
+                        <li>Capstone</li>
+                      </ul>
+                      <div class="xr-meta">
+                        SAT 10:00–16:00 · THE LOFT + ONLINE<br /><b
+                          >3 SEATS LEFT</b
+                        >
+                      </div>
+                      <a class="xr-cta" href="#schedule">Open schedule →</a>
+                    </div>
+                  </div>
+                </div>
+              </div>
+            </aside>
+
+            <div
+              class="xstage"
+              id="xstage"
+              role="region"
+              aria-roledescription="carousel"
+              tabindex="0"
+              aria-label="Curriculum tracks — drag, scroll, or use arrow keys"
+            >
+              <div class="xtrack">
+                <article
+                  class="xslide is-active"
+                  data-title="Backend Management"
+                >
+                  <span class="ghost" aria-hidden="true">01</span>
+                  <div class="shead">
+                    <span class="tnum">TRACK / 01 — SYSTEMS &amp; DATA</span>
+                    <h3>Backend Management</h3>
+                    <p class="track-goal">
+                      Run systems that don't page you at 3 a.m.
+                    </p>
+                  </div>
+                  <div class="blocks">
+                    <div class="blk open">
+                      <button
+                        class="blk-head"
+                        aria-expanded="true"
+                        aria-controls="b1-0"
+                      >
+                        <i class="bk2"></i>
+                        <span class="blk-name"
+                          ><b>Postgres, properly</b
+                          ><span>indexes &amp; isolation</span></span
+                        >
+                        <svg
+                          class="bchev"
+                          width="16"
+                          height="16"
+                          viewBox="0 0 24 24"
+                          fill="none"
+                          stroke="currentColor"
+                          stroke-width="2.4"
+                          stroke-linecap="round"
+                          stroke-linejoin="round"
+                          aria-hidden="true"
+                        >
+                          <path d="m6 9 6 6 6-6" />
+                        </svg>
+                      </button>
+                      <div class="blk-body" id="b1-0">
+                        <div class="blk-inner">
+                          <p>
+                            Design a schema for a real order pipeline, then
+                            load-test it until it begs for mercy. By review
+                            three you'll read EXPLAIN plans like weather
+                            reports.
+                          </p>
+                          <span class="blk-meta"
+                            >WEEK 1–3 · 3 MENTOR REVIEWS</span
+                          >
+                        </div>
+                      </div>
+                    </div>
+                    <div class="blk">
+                      <button
+                        class="blk-head"
+                        aria-expanded="false"
+                        aria-controls="b1-1"
+                      >
+                        <i class="bk2"></i>
+                        <span class="blk-name"
+                          ><b>Go service patterns</b
+                          ><span>small, testable, boring</span></span
+                        >
+                        <svg
+                          class="bchev"
+                          width="16"
+                          height="16"
+                          viewBox="0 0 24 24"
+                          fill="none"
+                          stroke="currentColor"
+                          stroke-width="2.4"
+                          stroke-linecap="round"
+                          stroke-linejoin="round"
+                          aria-hidden="true"
+                        >
+                          <path d="m6 9 6 6 6-6" />
+                        </svg>
+                      </button>
+                      <div class="blk-body" id="b1-1">
+                        <div class="blk-inner">
+                          <p>
+                            Build three services that talk over gRPC, fail
+                            independently, and restart without anyone noticing.
+                            Boring is a compliment here.
+                          </p>
+                          <span class="blk-meta"
+                            >WEEK 4–6 · PAIR-PROGRAMMED</span
+                          >
+                        </div>
+                      </div>
+                    </div>
+                    <div class="blk">
+                      <button
+                        class="blk-head"
+                        aria-expanded="false"
+                        aria-controls="b1-2"
+                      >
+                        <i class="bk2"></i>
+                        <span class="blk-name"
+                          ><b>gRPC &amp; Kafka</b
+                          ><span>contracts &amp; streams</span></span
+                        >
+                        <svg
+                          class="bchev"
+                          width="16"
+                          height="16"
+                          viewBox="0 0 24 24"
+                          fill="none"
+                          stroke="currentColor"
+                          stroke-width="2.4"
+                          stroke-linecap="round"
+                          stroke-linejoin="round"
+                          aria-hidden="true"
+                        >
+                          <path d="m6 9 6 6 6-6" />
+                        </svg>
+                      </button>
+                      <div class="blk-body" id="b1-2">
+                        <div class="blk-inner">
+                          <p>
+                            Define a contract, break it on purpose, watch the
+                            linter catch you. Then stream 100k events and keep
+                            p99 under 40 ms.
+                          </p>
+                          <span class="blk-meta"
+                            >WEEK 7–9 · LOAD-LAB ACCESS</span
+                          >
+                        </div>
+                      </div>
+                    </div>
+                    <div class="blk">
+                      <button
+                        class="blk-head"
+                        aria-expanded="false"
+                        aria-controls="b1-3"
+                      >
+                        <i class="bk2"></i>
+                        <span class="blk-name"
+                          ><b>Observability</b
+                          ><span>metrics, traces, on-call</span></span
+                        >
+                        <svg
+                          class="bchev"
+                          width="16"
+                          height="16"
+                          viewBox="0 0 24 24"
+                          fill="none"
+                          stroke="currentColor"
+                          stroke-width="2.4"
+                          stroke-linecap="round"
+                          stroke-linejoin="round"
+                          aria-hidden="true"
+                        >
+                          <path d="m6 9 6 6 6-6" />
+                        </svg>
+                      </button>
+                      <div class="blk-body" id="b1-3">
+                        <div class="blk-inner">
+                          <p>
+                            Instrument everything you've built, carry a practice
+                            pager for one week, and write the postmortem you
+                            hope you'll never need.
+                          </p>
+                          <span class="blk-meta"
+                            >WEEK 10–12 · ON-CALL DRILL</span
+                          >
+                        </div>
+                      </div>
+                    </div>
+                    <div class="blk">
+                      <button
+                        class="blk-head"
+                        aria-expanded="false"
+                        aria-controls="b1-4"
+                      >
+                        <i class="bk2"></i>
+                        <span class="blk-name"
+                          ><b>Kubernetes, gently</b
+                          ><span>ship without fear</span></span
+                        >
+                        <svg
+                          class="bchev"
+                          width="16"
+                          height="16"
+                          viewBox="0 0 24 24"
+                          fill="none"
+                          stroke="currentColor"
+                          stroke-width="2.4"
+                          stroke-linecap="round"
+                          stroke-linejoin="round"
+                          aria-hidden="true"
+                        >
+                          <path d="m6 9 6 6 6-6" />
+                        </svg>
+                      </button>
+                      <div class="blk-body" id="b1-4">
+                        <div class="blk-inner">
+                          <p>
+                            Containerize the whole stack, deploy blue/green, and
+                            break production in a controlled, safely chaotic
+                            final drill.
+                          </p>
+                          <span class="blk-meta"
+                            >WEEK 13–16 · FINAL REVIEW</span
+                          >
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+                  <div class="sfoot">
+                    <span class="mono-note"
+                      >16 WKS · MON+WED 19:00–21:30 · HALL A, BERLIN</span
+                    >
+                    <span class="chip">6 seats left</span>
+                    <a class="btn btn-primary" href="#trial">Reserve a seat</a>
+                  </div>
+                </article>
+
+                <article
+                  class="xslide"
+                  data-title="Seamless Mobile and Desktop"
+                >
+                  <span class="ghost" aria-hidden="true">02</span>
+                  <div class="shead">
+                    <span class="tnum">TRACK / 02 — EVERY SCREEN</span>
+                    <h3>Seamless Mobile &amp; Desktop</h3>
+                    <p class="track-goal">
+                      One codebase. Every screen. No “works on my machine.”
+                    </p>
+                  </div>
+                  <div class="blocks">
+                    <div class="blk">
+                      <button
+                        class="blk-head"
+                        aria-expanded="false"
+                        aria-controls="b2-0"
+                      >
+                        <i class="bk2"></i>
+                        <span class="blk-name"
+                          ><b>TypeScript core</b
+                          ><span>types that carry weight</span></span
+                        >
+                        <svg
+                          class="bchev"
+                          width="16"
+                          height="16"
+                          viewBox="0 0 24 24"
+                          fill="none"
+                          stroke="currentColor"
+                          stroke-width="2.4"
+                          stroke-linecap="round"
+                          stroke-linejoin="round"
+                          aria-hidden="true"
+                        >
+                          <path d="m6 9 6 6 6-6" />
+                        </svg>
+                      </button>
+                      <div class="blk-body" id="b2-0">
+                        <div class="blk-inner">
+                          <p>
+                            Model a domain so precisely that whole bug classes
+                            stop compiling. Your generics finally earn their
+                            angle brackets.
+                          </p>
+                          <span class="blk-meta"
+                            >WEEK 1–2 · DAILY EXERCISES</span
+                          >
+                        </div>
+                      </div>
+                    </div>
+                    <div class="blk">
+                      <button
+                        class="blk-head"
+                        aria-expanded="false"
+                        aria-controls="b2-1"
+                      >
+                        <i class="bk2"></i>
+                        <span class="blk-name"
+                          ><b>React Native</b
+                          ><span>one tree, two platforms</span></span
+                        >
+                        <svg
+                          class="bchev"
+                          width="16"
+                          height="16"
+                          viewBox="0 0 24 24"
+                          fill="none"
+                          stroke="currentColor"
+                          stroke-width="2.4"
+                          stroke-linecap="round"
+                          stroke-linejoin="round"
+                          aria-hidden="true"
+                        >
+                          <path d="m6 9 6 6 6-6" />
+                        </svg>
+                      </button>
+                      <div class="blk-body" id="b2-1">
+                        <div class="blk-inner">
+                          <p>
+                            Ship the same screen to iOS and Android with
+                            native-feeling gestures — measured on the studio
+                            device wall, not assumed.
+                          </p>
+                          <span class="blk-meta">WEEK 3–6 · DEVICE WALL</span>
+                        </div>
+                      </div>
+                    </div>
+                    <div class="blk">
+                      <button
+                        class="blk-head"
+                        aria-expanded="false"
+                        aria-controls="b2-2"
+                      >
+                        <i class="bk2"></i>
+                        <span class="blk-name"
+                          ><b>Tauri &amp; Electron</b
+                          ><span>desktop without regret</span></span
+                        >
+                        <svg
+                          class="bchev"
+                          width="16"
+                          height="16"
+                          viewBox="0 0 24 24"
+                          fill="none"
+                          stroke="currentColor"
+                          stroke-width="2.4"
+                          stroke-linecap="round"
+                          stroke-linejoin="round"
+                          aria-hidden="true"
+                        >
+                          <path d="m6 9 6 6 6-6" />
+                        </svg>
+                      </button>
+                      <div class="blk-body" id="b2-2">
+                        <div class="blk-inner">
+                          <p>
+                            Wrap your app for macOS, Windows and Linux; keep the
+                            binary small and the memory profile honest, under a
+                            real profiler.
+                          </p>
+                          <span class="blk-meta">WEEK 7–9 · PROFILER LAB</span>
+                        </div>
+                      </div>
+                    </div>
+                    <div class="blk">
+                      <button
+                        class="blk-head"
+                        aria-expanded="false"
+                        aria-controls="b2-3"
+                      >
+                        <i class="bk2"></i>
+                        <span class="blk-name"
+                          ><b>Offline sync engine</b
+                          ><span>conflict-free replicas</span></span
+                        >
+                        <svg
+                          class="bchev"
+                          width="16"
+                          height="16"
+                          viewBox="0 0 24 24"
+                          fill="none"
+                          stroke="currentColor"
+                          stroke-width="2.4"
+                          stroke-linecap="round"
+                          stroke-linejoin="round"
+                          aria-hidden="true"
+                        >
+                          <path d="m6 9 6 6 6-6" />
+                        </svg>
+                      </button>
+                      <div class="blk-body" id="b2-3">
+                        <div class="blk-inner">
+                          <p>
+                            Build a CRDT-backed sync layer that survives
+                            airplane mode, café Wi-Fi, and two people editing
+                            the same note.
+                          </p>
+                          <span class="blk-meta"
+                            >WEEK 10–12 · CHAOS TESTING</span
+                          >
+                        </div>
+                      </div>
+                    </div>
+                    <div class="blk">
+                      <button
+                        class="blk-head"
+                        aria-expanded="false"
+                        aria-controls="b2-4"
+                      >
+                        <i class="bk2"></i>
+                        <span class="blk-name"
+                          ><b>Ship &amp; iterate</b
+                          ><span>pipelines &amp; staged rollout</span></span
+                        >
+                        <svg
+                          class="bchev"
+                          width="16"
+                          height="16"
+                          viewBox="0 0 24 24"
+                          fill="none"
+                          stroke="currentColor"
+                          stroke-width="2.4"
+                          stroke-linecap="round"
+                          stroke-linejoin="round"
+                          aria-hidden="true"
+                        >
+                          <path d="m6 9 6 6 6-6" />
+                        </svg>
+                      </button>
+                      <div class="blk-body" id="b2-4">
+                        <div class="blk-inner">
+                          <p>
+                            Push through TestFlight and a staged rollout, watch
+                            live crash reports, and ship a fix within 48 hours.
+                          </p>
+                          <span class="blk-meta"
+                            >WEEK 13–14 · LIVE RELEASE</span
+                          >
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+                  <div class="sfoot">
+                    <span class="mono-note"
+                      >14 WKS · TUE+THU 18:30–21:00 · STUDIO 2, LISBON</span
+                    >
+                    <span class="chip">11 seats left</span>
+                    <a class="btn btn-primary" href="#trial">Reserve a seat</a>
+                  </div>
+                </article>
+
+                <article
+                  class="xslide"
+                  data-title="Platform and Full-Stack Craft"
+                >
+                  <span class="ghost" aria-hidden="true">03</span>
+                  <div class="shead">
+                    <span class="tnum">TRACK / 03 — PIXEL TO PIPELINE</span>
+                    <h3>Platform &amp; Full-Stack Craft</h3>
+                    <p class="track-goal">
+                      Own the whole lattice — from pixel to pipeline.
+                    </p>
+                  </div>
+                  <div class="blocks">
+                    <div class="blk">
+                      <button
+                        class="blk-head"
+                        aria-expanded="false"
+                        aria-controls="b3-0"
+                      >
+                        <i class="bk2"></i>
+                        <span class="blk-name"
+                          ><b>Rust fundamentals</b
+                          ><span>fearless systems</span></span
+                        >
+                        <svg
+                          class="bchev"
+                          width="16"
+                          height="16"
+                          viewBox="0 0 24 24"
+                          fill="none"
+                          stroke="currentColor"
+                          stroke-width="2.4"
+                          stroke-linecap="round"
+                          stroke-linejoin="round"
+                          aria-hidden="true"
+                        >
+                          <path d="m6 9 6 6 6-6" />
+                        </svg>
+                      </button>
+                      <div class="blk-body" id="b3-0">
+                        <div class="blk-inner">
+                          <p>
+                            Rewrite a hot path in Rust and learn to treat the
+                            borrow checker as the strictest reviewer you'll ever
+                            love.
+                          </p>
+                          <span class="blk-meta">WEEK 1–5 · DAILY REVIEWS</span>
+                        </div>
+                      </div>
+                    </div>
+                    <div class="blk">
+                      <button
+                        class="blk-head"
+                        aria-expanded="false"
+                        aria-controls="b3-1"
+                      >
+                        <i class="bk2"></i>
+                        <span class="blk-name"
+                          ><b>WASM at the edge</b
+                          ><span>fast where it counts</span></span
+                        >
+                        <svg
+                          class="bchev"
+                          width="16"
+                          height="16"
+                          viewBox="0 0 24 24"
+                          fill="none"
+                          stroke="currentColor"
+                          stroke-width="2.4"
+                          stroke-linecap="round"
+                          stroke-linejoin="round"
+                          aria-hidden="true"
+                        >
+                          <path d="m6 9 6 6 6-6" />
+                        </svg>
+                      </button>
+                      <div class="blk-body" id="b3-1">
+                        <div class="blk-inner">
+                          <p>
+                            Compile image processing to WebAssembly, deploy to
+                            the edge, and count the milliseconds you just stole
+                            back.
+                          </p>
+                          <span class="blk-meta">WEEK 6–8 · EDGE DEPLOYS</span>
+                        </div>
+                      </div>
+                    </div>
+                    <div class="blk">
+                      <button
+                        class="blk-head"
+                        aria-expanded="false"
+                        aria-controls="b3-2"
+                      >
+                        <i class="bk2"></i>
+                        <span class="blk-name"
+                          ><b>Design systems</b
+                          ><span>tokens, a11y, discipline</span></span
+                        >
+                        <svg
+                          class="bchev"
+                          width="16"
+                          height="16"
+                          viewBox="0 0 24 24"
+                          fill="none"
+                          stroke="currentColor"
+                          stroke-width="2.4"
+                          stroke-linecap="round"
+                          stroke-linejoin="round"
+                          aria-hidden="true"
+                        >
+                          <path d="m6 9 6 6 6-6" />
+                        </svg>
+                      </button>
+                      <div class="blk-body" id="b3-2">
+                        <div class="blk-inner">
+                          <p>
+                            Ship a component library with real contrast ratios,
+                            keyboard paths, and docs your future teammates will
+                            actually read.
+                          </p>
+                          <span class="blk-meta">WEEK 9–12 · A11Y AUDITS</span>
+                        </div>
+                      </div>
+                    </div>
+                    <div class="blk">
+                      <button
+                        class="blk-head"
+                        aria-expanded="false"
+                        aria-controls="b3-3"
+                      >
+                        <i class="bk2"></i>
+                        <span class="blk-name"
+                          ><b>CI/CD &amp; release</b
+                          ><span>pipelines you trust</span></span
+                        >
+                        <svg
+                          class="bchev"
+                          width="16"
+                          height="16"
+                          viewBox="0 0 24 24"
+                          fill="none"
+                          stroke="currentColor"
+                          stroke-width="2.4"
+                          stroke-linecap="round"
+                          stroke-linejoin="round"
+                          aria-hidden="true"
+                        >
+                          <path d="m6 9 6 6 6-6" />
+                        </svg>
+                      </button>
+                      <div class="blk-body" id="b3-3">
+                        <div class="blk-inner">
+                          <p>
+                            Build the pipeline that tests, signs and ships your
+                            capstone — with rollbacks that take one keypress.
+                          </p>
+                          <span class="blk-meta"
+                            >WEEK 13–15 · RELEASE DRILLS</span
+                          >
+                        </div>
+                      </div>
+                    </div>
+                    <div class="blk">
+                      <button
+                        class="blk-head"
+                        aria-expanded="false"
+                        aria-controls="b3-4"
+                      >
+                        <i class="bk2"></i>
+                        <span class="blk-name"
+                          ><b>Client capstone</b
+                          ><span>real product, real stakes</span></span
+                        >
+                        <svg
+                          class="bchev"
+                          width="16"
+                          height="16"
+                          viewBox="0 0 24 24"
+                          fill="none"
+                          stroke="currentColor"
+                          stroke-width="2.4"
+                          stroke-linecap="round"
+                          stroke-linejoin="round"
+                          aria-hidden="true"
+                        >
+                          <path d="m6 9 6 6 6-6" />
+                        </svg>
+                      </button>
+                      <div class="blk-body" id="b3-4">
+                        <div class="blk-inner">
+                          <p>
+                            A paying client, a live deadline, your name in the
+                            commit log. This block is why the other four exist.
+                          </p>
+                          <span class="blk-meta">WEEK 16–20 · PUBLIC DEMO</span>
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+                  <div class="sfoot">
+                    <span class="mono-note"
+                      >20 WKS · SAT 10:00–16:00 · THE LOFT + ONLINE</span
+                    >
+                    <span class="chip low">3 seats left</span>
+                    <a class="btn btn-primary" href="#trial">Reserve a seat</a>
+                  </div>
+                </article>
+              </div>
+
+              <div class="xhint">
+                <svg
+                  width="12"
+                  height="12"
+                  viewBox="0 0 24 24"
+                  fill="none"
+                  stroke="currentColor"
+                  stroke-width="2.6"
+                  stroke-linecap="round"
+                  stroke-linejoin="round"
+                  aria-hidden="true"
+                >
+                  <path d="m15 18-6-6 6-6" />
+                </svg>
+                DRAG · SCROLL · ARROWS
+                <svg
+                  width="12"
+                  height="12"
+                  viewBox="0 0 24 24"
+                  fill="none"
+                  stroke="currentColor"
+                  stroke-width="2.6"
+                  stroke-linecap="round"
+                  stroke-linejoin="round"
+                  aria-hidden="true"
+                >
+                  <path d="m9 18 6-6-6-6" />
+                </svg>
+              </div>
+              <div class="xbar">
+                <div class="xdots">
+                  <button
+                    class="xdot on"
+                    aria-label="Track 1 — Backend Management"
+                  ></button>
+                  <button
+                    class="xdot"
+                    aria-label="Track 2 — Seamless Mobile and Desktop"
+                  ></button>
+                  <button
+                    class="xdot"
+                    aria-label="Track 3 — Platform and Full-Stack Craft"
+                  ></button>
+                </div>
+                <div class="xcount"><b>01</b> / 03</div>
+                <button
+                  class="xarrow xprev"
+                  disabled
+                  aria-label="Previous track"
+                >
+                  <svg
+                    width="15"
+                    height="15"
+                    viewBox="0 0 24 24"
+                    fill="none"
+                    stroke="currentColor"
+                    stroke-width="2.6"
+                    stroke-linecap="round"
+                    stroke-linejoin="round"
+                    aria-hidden="true"
+                  >
+                    <path d="m15 18-6-6 6-6" />
+                  </svg>
+                </button>
+                <button class="xarrow xnext" aria-label="Next track">
+                  <svg
+                    width="15"
+                    height="15"
+                    viewBox="0 0 24 24"
+                    fill="none"
+                    stroke="currentColor"
+                    stroke-width="2.6"
+                    stroke-linecap="round"
+                    stroke-linejoin="round"
+                    aria-hidden="true"
+                  >
+                    <path d="m9 18 6-6-6-6" />
+                  </svg>
+                </button>
+              </div>
+              <div class="xprogress">
+                <i class="xbarfill" style="width: 33.333%"></i>
+              </div>
+              <p class="sr-only xannounce" aria-live="polite"></p>
+            </div>
+          </div>
+
+          <div class="includes reveal">
+            <span
+              ><i class="inc-ck"
+                ><svg width="10" height="10" viewBox="0 0 12 12">
+                  <path
+                    d="M2 6.5 4.8 9 10 3.5"
+                    stroke="#fff"
+                    stroke-width="2.2"
+                    fill="none"
+                    stroke-linecap="round"
+                    stroke-linejoin="round"
+                  /></svg></i
+              >Weekly 1:1 code review</span
+            >
+            <span
+              ><i class="inc-ck"
+                ><svg width="10" height="10" viewBox="0 0 12 12">
+                  <path
+                    d="M2 6.5 4.8 9 10 3.5"
+                    stroke="#fff"
+                    stroke-width="2.2"
+                    fill="none"
+                    stroke-linecap="round"
+                    stroke-linejoin="round"
+                  /></svg></i
+              >24/7 studio access</span
+            >
+            <span
+              ><i class="inc-ck"
+                ><svg width="10" height="10" viewBox="0 0 12 12">
+                  <path
+                    d="M2 6.5 4.8 9 10 3.5"
+                    stroke="#fff"
+                    stroke-width="2.2"
+                    fill="none"
+                    stroke-linecap="round"
+                    stroke-linejoin="round"
+                  /></svg></i
+              >Hiring-partner introductions</span
+            >
+            <span
+              ><i class="inc-ck"
+                ><svg width="10" height="10" viewBox="0 0 12 12">
+                  <path
+                    d="M2 6.5 4.8 9 10 3.5"
+                    stroke="#fff"
+                    stroke-width="2.2"
+                    fill="none"
+                    stroke-linecap="round"
+                    stroke-linejoin="round"
+                  /></svg></i
+              >Lifetime guild membership</span
+            >
+          </div>
+        </div>
+      </section>
+
+      <!-- ============ STUDIO / COMPANY ============ -->
+      <section id="studio" class="navy">
+        <div class="wrap">
+          <div class="reveal">
+            <span class="kicker">02 — The Studio</span>
+            <h2>A studio, <em>not a school.</em></h2>
+          </div>
+          <div class="grid">
+            <div class="reveal" style="--d: 0.08s">
+              <p class="lede">
+                Lattice started in a Berlin garage in 2016 — four engineers who
+                kept hiring juniors who'd been taught everything except how to
+                ship. So we built the place we wished existed: members learn
+                inside real product teams, on code that clients run in
+                production.
+              </p>
+              <p class="lede">Teaching is our craft. Software is our proof.</p>
+              <div class="certs">
+                <div class="cert">
+                  <svg
+                    width="17"
+                    height="17"
+                    viewBox="0 0 24 24"
+                    fill="none"
+                    stroke="currentColor"
+                    stroke-width="2"
+                    stroke-linecap="round"
+                    stroke-linejoin="round"
+                  >
+                    <path
+                      d="M12 2 20 6v6c0 5-3.5 8.5-8 10-4.5-1.5-8-5-8-10V6l8-4z"
+                    />
+                    <path d="m9 12 2 2 4-4" /></svg
+                  >ISO 27001 — information security
+                </div>
+                <div class="cert">
+                  <svg
+                    width="17"
+                    height="17"
+                    viewBox="0 0 24 24"
+                    fill="none"
+                    stroke="currentColor"
+                    stroke-width="2"
+                    stroke-linecap="round"
+                    stroke-linejoin="round"
+                  >
+                    <path
+                      d="M12 2 20 6v6c0 5-3.5 8.5-8 10-4.5-1.5-8-5-8-10V6l8-4z"
+                    />
+                    <path d="m9 12 2 2 4-4" /></svg
+                  >AWS Learning Partner
+                </div>
+                <div class="cert">
+                  <svg
+                    width="17"
+                    height="17"
+                    viewBox="0 0 24 24"
+                    fill="none"
+                    stroke="currentColor"
+                    stroke-width="2"
+                    stroke-linecap="round"
+                    stroke-linejoin="round"
+                  >
+                    <path
+                      d="M12 2 20 6v6c0 5-3.5 8.5-8 10-4.5-1.5-8-5-8-10V6l8-4z"
+                    />
+                    <path d="m9 12 2 2 4-4" /></svg
+                  >Google Cloud Authorized
+                </div>
+                <div class="cert">
+                  <svg
+                    width="17"
+                    height="17"
+                    viewBox="0 0 24 24"
+                    fill="none"
+                    stroke="currentColor"
+                    stroke-width="2"
+                    stroke-linecap="round"
+                    stroke-linejoin="round"
+                  >
+                    <path
+                      d="M12 2 20 6v6c0 5-3.5 8.5-8 10-4.5-1.5-8-5-8-10V6l8-4z"
+                    />
+                    <path d="m9 12 2 2 4-4" /></svg
+                  >Licensed career school · Berlin
+                </div>
+              </div>
+              <div class="tl">
+                <div class="tl-row">
+                  <b>2016</b
+                  ><span
+                    >First cohort above a bike shop in Kreuzberg. Nine
+                    members.</span
+                  >
+                </div>
+                <div class="tl-row">
+                  <b>2019</b
+                  ><span
+                    >First 100 hires placed. The Lisbon studio opens its
+                    doors.</span
+                  >
+                </div>
+                <div class="tl-row">
+                  <b>2022</b
+                  ><span
+                    >The guild goes open-source — twenty public modules.</span
+                  >
+                </div>
+                <div class="tl-row">
+                  <b>2025</b
+                  ><span
+                    >2,400 alumni, three cities — still reviewing every diff by
+                    hand.</span
+                  >
+                </div>
+              </div>
+            </div>
+            <div class="photo reveal" style="--d: 0.16s">
+              <img
+                src="https://picsum.photos/seed/lattice-crew-31/900/1120.jpg"
+                alt="The Lattice team working side by side in the Berlin studio, high-contrast black and white"
+                loading="lazy"
+              />
+              <p class="photo-cap">
+                Berlin studio — 07:42. Someone is always earlier than you.
+              </p>
+            </div>
+          </div>
+          <div class="stats dark reveal">
+            <div class="stat"><b>11</b><span>years building</span></div>
+            <div class="stat"><b>3</b><span>cities, one standard</span></div>
+            <div class="stat"><b>120+</b><span>hiring partners</span></div>
+            <div class="stat"><b>96%</b><span>cohort completion</span></div>
+          </div>
+        </div>
+      </section>
+
+      <!-- ============ MENTORS ============ -->
+      <section id="mentors">
+        <div class="wrap">
+          <div class="reveal">
+            <span class="kicker">03 — Mentors</span>
+            <h2>Reviewed by people <em>who still ship.</em></h2>
+            <p class="lede">
+              Every mentor works on production software. Hover a card — they
+              each have one line they say so often, we printed it.
+            </p>
+          </div>
+          <div class="mentors">
+            <article class="mentor reveal">
+              <div class="photo">
+                <img
+                  src="https://picsum.photos/seed/mara-902/600/720.jpg"
+                  alt="Portrait of Mara Chen, high-contrast black and white"
+                  loading="lazy"
+                />
+              </div>
+              <div class="mentor-body">
+                <div class="mname">Mara Chen</div>
+                <div class="mrole">Principal Engineer · ex-Stripe</div>
+                <div
+                  class="quote-zone"
+                  data-quote="“Small diffs. Honest names. Boring infrastructure. That's the whole secret.”"
+                >
+                  <span class="hint"
+                    >↳ hover or tap for the line she repeats</span
+                  >
+                  <span class="qtext"></span>
+                </div>
+              </div>
+            </article>
+            <article class="mentor reveal" style="--d: 0.08s">
+              <div class="photo">
+                <img
+                  src="https://picsum.photos/seed/diego-417/600/720.jpg"
+                  alt="Portrait of Diego Álvarez, high-contrast black and white"
+                  loading="lazy"
+                />
+              </div>
+              <div class="mentor-body">
+                <div class="mname">Diego Álvarez</div>
+                <div class="mrole">Systems Lead · ex-Cloudflare</div>
+                <div
+                  class="quote-zone"
+                  data-quote="“Latency is a feature. Design for it before it designs you.”"
+                >
+                  <span class="hint"
+                    >↳ hover or tap for the line he repeats</span
+                  >
+                  <span class="qtext"></span>
+                </div>
+              </div>
+            </article>
+            <article class="mentor reveal" style="--d: 0.16s">
+              <div class="photo">
+                <img
+                  src="https://picsum.photos/seed/ines-208/600/720.jpg"
+                  alt="Portrait of Ines Okafor, high-contrast black and white"
+                  loading="lazy"
+                />
+              </div>
+              <div class="mentor-body">
+                <div class="mname">Ines Okafor</div>
+                <div class="mrole">Mobile Lead · 12 apps shipped</div>
+                <div
+                  class="quote-zone"
+                  data-quote="“One codebase is a promise — the same craft on every screen.”"
+                >
+                  <span class="hint"
+                    >↳ hover or tap for the line she repeats</span
+                  >
+                  <span class="qtext"></span>
+                </div>
+              </div>
+            </article>
+            <article class="mentor reveal" style="--d: 0.24s">
+              <div class="photo">
+                <img
+                  src="https://picsum.photos/seed/tomas-655/600/720.jpg"
+                  alt="Portrait of Tomás Rocha, high-contrast black and white"
+                  loading="lazy"
+                />
+              </div>
+              <div class="mentor-body">
+                <div class="mname">Tomás Rocha</div>
+                <div class="mrole">Platform Mentor · SRE</div>
+                <div
+                  class="quote-zone"
+                  data-quote="“You don't rise to the occasion. You fall to your pipelines.”"
+                >
+                  <span class="hint"
+                    >↳ hover or tap for the line he repeats</span
+                  >
+                  <span class="qtext"></span>
+                </div>
+              </div>
+            </article>
+          </div>
+        </div>
+      </section>
+
+      <!-- ============ SCHEDULE ============ -->
+      <section id="schedule">
+        <div class="wrap">
+          <div class="reveal">
+            <span class="kicker">04 — Schedule</span>
+            <h2>Pick your <em>rhythm.</em></h2>
+            <p class="lede">
+              Five live cohorts enrolling. Every row expands — see the room, the
+              bar to clear, and who'll be reviewing you.
+            </p>
+          </div>
+          <div class="sched reveal">
+            <div class="row open">
+              <button class="row-head" aria-expanded="true" aria-controls="rb1">
+                <span class="rtrack"
+                  ><svg
+                    class="mini-stack"
+                    viewBox="-20 -14 36 78"
+                    aria-hidden="true"
+                  >
+                    <use href="#cube" transform="translate(0,20) scale(.7)" />
+                    <use href="#cube" transform="translate(2,0.5) scale(.5)" />
+                    <use
+                      href="#cube"
+                      transform="translate(3.4,-12.4) scale(.34)"
+                    /></svg
+                  ><span
+                    ><b>Backend Management</b
+                    ><i>COHORT C-47 · STARTS IN 3 WEEKS</i></span
+                  ></span
+                >
+                <span class="rrhythm hm">Mon + Wed · 19:00–21:30</span>
+                <span class="chip hm">Intermediate</span>
+                <span class="chip hm">6 seats</span>
+                <svg
+                  class="chev"
+                  width="18"
+                  height="18"
+                  viewBox="0 0 24 24"
+                  fill="none"
+                  stroke="currentColor"
+                  stroke-width="2.4"
+                  stroke-linecap="round"
+                  stroke-linejoin="round"
+                  aria-hidden="true"
+                >
+                  <path d="m6 9 6 6 6-6" />
+                </svg>
+              </button>
+              <div class="row-body" id="rb1">
+                <div class="row-inner">
+                  <div class="row-detail">
+                    <div class="cell">
+                      <h5>Studio room</h5>
+                      <p>
+                        <b>Lattice Hall A, Berlin</b> — 32-core lab machines,
+                        dual 27″ displays, espresso that means it.
+                      </p>
+                    </div>
+                    <div class="cell">
+                      <h5>Prerequisites</h5>
+                      <p>
+                        Comfortable in one language (any). We teach Go from zero
+                        — bring the rest of your curiosity.
+                      </p>
+                    </div>
+                    <div class="cell">
+                      <h5>Mentor</h5>
+                      <p>Diego Álvarez reviews every diff in this cohort.</p>
+                    </div>
+                    <a class="mini-cta" href="#trial">Reserve this cohort →</a>
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            <div class="row">
+              <button
+                class="row-head"
+                aria-expanded="false"
+                aria-controls="rb2"
+              >
+                <span class="rtrack"
+                  ><svg
+                    class="mini-stack"
+                    viewBox="-20 -14 36 78"
+                    aria-hidden="true"
+                  >
+                    <use href="#cube" transform="translate(0,20) scale(.7)" />
+                    <use href="#cube" transform="translate(2,0.5) scale(.5)" />
+                    <use
+                      href="#cube"
+                      transform="translate(3.4,-12.4) scale(.34)"
+                    /></svg
+                  ><span
+                    ><b>Seamless Mobile &amp; Desktop</b
+                    ><i>COHORT C-12 · 5 SEATS CLAIMED THIS WEEK</i></span
+                  ></span
+                >
+                <span class="rrhythm hm">Tue + Thu · 18:30–21:00</span>
+                <span class="chip hm">Beginner-friendly</span>
+                <span class="chip hm">11 seats</span>
+                <svg
+                  class="chev"
+                  width="18"
+                  height="18"
+                  viewBox="0 0 24 24"
+                  fill="none"
+                  stroke="currentColor"
+                  stroke-width="2.4"
+                  stroke-linecap="round"
+                  stroke-linejoin="round"
+                  aria-hidden="true"
+                >
+                  <path d="m6 9 6 6 6-6" />
+                </svg>
+              </button>
+              <div class="row-body" id="rb2">
+                <div class="row-inner">
+                  <div class="row-detail">
+                    <div class="cell">
+                      <h5>Studio room</h5>
+                      <p>
+                        <b>Studio 2, Lisbon</b> — the device wall: 23 phones, 4
+                        tablets, 3 desktops, all yours.
+                      </p>
+                    </div>
+                    <div class="cell">
+                      <h5>Prerequisites</h5>
+                      <p>
+                        HTML &amp; CSS basics. We lend the hardware, the
+                        tooling, and the patience.
+                      </p>
+                    </div>
+                    <div class="cell">
+                      <h5>Mentor</h5>
+                      <p>Ines Okafor runs the sync-engine deep dives.</p>
+                    </div>
+                    <a class="mini-cta" href="#trial">Reserve this cohort →</a>
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            <div class="row">
+              <button
+                class="row-head"
+                aria-expanded="false"
+                aria-controls="rb3"
+              >
+                <span class="rtrack"
+                  ><svg
+                    class="mini-stack"
+                    viewBox="-20 -14 36 78"
+                    aria-hidden="true"
+                  >
+                    <use href="#cube" transform="translate(0,20) scale(.7)" />
+                    <use href="#cube" transform="translate(2,0.5) scale(.5)" />
+                    <use
+                      href="#cube"
+                      transform="translate(3.4,-12.4) scale(.34)"
+                    /></svg
+                  ><span
+                    ><b>Platform &amp; Full-Stack Craft</b
+                    ><i>COHORT C-31 · CAPSTONE WITH A REAL CLIENT</i></span
+                  ></span
+                >
+                <span class="rrhythm hm">Sat · 10:00–16:00</span>
+                <span class="chip hm">Intermediate</span>
+                <span class="chip low hm">3 seats</span>
+                <svg
+                  class="chev"
+                  width="18"
+                  height="18"
+                  viewBox="0 0 24 24"
+                  fill="none"
+                  stroke="currentColor"
+                  stroke-width="2.4"
+                  stroke-linecap="round"
+                  stroke-linejoin="round"
+                  aria-hidden="true"
+                >
+                  <path d="m6 9 6 6 6-6" />
+                </svg>
+              </button>
+              <div class="row-body" id="rb3">
+                <div class="row-inner">
+                  <div class="row-detail">
+                    <div class="cell">
+                      <h5>Studio room</h5>
+                      <p>
+                        <b>The Loft + live online</b> — hybrid format; every
+                        review is recorded and yours to keep.
+                      </p>
+                    </div>
+                    <div class="cell">
+                      <h5>Prerequisites</h5>
+                      <p>
+                        One project you've shipped — even if you're its only
+                        user.
+                      </p>
+                    </div>
+                    <div class="cell">
+                      <h5>Mentor</h5>
+                      <p>Mara Chen leads the capstone reviews personally.</p>
+                    </div>
+                    <a class="mini-cta" href="#trial">Reserve this cohort →</a>
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            <div class="row">
+              <button
+                class="row-head"
+                aria-expanded="false"
+                aria-controls="rb4"
+              >
+                <span class="rtrack"
+                  ><svg
+                    class="mini-stack"
+                    viewBox="-20 -14 36 78"
+                    aria-hidden="true"
+                  >
+                    <use href="#cube" transform="translate(0,20) scale(.7)" />
+                    <use href="#cube" transform="translate(2,0.5) scale(.5)" />
+                    <use
+                      href="#cube"
+                      transform="translate(3.4,-12.4) scale(.34)"
+                    /></svg
+                  ><span
+                    ><b>Platform Engineering</b
+                    ><i>COHORT C-9 · REMOTE-FIRST</i></span
+                  ></span
+                >
+                <span class="rrhythm hm">Online · Wed 19:00</span>
+                <span class="chip hm">Advanced</span>
+                <span class="chip hm">8 seats</span>
+                <svg
+                  class="chev"
+                  width="18"
+                  height="18"
+                  viewBox="0 0 24 24"
+                  fill="none"
+                  stroke="currentColor"
+                  stroke-width="2.4"
+                  stroke-linecap="round"
+                  stroke-linejoin="round"
+                  aria-hidden="true"
+                >
+                  <path d="m6 9 6 6 6-6" />
+                </svg>
+              </button>
+              <div class="row-body" id="rb4">
+                <div class="row-inner">
+                  <div class="row-detail">
+                    <div class="cell">
+                      <h5>Studio room</h5>
+                      <p>
+                        <b>Remote-first</b> — monthly in-studio labs, Berlin or
+                        Lisbon, travel stipend included.
+                      </p>
+                    </div>
+                    <div class="cell">
+                      <h5>Prerequisites</h5>
+                      <p>
+                        You've carried a pager — or you're genuinely ready to.
+                      </p>
+                    </div>
+                    <div class="cell">
+                      <h5>Mentor</h5>
+                      <p>
+                        Tomás Rocha, on-call war stories included at no charge.
+                      </p>
+                    </div>
+                    <a class="mini-cta" href="#trial">Reserve this cohort →</a>
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            <div class="row">
+              <button
+                class="row-head"
+                aria-expanded="false"
+                aria-controls="rb5"
+              >
+                <span class="rtrack"
+                  ><svg
+                    class="mini-stack"
+                    viewBox="-20 -14 36 78"
+                    aria-hidden="true"
+                  >
+                    <use href="#cube" transform="translate(0,20) scale(.7)" />
+                    <use href="#cube" transform="translate(2,0.5) scale(.5)" />
+                    <use
+                      href="#cube"
+                      transform="translate(3.4,-12.4) scale(.34)"
+                    /></svg
+                  ><span
+                    ><b>Rust for Teams</b
+                    ><i>COHORT C-5 · SMALL GROUP, 16 SEATS</i></span
+                  ></span
+                >
+                <span class="rrhythm hm">Mon · 18:00–20:30</span>
+                <span class="chip hm">Open level</span>
+                <span class="chip hm">14 seats</span>
+                <svg
+                  class="chev"
+                  width="18"
+                  height="18"
+                  viewBox="0 0 24 24"
+                  fill="none"
+                  stroke="currentColor"
+                  stroke-width="2.4"
+                  stroke-linecap="round"
+                  stroke-linejoin="round"
+                  aria-hidden="true"
+                >
+                  <path d="m6 9 6 6 6-6" />
+                </svg>
+              </button>
+              <div class="row-body" id="rb5">
+                <div class="row-inner">
+                  <div class="row-detail">
+                    <div class="cell">
+                      <h5>Studio room</h5>
+                      <p>
+                        <b>Lattice Hall B, Berlin</b> — one long table, one
+                        shared screen, zero hiding.
+                      </p>
+                    </div>
+                    <div class="cell">
+                      <h5>Prerequisites</h5>
+                      <p>Curiosity and a laptop. Really — that's the bar.</p>
+                    </div>
+                    <div class="cell">
+                      <h5>Mentor</h5>
+                      <p>
+                        Mara Chen, live-coding the borrow checker into
+                        submission.
+                      </p>
+                    </div>
+                    <a class="mini-cta" href="#trial">Reserve this cohort →</a>
+                  </div>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <!-- ============ MEMBER STORIES ============ -->
+      <section id="stories">
+        <div class="wrap">
+          <div class="reveal">
+            <span class="kicker">05 — Member Stories</span>
+            <h2>Proof, <em>in production.</em></h2>
+            <p class="lede">
+              No stock testimonials. Everything below shipped, deployed, and
+              paid a salary.
+            </p>
+          </div>
+          <div class="stories">
+            <article class="story reveal">
+              <div class="photo">
+                <img
+                  src="https://picsum.photos/seed/ana-118/640/520.jpg"
+                  alt="Portrait of Ana Ferreira, high-contrast black and white"
+                  loading="lazy"
+                />
+              </div>
+              <div class="story-body">
+                <div class="story-top">
+                  <b>Ana Ferreira</b><span class="chip">Backend · C-41</span>
+                </div>
+                <p>
+                  From answering support tickets to owning the payments stack at
+                  a Berlin fintech — in five months, with two blocks to spare.
+                </p>
+                <p class="pull">
+                  “The code reviews here were harder than my interviews. That's
+                  why the interviews felt easy.”
+                </p>
+                <div class="story-metrics">
+                  <span class="chip">+62% comp</span
+                  ><span class="chip">5 months</span
+                  ><span class="chip">payments @ fintech</span>
+                </div>
+              </div>
+            </article>
+            <article class="story reveal" style="--d: 0.08s">
+              <div class="photo">
+                <img
+                  src="https://picsum.photos/seed/jonas-733/640/520.jpg"
+                  alt="Portrait of Jonas Weber, high-contrast black and white"
+                  loading="lazy"
+                />
+              </div>
+              <div class="story-body">
+                <div class="story-top">
+                  <b>Jonas Weber</b><span class="chip">Mobile · C-8</span>
+                </div>
+                <p>
+                  His capstone clinic app served 40,000 patients on day one —
+                  iOS, Android and desktop, from a single codebase.
+                </p>
+                <p class="pull">
+                  “One codebase was supposed to be a compromise. It ended up
+                  being the product.”
+                </p>
+                <div class="story-metrics">
+                  <span class="chip">1 codebase</span
+                  ><span class="chip">3 platforms</span
+                  ><span class="chip">40k users</span>
+                </div>
+              </div>
+            </article>
+            <article class="story reveal" style="--d: 0.16s">
+              <div class="photo">
+                <img
+                  src="https://picsum.photos/seed/leila-341/640/520.jpg"
+                  alt="Portrait of Leila Haddad, high-contrast black and white"
+                  loading="lazy"
+                />
+              </div>
+              <div class="story-body">
+                <div class="story-top">
+                  <b>Leila Haddad</b><span class="chip">Full-Stack · C-29</span>
+                </div>
+                <p>
+                  Her capstone didn't die after demo day. It became a real
+                  product — and she now runs it with a team of two, one hired
+                  straight from the guild.
+                </p>
+                <p class="pull">
+                  “Two people maintain my capstone now. I hired one of them from
+                  the guild.”
+                </p>
+                <div class="story-metrics">
+                  <span class="chip">0 → 14k users</span
+                  ><span class="chip">2 hires from the guild</span>
+                </div>
+              </div>
+            </article>
+          </div>
+        </div>
+      </section>
+
+      <!-- ============ COMMUNITY / GUILD ============ -->
+      <section class="community">
+        <div class="wrap grid">
+          <div class="reveal">
+            <span class="kicker" style="color: #cfe0ff">06 — The Guild</span>
+            <h2>You don't graduate from Lattice.<br /><em>You stay.</em></h2>
+            <p>
+              Membership doesn't end with your cohort. The guild keeps your code
+              reviewed, your network warm, and your Saturdays optional.
+            </p>
+            <p style="margin-top: 24px">
+              <a class="btn btn-white" href="#trial">Join the guild</a>
+            </p>
+          </div>
+          <div class="com-list reveal" style="--d: 0.1s">
+            <div class="com-item">
+              <span class="ic"
+                ><svg
+                  width="20"
+                  height="20"
+                  viewBox="0 0 24 24"
+                  fill="none"
+                  stroke="#fff"
+                  stroke-width="1.8"
+                  stroke-linecap="round"
+                  stroke-linejoin="round"
+                >
+                  <circle cx="9" cy="8" r="3.2" />
+                  <path d="M3.5 20c0-3 2.5-5 5.5-5s5.5 2 5.5 5" />
+                  <circle cx="17" cy="9" r="2.6" />
+                  <path d="M15.5 14.6c2.9-.5 5 1.5 5 4.4" /></svg
+              ></span>
+              <div>
+                <b>2,400 alumni — one Slack</b
+                ><span
+                  >Zero cold introductions, ever. Someone from your stack works
+                  there.</span
+                >
+              </div>
+            </div>
+            <div class="com-item">
+              <span class="ic"
+                ><svg
+                  width="20"
+                  height="20"
+                  viewBox="0 0 24 24"
+                  fill="none"
+                  stroke="#fff"
+                  stroke-width="1.8"
+                  stroke-linecap="round"
+                  stroke-linejoin="round"
+                >
+                  <rect x="3.5" y="5" width="17" height="15" rx="2.5" />
+                  <path d="M3.5 10h17M8 3v4M16 3v4" />
+                  <path d="M8 14h2M14 14h2M8 17.5h2M14 17.5h2" /></svg
+              ></span>
+              <div>
+                <b>Build nights — first Thursday, monthly</b
+                ><span
+                  >All three cities, all levels. Whiteboards, pizza, honest
+                  demos.</span
+                >
+              </div>
+            </div>
+            <div class="com-item">
+              <span class="ic"
+                ><svg
+                  width="20"
+                  height="20"
+                  viewBox="0 0 24 24"
+                  fill="none"
+                  stroke="#fff"
+                  stroke-width="1.8"
+                  stroke-linecap="round"
+                  stroke-linejoin="round"
+                >
+                  <path d="m8 6-5 6 5 6M16 6l5 6-5 6M13.5 4l-3 16" /></svg
+              ></span>
+              <div>
+                <b>OSS guild — 38 public modules</b
+                ><span
+                  >Maintained by members, reviewed by mentors. Your first
+                  open-source PR is here.</span
+                >
+              </div>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <!-- ==================================================================
+     INTERACTION DETAILS — six sliding windows, one ambient color fade
+     ================================================================== -->
+      <section id="interactions" class="idark">
+        <div class="wrap">
+          <div class="reveal">
+            <span class="kicker">07 — Interaction Details</span>
+            <h2>Six details, <em>felt — not read.</em></h2>
+            <p class="lede">
+              Every interaction on this page is a small promise kept. Slide
+              through the windows — each one runs live, right here, and the room
+              around it fades to that interaction's color.
+            </p>
+          </div>
+
+          <div class="reveal" style="--d: 0.08s">
+            <div
+              class="xstage ideck"
+              id="ideck"
+              role="region"
+              aria-roledescription="carousel"
+              tabindex="0"
+              aria-label="Interaction details — drag, scroll, or use arrow keys"
+            >
+              <div class="xtrack">
+                <!-- 01 — breath -->
+                <article
+                  class="xslide is-active gdark"
+                  data-amb="#0A1330"
+                  data-dark="1"
+                  data-title="Breath cycle"
+                  style="background: linear-gradient(160deg, #0a1330, #111f4b)"
+                >
+                  <span class="ghost" aria-hidden="true">01</span>
+                  <div class="shead">
+                    <span class="tnum">INTERACTION / 01 — MOTION</span>
+                    <h3>The hero breathes</h3>
+                    <p class="ilede">
+                      The lattice expands and contracts by 2.8% every four
+                      seconds — a resting pulse, not a gimmick. It is running in
+                      the hero at the top of this page right now, and here, with
+                      its clock.
+                    </p>
+                    <div class="ispec">
+                      <span class="sp">4S CYCLE</span
+                      ><span class="sp">SCALE 1 → 1.028</span
+                      ><span class="sp">EASE-IN-OUT</span>
+                    </div>
+                  </div>
+                  <div class="idemo">
+                    <div class="breath-demo">
+                      <svg
+                        viewBox="0 0 170 170"
+                        role="img"
+                        aria-label="A breathing cube stack inside a four-second progress ring"
+                      >
+                        <circle
+                          class="breath-ring"
+                          cx="85"
+                          cy="88"
+                          r="58"
+                          fill="none"
+                          stroke="#8FB4FF"
+                          stroke-width="3"
+                          stroke-linecap="round"
+                          stroke-dasharray="364"
+                          stroke-dashoffset="364"
+                          transform="rotate(-90 85 88)"
+                        />
+                        <g class="breath-cubes">
+                          <use href="#cube" transform="translate(85,74)" />
+                          <use
+                            href="#cube"
+                            transform="translate(88,51.8) scale(.62)"
+                          />
+                        </g>
+                      </svg>
+                      <div class="breath-label">
+                        <b>4.0s</b><span>breath · live</span>
+                      </div>
+                    </div>
+                  </div>
+                </article>
+
+                <!-- 02 — fade-up -->
+                <article
+                  class="xslide"
+                  data-amb="#F4F7FD"
+                  data-title="Fade-up headlines"
+                  style="background: #fff"
+                >
+                  <span class="ghost" aria-hidden="true">02</span>
+                  <div class="shead">
+                    <span class="tnum">INTERACTION / 02 — ENTRANCE</span>
+                    <h3>Headlines rise</h3>
+                    <p class="ilede">
+                      Headlines fade up 22 pixels on a soft 600ms ease the
+                      moment they enter your viewport — once, then never again.
+                      This page has been doing it since you arrived. Replay it
+                      at will.
+                    </p>
+                    <div class="ispec">
+                      <span class="sp">600MS EASE</span
+                      ><span class="sp">22PX TRAVEL</span
+                      ><span class="sp">FIRES ONCE</span>
+                    </div>
+                  </div>
+                  <div class="idemo">
+                    <div class="fade-demo" id="fadeStage">
+                      <div class="dstage">
+                        <p class="dline" style="--d: 0s">
+                          Headlines rise softly,
+                        </p>
+                        <p class="dline" style="--d: 0.12s">
+                          settle where they belong —
+                        </p>
+                        <p class="dline" style="--d: 0.24s">
+                          and never fuss again.
+                        </p>
+                      </div>
+                      <button class="dbtn" id="replayFade" type="button">
+                        <svg
+                          width="13"
+                          height="13"
+                          viewBox="0 0 24 24"
+                          fill="none"
+                          stroke="currentColor"
+                          stroke-width="2.2"
+                          stroke-linecap="round"
+                          stroke-linejoin="round"
+                          aria-hidden="true"
+                        >
+                          <path d="M3 12a9 9 0 1 0 2.6-6.3M3 4v5h5" />
+                        </svg>
+                        Replay the rise
+                      </button>
+                    </div>
+                  </div>
+                </article>
+
+                <!-- 03 — typed quotes -->
+                <article
+                  class="xslide"
+                  data-amb="#E4EDFE"
+                  data-title="Typed quotes"
+                  style="background: #eef4ff"
+                >
+                  <span class="ghost" aria-hidden="true">03</span>
+                  <div class="shead">
+                    <span class="tnum">INTERACTION / 03 — VOICE</span>
+                    <h3>Mentors speak, typed</h3>
+                    <p class="ilede">
+                      Hover a mentor and their one-liner types out character by
+                      character — 26ms per keystroke, blinking caret, resetting
+                      the moment you leave. The mentor wall above runs it on
+                      every card.
+                    </p>
+                    <div class="ispec">
+                      <span class="sp">26MS / CHAR</span
+                      ><span class="sp">BLINKING CARET</span
+                      ><span class="sp">RESETS ON LEAVE</span>
+                    </div>
+                  </div>
+                  <div class="idemo">
+                    <div class="mini-mentor">
+                      <div class="mini-ava">MC</div>
+                      <div class="mini-body">
+                        <b>Mara Chen</b>
+                        <span>Principal Engineer · ex-Stripe</span>
+                        <div
+                          class="quote-zone"
+                          data-quote="“Small diffs. Honest names. Boring infrastructure. That's the whole secret.”"
+                        >
+                          <span class="hint">↳ hover me — I type</span>
+                          <span class="qtext"></span>
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+                </article>
+
+                <!-- 04 — expanding rows -->
+                <article
+                  class="xslide"
+                  data-amb="#D3E1FD"
+                  data-title="Expanding rows"
+                  style="background: linear-gradient(180deg, #dce8ff, #eaf1fe)"
+                >
+                  <span class="ghost" aria-hidden="true">04</span>
+                  <div class="shead">
+                    <span class="tnum">INTERACTION / 04 — DISCLOSURE</span>
+                    <h3>Rows unfold on demand</h3>
+                    <p class="ilede">
+                      Schedule rows expand in place to reveal the studio room
+                      and the prerequisites — a 450ms reveal, one row open at a
+                      time, zero page jumps. The full schedule lives below. Try
+                      these.
+                    </p>
+                    <div class="ispec">
+                      <span class="sp">450MS REVEAL</span
+                      ><span class="sp">SINGLE-OPEN</span
+                      ><span class="sp">ROOM + PREREQS</span>
+                    </div>
+                  </div>
+                  <div class="idemo">
+                    <div class="demo-rows">
+                      <div class="drow open">
+                        <button class="drow-head" aria-expanded="true">
+                          Backend Management — C-47
+                          <svg
+                            class="bchev"
+                            width="15"
+                            height="15"
+                            viewBox="0 0 24 24"
+                            fill="none"
+                            stroke="currentColor"
+                            stroke-width="2.4"
+                            stroke-linecap="round"
+                            stroke-linejoin="round"
+                            aria-hidden="true"
+                          >
+                            <path d="m6 9 6 6 6-6" />
+                          </svg>
+                        </button>
+                        <div class="drow-body">
+                          <div class="drow-inner">
+                            <div class="drow-detail">
+                              <div>
+                                <h5>ROOM</h5>
+                                <p>Lattice Hall A, Berlin</p>
+                              </div>
+                              <div>
+                                <h5>PREREQ</h5>
+                                <p>One language — any.</p>
+                              </div>
+                            </div>
+                          </div>
+                        </div>
+                      </div>
+                      <div class="drow">
+                        <button class="drow-head" aria-expanded="false">
+                          Mobile &amp; Desktop — C-12
+                          <svg
+                            class="bchev"
+                            width="15"
+                            height="15"
+                            viewBox="0 0 24 24"
+                            fill="none"
+                            stroke="currentColor"
+                            stroke-width="2.4"
+                            stroke-linecap="round"
+                            stroke-linejoin="round"
+                            aria-hidden="true"
+                          >
+                            <path d="m6 9 6 6 6-6" />
+                          </svg>
+                        </button>
+                        <div class="drow-body">
+                          <div class="drow-inner">
+                            <div class="drow-detail">
+                              <div>
+                                <h5>ROOM</h5>
+                                <p>Studio 2, Lisbon</p>
+                              </div>
+                              <div>
+                                <h5>PREREQ</h5>
+                                <p>HTML &amp; CSS basics.</p>
+                              </div>
+                            </div>
+                          </div>
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+                </article>
+
+                <!-- 05 — opt-in chime -->
+                <article
+                  class="xslide gdark"
+                  data-amb="#1B4FE0"
+                  data-dark="1"
+                  data-title="Opt-in chime"
+                  style="background: linear-gradient(140deg, #1b4fe0, #0c2a80)"
+                >
+                  <span class="ghost" aria-hidden="true">05</span>
+                  <div class="shead">
+                    <span class="tnum">INTERACTION / 05 — SOUND</span>
+                    <h3>One chime, by choice</h3>
+                    <p class="ilede">
+                      Sound never plays unless you ask for it. Flip the sound
+                      switch in the header, and your very first scroll is
+                      greeted — exactly once — with a soft two-note chime. This
+                      is that exact sound.
+                    </p>
+                    <div class="ispec">
+                      <span class="sp">OPT-IN ONLY</span
+                      ><span class="sp">PLAYS ONCE</span
+                      ><span class="sp">880 + 1318 HZ</span>
+                    </div>
+                  </div>
+                  <div class="idemo">
+                    <div class="chime-demo">
+                      <div class="eq" aria-hidden="true">
+                        <i></i><i></i><i></i><i></i><i></i>
+                      </div>
+                      <button class="cbtn" id="chimeDemo" type="button">
+                        <svg
+                          width="14"
+                          height="14"
+                          viewBox="0 0 24 24"
+                          fill="currentColor"
+                          aria-hidden="true"
+                        >
+                          <path d="M3 9v6h4l5 4V5L7 9H3z" />
+                          <path
+                            d="M16 8.5a5 5 0 0 1 0 7"
+                            fill="none"
+                            stroke="currentColor"
+                            stroke-width="2"
+                            stroke-linecap="round"
+                          />
+                        </svg>
+                        Play the chime
+                      </button>
+                      <span class="cnote">No autoplay on this site. Ever.</span>
+                    </div>
+                  </div>
+                </article>
+
+                <!-- 06 — Ken Burns -->
+                <article
+                  class="xslide gdark"
+                  data-amb="#0C1A3E"
+                  data-dark="1"
+                  data-title="Ken Burns zoom"
+                  style="background: linear-gradient(160deg, #0d1a3e, #0a1330)"
+                >
+                  <span class="ghost" aria-hidden="true">06</span>
+                  <div class="shead">
+                    <span class="tnum">INTERACTION / 06 — IMAGERY</span>
+                    <h3>Photographs drift slowly</h3>
+                    <p class="ilede">
+                      Hover any photograph on this page and it drifts into a
+                      six-second Ken Burns zoom — high-contrast black and white
+                      under a blue duotone wash. Go on, hover this one.
+                    </p>
+                    <div class="ispec">
+                      <span class="sp">6S DRIFT</span
+                      ><span class="sp">SCALE → 1.15</span
+                      ><span class="sp">B&amp;W DUOTONE</span>
+                    </div>
+                  </div>
+                  <div class="idemo">
+                    <div class="photo kb-demo">
+                      <img
+                        src="https://picsum.photos/seed/kb-demo-77/720/460.jpg"
+                        alt="Member portrait in high-contrast black and white, drifting slowly on hover"
+                        loading="lazy"
+                      />
+                      <p class="photo-cap">Hover me — I move slowly.</p>
+                    </div>
+                  </div>
+                </article>
+              </div>
+
+              <div class="xhint">
+                <svg
+                  width="12"
+                  height="12"
+                  viewBox="0 0 24 24"
+                  fill="none"
+                  stroke="currentColor"
+                  stroke-width="2.6"
+                  stroke-linecap="round"
+                  stroke-linejoin="round"
+                  aria-hidden="true"
+                >
+                  <path d="m15 18-6-6 6-6" />
+                </svg>
+                DRAG · SCROLL · ARROWS
+                <svg
+                  width="12"
+                  height="12"
+                  viewBox="0 0 24 24"
+                  fill="none"
+                  stroke="currentColor"
+                  stroke-width="2.6"
+                  stroke-linecap="round"
+                  stroke-linejoin="round"
+                  aria-hidden="true"
+                >
+                  <path d="m9 18 6-6-6-6" />
+                </svg>
+              </div>
+              <div class="xbar">
+                <div class="xdots">
+                  <button
+                    class="xdot on"
+                    aria-label="Interaction 1 — breath cycle"
+                  ></button>
+                  <button
+                    class="xdot"
+                    aria-label="Interaction 2 — fade-up headlines"
+                  ></button>
+                  <button
+                    class="xdot"
+                    aria-label="Interaction 3 — typed quotes"
+                  ></button>
+                  <button
+                    class="xdot"
+                    aria-label="Interaction 4 — expanding rows"
+                  ></button>
+                  <button
+                    class="xdot"
+                    aria-label="Interaction 5 — opt-in chime"
+                  ></button>
+                  <button
+                    class="xdot"
+                    aria-label="Interaction 6 — Ken Burns zoom"
+                  ></button>
+                </div>
+                <div class="xcount"><b>01</b> / 06</div>
+                <button
+                  class="xarrow xprev"
+                  disabled
+                  aria-label="Previous interaction"
+                >
+                  <svg
+                    width="15"
+                    height="15"
+                    viewBox="0 0 24 24"
+                    fill="none"
+                    stroke="currentColor"
+                    stroke-width="2.6"
+                    stroke-linecap="round"
+                    stroke-linejoin="round"
+                    aria-hidden="true"
+                  >
+                    <path d="m15 18-6-6 6-6" />
+                  </svg>
+                </button>
+                <button class="xarrow xnext" aria-label="Next interaction">
+                  <svg
+                    width="15"
+                    height="15"
+                    viewBox="0 0 24 24"
+                    fill="none"
+                    stroke="currentColor"
+                    stroke-width="2.6"
+                    stroke-linecap="round"
+                    stroke-linejoin="round"
+                    aria-hidden="true"
+                  >
+                    <path d="m9 18 6-6-6-6" />
+                  </svg>
+                </button>
+              </div>
+              <div class="xprogress">
+                <i class="xbarfill" style="width: 16.667%"></i>
+              </div>
+              <p class="sr-only xannounce" aria-live="polite"></p>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <!-- ============ BOOK A TRIAL — kept as the finale ============ -->
+      <section id="trial">
+        <div class="wrap">
+          <svg class="cta-deco" viewBox="0 0 200 220" aria-hidden="true">
+            <g fill="#fff">
+              <polygon points="100,20 150,50 100,80 50,50" opacity=".10" />
+              <polygon points="50,50 100,80 100,150 50,120" opacity=".07" />
+              <polygon points="150,50 100,80 100,150 150,120" opacity=".045" />
+            </g>
+          </svg>
+          <div class="cta-card reveal">
+            <span class="kicker">08 — Start</span>
+            <h2>Book a <em>trial class.</em></h2>
+            <p class="sub">
+              90 minutes. Free. You'll build and ship one real block — with a
+              mentor, not a video.
+            </p>
+            <div class="cta-dates">
+              <span>▸ NEXT TRIALS: THU 18:00</span><span>▸ SAT 11:00</span
+              ><span>▸ BERLIN · LISBON · ONLINE</span>
+            </div>
+            <form id="trialForm">
+              <div class="frow">
+                <div class="field">
+                  <label for="tname">Name</label
+                  ><input
+                    id="tname"
+                    name="name"
+                    type="text"
+                    placeholder="Your name"
+                    required
+                  />
+                </div>
+                <div class="field">
+                  <label for="temail">Email</label
+                  ><input
+                    id="temail"
+                    name="email"
+                    type="email"
+                    placeholder="you@example.com"
+                    required
+                  />
+                </div>
+              </div>
+              <div class="field">
+                <label for="ttrack">Track</label>
+                <select id="ttrack" name="track" required>
+                  <option value="" disabled selected>Choose a track…</option>
+                  <option>Backend Management — C-47</option>
+                  <option>Seamless Mobile &amp; Desktop — C-12</option>
+                  <option>Platform &amp; Full-Stack Craft — C-31</option>
+                  <option>Platform Engineering — C-9</option>
+                  <option>Rust for Teams — C-5</option>
+                  <option>Not sure — help me choose</option>
+                </select>
+              </div>
+              <div class="field">
+                <label>Format</label>
+                <div class="seg" role="radiogroup" aria-label="Format">
+                  <input
+                    type="radio"
+                    name="format"
+                    id="f1"
+                    value="Berlin"
+                    checked
+                  /><label for="f1">Berlin studio</label>
+                  <input
+                    type="radio"
+                    name="format"
+                    id="f2"
+                    value="Lisbon"
+                  /><label for="f2">Lisbon studio</label>
+                  <input
+                    type="radio"
+                    name="format"
+                    id="f3"
+                    value="Online"
+                  /><label for="f3">Online</label>
+                </div>
+              </div>
+              <button class="btn btn-primary" type="submit">
+                Reserve my seat →
+              </button>
+              <p class="form-note">
+                NO CARD REQUIRED · NO SPAM, EVER · BRING A LAPTOP IF YOU HAVE
+                ONE
+              </p>
+            </form>
+          </div>
+        </div>
+      </section>
+    </main>
+
+    <!-- ============ FOOTER ============ -->
+    <footer>
+      <div class="wrap">
+        <div class="f-grid">
+          <div class="f-brand">
+            <a class="brand" href="#top" aria-label="Lattice home">
+              <svg class="logo-cubes" viewBox="-34 4 68 96" aria-hidden="true">
+                <use href="#cube" transform="translate(0,34)" />
+                <use href="#cube" transform="translate(3,12) scale(.62)" />
+              </svg>
+              Lattice
+            </a>
+            <p>BUILD WITH BLOCKS, NOT BLOAT.</p>
+            <address>
+              Ritterstraße 12 · 10969 Berlin<br />Rua do Alecrim 26 · 1200
+              Lisbon<br /><a
+                href="mailto:hello@lattice.studio"
+                style="color: #9fb4df"
+                >hello@lattice.studio</a
+              >
+            </address>
+          </div>
+          <div class="f-col">
+            <h5>Learn</h5>
+            <a href="#curriculum">Backend Management</a>
+            <a href="#curriculum">Mobile &amp; Desktop</a>
+            <a href="#curriculum">Full-Stack Craft</a>
+            <a href="#schedule">Schedule</a>
+            <a href="#trial">Book a trial</a>
+          </div>
+          <div class="f-col">
+            <h5>Studio</h5>
+            <a href="#studio">About &amp; certifications</a>
+            <a href="#stories">Member stories</a>
+            <a href="#mentors">Mentors</a>
+            <a href="#interactions">Interaction details</a>
+          </div>
+          <div class="f-col">
+            <h5>Community</h5>
+            <a href="#stories">The guild</a>
+            <a href="#curriculum">Build nights</a>
+            <a href="#stories">Open-source modules</a>
+            <a href="#trial">Join us</a>
+          </div>
+        </div>
+        <div class="f-bottom">
+          <span
+            >© 2025 Lattice Studio GmbH — build with blocks, not bloat.</span
+          >
+          <span>BERLIN · LISBON · REMOTE</span>
+        </div>
+      </div>
+    </footer>
+
+    <!-- Toast -->
+    <div class="toast" id="toast" role="status" aria-live="polite">
+      <svg
+        width="16"
+        height="16"
+        viewBox="0 0 24 24"
+        fill="none"
+        stroke="currentColor"
+        stroke-width="2.2"
+        stroke-linecap="round"
+        stroke-linejoin="round"
+      >
+        <circle cx="12" cy="12" r="9" />
+        <path d="m8.5 12.5 2.5 2.5 5-6" />
+      </svg>
+      <span class="t-msg"></span>
+    </div>
+
+    <script>
+      (function () {
+        "use strict";
+
+        /* ---------- Headlines fade up with a soft 600ms ease ---------- */
+        var io = new IntersectionObserver(
+          function (entries) {
+            entries.forEach(function (e) {
+              if (e.isIntersecting) {
+                e.target.classList.add("in");
+                io.unobserve(e.target);
+              }
+            });
+          },
+          { threshold: 0.12, rootMargin: "0px 0px -40px 0px" },
+        );
+        document.querySelectorAll(".reveal").forEach(function (el) {
+          io.observe(el);
+        });
+
+        /* ---------- Scroll-spy for the nav ---------- */
+        var links = document.querySelectorAll(".nav-links a");
+        var spy = new IntersectionObserver(
+          function (entries) {
+            entries.forEach(function (e) {
+              if (e.isIntersecting) {
+                links.forEach(function (a) {
+                  a.classList.toggle(
+                    "active",
+                    a.getAttribute("href") === "#" + e.target.id,
+                  );
+                });
+              }
+            });
+          },
+          { rootMargin: "-40% 0px -55% 0px" },
+        );
+        [
+          "curriculum",
+          "studio",
+          "mentors",
+          "schedule",
+          "stories",
+          "interactions",
+          "trial",
+        ].forEach(function (id) {
+          var s = document.getElementById(id);
+          if (s) spy.observe(s);
+        });
+
+        /* ---------- Toast ---------- */
+        var toast = document.getElementById("toast"),
+          toastTimer = null;
+        function showToast(msg) {
+          toast.querySelector(".t-msg").textContent = msg;
+          toast.classList.add("show");
+          clearTimeout(toastTimer);
+          toastTimer = setTimeout(function () {
+            toast.classList.remove("show");
+          }, 4200);
+        }
+
+        /* ---------- Shared audio: the opt-in chime ---------- */
+        var actx = null;
+        function ensureAudio() {
+          if (!actx)
+            actx = new (window.AudioContext || window.webkitAudioContext)();
+          if (actx.resume) actx.resume();
+          return actx;
+        }
+        function playChime() {
+          var ctx = ensureAudio();
+          var t = ctx.currentTime;
+          [
+            [880, 0],
+            [1318.5, 0.07],
+          ].forEach(function (pair) {
+            var o = ctx.createOscillator(),
+              g = ctx.createGain();
+            o.type = "sine";
+            o.frequency.value = pair[0];
+            g.gain.setValueAtTime(0.0001, t + pair[1]);
+            g.gain.linearRampToValueAtTime(0.11, t + pair[1] + 0.02);
+            g.gain.exponentialRampToValueAtTime(0.0001, t + pair[1] + 0.9);
+            o.connect(g);
+            g.connect(ctx.destination);
+            o.start(t + pair[1]);
+            o.stop(t + pair[1] + 1);
+          });
+        }
+        var soundBtn = document.getElementById("soundBtn");
+        var soundOn = false,
+          chimed = false;
+        soundBtn.addEventListener("click", function () {
+          soundOn = !soundOn;
+          soundBtn.classList.toggle("on", soundOn);
+          soundBtn.setAttribute("aria-pressed", String(soundOn));
+          soundBtn.querySelector("span").textContent = soundOn
+            ? "Chime on"
+            : "Chime off";
+          if (soundOn) {
+            ensureAudio();
+            showToast("Sound on — a soft chime will greet your first scroll.");
+          }
+        });
+        window.addEventListener(
+          "scroll",
+          function () {
+            if (soundOn && !chimed) {
+              chimed = true;
+              playChime();
+            }
+          },
+          { passive: true },
+        );
+
+        /* ---------- Typing quotes (mentors + demo card) ---------- */
+        function bindTyping(zone) {
+          var text = zone.dataset.quote;
+          var hint = zone.querySelector(".hint");
+          var out = zone.querySelector(".qtext");
+          var host = zone.closest(".mentor, .mini-mentor") || zone;
+          var timer = null,
+            idx = 0,
+            active = false;
+          function step() {
+            idx++;
+            out.textContent = text.slice(0, idx);
+            if (idx < text.length) {
+              timer = setTimeout(step, 26);
+            } else {
+              zone.classList.remove("typing");
+              active = false;
+            }
+          }
+          function start() {
+            if (active) return;
+            active = true;
+            idx = 0;
+            zone.classList.add("typing");
+            if (hint) hint.style.display = "none";
+            out.textContent = "";
+            step();
+          }
+          function reset() {
+            clearTimeout(timer);
+            active = false;
+            zone.classList.remove("typing");
+            out.textContent = "";
+            if (hint) hint.style.display = "";
+          }
+          host.addEventListener("mouseenter", start);
+          host.addEventListener("mouseleave", reset);
+          host.addEventListener("click", function () {
+            active ? reset() : start();
+          });
+        }
+        document.querySelectorAll(".quote-zone").forEach(bindTyping);
+
+        /* ---------- Schedule rows expand (room + prerequisites) ---------- */
+        document.querySelectorAll(".row-head").forEach(function (btn) {
+          btn.addEventListener("click", function () {
+            var row = btn.closest(".row");
+            var wasOpen = row.classList.contains("open");
+            document.querySelectorAll(".row.open").forEach(function (r) {
+              if (r !== row) {
+                r.classList.remove("open");
+                r.querySelector(".row-head").setAttribute(
+                  "aria-expanded",
+                  "false",
+                );
+              }
+            });
+            row.classList.toggle("open", !wasOpen);
+            btn.setAttribute("aria-expanded", String(!wasOpen));
+          });
+        });
+
+        /* ---------- Demo rows (interaction window 04) ---------- */
+        document.querySelectorAll(".demo-rows").forEach(function (group) {
+          Array.prototype.forEach.call(
+            group.querySelectorAll(".drow-head"),
+            function (h) {
+              h.addEventListener("click", function () {
+                var row = h.closest(".drow");
+                var wasOpen = row.classList.contains("open");
+                Array.prototype.forEach.call(
+                  group.querySelectorAll(".drow"),
+                  function (r) {
+                    r.classList.remove("open");
+                    r.querySelector(".drow-head").setAttribute(
+                      "aria-expanded",
+                      "false",
+                    );
+                  },
+                );
+                if (!wasOpen) {
+                  row.classList.add("open");
+                  h.setAttribute("aria-expanded", "true");
+                }
+              });
+            },
+          );
+        });
+
+        /* ---------- Demo fade-up (interaction window 02) ---------- */
+        var fadeStage = document.getElementById("fadeStage");
+        function playFade() {
+          if (!fadeStage) return;
+          var lines = fadeStage.querySelectorAll(".dline");
+          lines.forEach(function (l) {
+            l.classList.remove("up");
+          });
+          void fadeStage.offsetWidth; /* force reflow so the transition replays */
+          lines.forEach(function (l) {
+            l.classList.add("up");
+          });
+        }
+        var replayBtn = document.getElementById("replayFade");
+        if (replayBtn) replayBtn.addEventListener("click", playFade);
+
+        /* ---------- Demo chime (interaction window 05) ---------- */
+        var chimeDemo = document.getElementById("chimeDemo");
+        if (chimeDemo) {
+          var eq = chimeDemo.closest(".chime-demo").querySelector(".eq");
+          chimeDemo.addEventListener("click", function () {
+            playChime();
+            eq.classList.add("play");
+            setTimeout(function () {
+              eq.classList.remove("play");
+            }, 1400);
+          });
+        }
+
+        /* =====================================================================
+     SLIDE-DECK ENGINE — shared by the curriculum explorer and the
+     interaction windows: drag, mouse-wheel, keyboard, dots, parallax
+     ===================================================================== */
+        var deckRegistry = [];
+        function makeDeck(stage, wheelRoot, onChange) {
+          var track = stage.querySelector(".xtrack");
+          var slides = Array.prototype.slice.call(
+            stage.querySelectorAll(".xslide"),
+          );
+          var dots = Array.prototype.slice.call(
+            stage.querySelectorAll(".xdot"),
+          );
+          var prev = stage.querySelector(".xprev");
+          var next = stage.querySelector(".xnext");
+          var counter = stage.querySelector(".xcount");
+          var barFill = stage.querySelector(".xbarfill");
+          var hint = stage.querySelector(".xhint");
+          var announce = stage.querySelector(".xannounce");
+          var N = slides.length,
+            cur = 0;
+          var engaged = false,
+            hintGone = false,
+            lastNav = 0;
+          function pad(i) {
+            return (i < 9 ? "0" : "") + (i + 1);
+          }
+          function hideHint() {
+            if (hintGone) return;
+            hintGone = true;
+            if (hint) hint.classList.add("hide");
+          }
+          setTimeout(hideHint, 9000);
+
+          function parallax(dx) {
+            slides.forEach(function (s, i) {
+              var g = s.querySelector(".ghost");
+              if (g)
+                g.style.transform =
+                  "translateX(calc(" +
+                  (cur - i) * 12 +
+                  "% + " +
+                  dx * 0.12 +
+                  "px))";
+            });
+          }
+          function apply() {
+            track.style.transform = "translateX(" + -cur * 100 + "%)";
+            slides.forEach(function (s, i) {
+              s.classList.toggle("is-active", i === cur);
+              s.setAttribute("aria-hidden", i === cur ? "false" : "true");
+              if ("inert" in s) s.inert = i !== cur;
+            });
+            dots.forEach(function (d, i) {
+              d.classList.toggle("on", i === cur);
+            });
+            if (prev) prev.disabled = cur === 0;
+            if (next) next.disabled = cur === N - 1;
+            if (counter)
+              counter.innerHTML = "<b>" + pad(cur) + "</b> / " + pad(N - 1);
+            if (barFill) barFill.style.width = ((cur + 1) / N) * 100 + "%";
+            parallax(0);
+            if (announce)
+              announce.textContent =
+                slides[cur].dataset.title + " — " + (cur + 1) + " of " + N;
+          }
+          function go(n, fromUser) {
+            n = Math.max(0, Math.min(N - 1, n));
+            if (n !== cur) {
+              stage.classList.toggle(
+                "rev",
+                n < cur,
+              ); /* content enters from the other side */
+              cur = n;
+              apply();
+              if (onChange) onChange(cur, slides[cur]);
+            }
+            if (fromUser) hideHint();
+          }
+          var self = {
+            go: function (n) {
+              go(n, true);
+            },
+            cur: function () {
+              return cur;
+            },
+            engaged: function () {
+              return engaged;
+            },
+          };
+          deckRegistry.push(self);
+
+          if (prev)
+            prev.addEventListener("click", function () {
+              go(cur - 1, true);
+            });
+          if (next)
+            next.addEventListener("click", function () {
+              go(cur + 1, true);
+            });
+          dots.forEach(function (d, i) {
+            d.addEventListener("click", function () {
+              go(i, true);
+            });
+          });
+
+          /* drag to slide — mouse + touch, live parallax, rubber-band at ends */
+          var dragging = false,
+            locked = false,
+            startX = 0,
+            startY = 0,
+            dx = 0,
+            dragMoved = false;
+          stage.addEventListener("pointerdown", function (e) {
+            if (e.pointerType === "mouse" && e.button !== 0) return;
+            if (e.target.closest("button, a, input, select, textarea, label"))
+              return;
+            dragging = true;
+            locked = false;
+            dragMoved = false;
+            startX = e.clientX;
+            startY = e.clientY;
+            dx = 0;
+            try {
+              stage.setPointerCapture(e.pointerId);
+            } catch (err) {}
+          });
+          stage.addEventListener("pointermove", function (e) {
+            if (!dragging) return;
+            var mx = e.clientX - startX,
+              my = e.clientY - startY;
+            if (!locked) {
+              if (Math.abs(mx) > 12 && Math.abs(mx) > Math.abs(my) * 1.2) {
+                locked = true;
+                stage.classList.add("dragging", "no-anim");
+              } else if (Math.abs(my) > 12) {
+                dragging = false;
+                return;
+              } else return;
+            }
+            dx = mx;
+            if ((cur === 0 && dx > 0) || (cur === N - 1 && dx < 0)) dx *= 0.35;
+            dragMoved = Math.abs(mx) > 8;
+            track.style.transform =
+              "translateX(calc(" + -cur * 100 + "% + " + dx + "px))";
+            parallax(dx);
+          });
+          function endDrag() {
+            if (!dragging) return;
+            dragging = false;
+            stage.classList.remove("dragging");
+            if (locked) {
+              stage.classList.remove("no-anim");
+              var target = dx < -60 ? cur + 1 : dx > 60 ? cur - 1 : cur;
+              if (target !== cur) go(target, true);
+              else {
+                track.style.transform = "translateX(" + -cur * 100 + "%)";
+                parallax(0);
+              }
+            }
+            dx = 0;
+          }
+          stage.addEventListener("pointerup", endDrag);
+          stage.addEventListener("pointercancel", endDrag);
+          stage.addEventListener(
+            "click",
+            function (e) {
+              /* swallow the click after a drag */
+              if (dragMoved) {
+                e.preventDefault();
+                e.stopPropagation();
+                dragMoved = false;
+              }
+            },
+            true,
+          );
+
+          /* mouse-wheel: slides change while the deck fills the view,
+       then hands scrolling back to the page at the last slide */
+          var viewObs = new IntersectionObserver(
+            function (es) {
+              es.forEach(function (en) {
+                engaged = en.isIntersecting && en.intersectionRatio > 0.5;
+              });
+            },
+            { threshold: [0, 0.5, 0.75] },
+          );
+          viewObs.observe(stage);
+          wheelRoot.addEventListener(
+            "wheel",
+            function (e) {
+              if (!engaged) return;
+              var d =
+                Math.abs(e.deltaX) > Math.abs(e.deltaY) ? e.deltaX : e.deltaY;
+              if (Math.abs(d) < 12) return;
+              var dir = d > 0 ? 1 : -1;
+              if ((dir > 0 && cur >= N - 1) || (dir < 0 && cur <= 0)) return;
+              var now = Date.now();
+              if (now - lastNav < 650) return;
+              e.preventDefault();
+              lastNav = now;
+              go(cur + dir, true);
+            },
+            { passive: false },
+          );
+
+          /* initial state + intro stagger for the first slide */
+          apply();
+          if (onChange) onChange(0, slides[0]);
+          if (!window.matchMedia("(prefers-reduced-motion: reduce)").matches) {
+            var first = slides[0];
+            var io2 = new IntersectionObserver(
+              function (es) {
+                es.forEach(function (en) {
+                  if (en.isIntersecting) {
+                    io2.disconnect();
+                    first.classList.remove("is-active");
+                    void stage.offsetWidth;
+                    requestAnimationFrame(function () {
+                      first.classList.add("is-active");
+                    });
+                  }
+                });
+              },
+              { threshold: 0.25 },
+            );
+            io2.observe(stage);
+          }
+          return self;
+        }
+
+        /* arrow keys drive whichever deck currently fills the view */
+        document.addEventListener("keydown", function (e) {
+          if (e.key !== "ArrowRight" && e.key !== "ArrowLeft") return;
+          var t = document.activeElement;
+          if (t && /INPUT|SELECT|TEXTAREA/.test(t.tagName)) return;
+          for (var i = 0; i < deckRegistry.length; i++) {
+            if (deckRegistry[i].engaged()) {
+              deckRegistry[i].go(
+                e.key === "ArrowRight"
+                  ? deckRegistry[i].cur() + 1
+                  : deckRegistry[i].cur() - 1,
+              );
+              break;
+            }
+          }
+        });
+
+        /* ---- Deck 1: curriculum explorer + "you are here" rail ---- */
+        var xstageEl = document.getElementById("xstage");
+        if (xstageEl) {
+          var railItems = Array.prototype.slice.call(
+            document.querySelectorAll(".xr-item"),
+          );
+          function syncRailBlocks(si) {
+            var item = railItems[si];
+            if (!item) return;
+            var lis = item.querySelectorAll(".xr-blocks li");
+            Array.prototype.forEach.call(
+              xstageEl.querySelectorAll(".xslide")[si].querySelectorAll(".blk"),
+              function (b, i) {
+                if (lis[i])
+                  lis[i].classList.toggle("on", b.classList.contains("open"));
+              },
+            );
+          }
+          var curriculumDeck = makeDeck(
+            xstageEl,
+            document.getElementById("explorer"),
+            function (n) {
+              railItems.forEach(function (it, i) {
+                it.classList.toggle("active", i === n);
+                var h = it.querySelector(".xr-head");
+                if (h)
+                  h.setAttribute("aria-expanded", i === n ? "true" : "false");
+              });
+            },
+          );
+          railItems.forEach(function (it, i) {
+            var h = it.querySelector(".xr-head");
+            if (h)
+              h.addEventListener("click", function () {
+                curriculumDeck.go(i);
+              });
+          });
+          Array.prototype.forEach.call(
+            xstageEl.querySelectorAll(".xslide"),
+            function (slide, si) {
+              var blks = slide.querySelectorAll(".blk");
+              Array.prototype.forEach.call(blks, function (blk) {
+                var head = blk.querySelector(".blk-head");
+                head.addEventListener("click", function () {
+                  var wasOpen = blk.classList.contains("open");
+                  Array.prototype.forEach.call(blks, function (b) {
+                    b.classList.remove("open");
+                    b.querySelector(".blk-head").setAttribute(
+                      "aria-expanded",
+                      "false",
+                    );
+                  });
+                  if (!wasOpen) {
+                    blk.classList.add("open");
+                    head.setAttribute("aria-expanded", "true");
+                  }
+                  syncRailBlocks(si);
+                });
+              });
+            },
+          );
+          syncRailBlocks(0);
+        }
+
+        /* ---- Deck 2: interaction windows + ambient background cross-fade ---- */
+        var iStage = document.getElementById("ideck");
+        if (iStage) {
+          var interSection = document.getElementById("interactions");
+          makeDeck(iStage, interSection, function (n, slide) {
+            /* the whole section fades to the active window's color mood */
+            interSection.style.backgroundColor = slide.dataset.amb || "#fff";
+            var dark = slide.dataset.dark === "1";
+            interSection.classList.toggle(
+              "idark",
+              dark,
+            ); /* headline & lede colors */
+            iStage.classList.toggle(
+              "s-dark",
+              dark,
+            ); /* dots, arrows, progress  */
+            if (n === 1)
+              setTimeout(playFade, 380); /* auto-run the fade-up demo */
+          });
+        }
+
+        /* ---------- Trial form (no backend — confirm inline) ---------- */
+        var form = document.getElementById("trialForm");
+        form.addEventListener("submit", function (e) {
+          e.preventDefault();
+          var email = document.getElementById("temail").value;
+          showToast(
+            "Request received — your trial invite is on its way to " +
+              email +
+              ".",
+          );
+          form.reset();
+          document.getElementById("f1").checked = true;
+        });
+
+        /* ---------- Graceful image fallback (keeps layout intact offline) ---------- */
+        document.querySelectorAll(".photo img").forEach(function (img) {
+          img.addEventListener("error", function () {
+            img.closest(".photo").classList.add("noimg");
+          });
+        });
+      })();
+    </script>
+  </body>
+</html>
