@@ -1,0 +1,21 @@
+{
+  "name": "lattice",
+  "private": true,
+  "packageManager": "pnpm@10.12.1",
+  "scripts": {
+    "gen": "pnpm --filter @lattice/types gen",
+    "gen:check": "node tools/codegen/gen.mjs --check",
+    "typecheck": "pnpm -r typecheck",
+    "test": "pnpm -r test",
+    "check:openapi": "node tools/codegen/check-openapi.mjs",
+    "check:browser": "node tools/codegen/check-browser-bundle.mjs"
+  },
+  "devDependencies": {
+    "ajv": "8.17.1",
+    "ajv-formats": "3.0.1",
+    "esbuild": "0.25.5",
+    "json-schema-to-typescript": "15.0.4",
+    "yaml": "2.8.0",
+    "typescript": "5.9.3"
+  }
+}

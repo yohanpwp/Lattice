@@ -19,7 +19,7 @@
 ## 1. โครงรวมของ repo
 
 ```
-yourproduct/
+lattice/
 ├── backend/            # Go module: server บน PocketBase
 ├── third_party/
 │   └── pocketbase/     # [KEEP] (ทางเลือก) fork แยก repo/submodule เมื่อจำเป็นต้อง patch
@@ -90,9 +90,9 @@ import (
 	"github.com/pocketbase/pocketbase"
 	"github.com/pocketbase/pocketbase/core"
 
-	"yourproduct/backend/internal/api"
-	"yourproduct/backend/internal/platform/registry"
-	_ "yourproduct/backend/internal/plugins/payments" // init() ลงทะเบียน plugin
+	"lattice/backend/internal/api"
+	"lattice/backend/internal/platform/registry"
+	_ "lattice/backend/internal/plugins/payments" // init() ลงทะเบียน plugin
 )
 
 func main() {
@@ -238,9 +238,9 @@ MVP ปัจจุบันไม่รวมการนำเข้า Excel 
 -->
 ## 8. ข้อตัดสินใจที่ยังเปิดอยู่
 
-- Mobile: Capacitor (UI ชุดเดียว) หรือ React Native (native UX)
-- ใช้ Vite SPA หรือ Next.js (static export) เป็นแอปหลัก
-- ใช้ PocketBase เป็น library ล้วน หรือมี fork ไว้ patch
+- Mobile: React Native (native UX)
+- ใช้ Vite SPA เป็นแอปหลัก
+- ใช้ PocketBase เป็น fork ไว้ patch
 - วิธี deploy ช่วงแรก (VM + reverse proxy หรือ Kubernetes)
 
 *เอกสารนี้เป็นข้อมูลทั่วไป ไม่ใช่คำปรึกษาทางกฎหมาย ควรให้ทนายตรวจเรื่อง license ก่อนจำหน่ายจริง*

@@ -1,5 +1,6 @@
 {
   "$schema": "http://json-schema.org/draft-07/schema#",
+  "$id": "https://lattice.dev/schemas/dashboard-layout.json",
   "title": "DashboardLayout",
   "description": "Server-driven dashboard layout. Every platform renders the same widget types.",
   "type": "object",

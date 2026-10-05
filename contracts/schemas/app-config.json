@@ -1,5 +1,6 @@
 {
   "$schema": "http://json-schema.org/draft-07/schema#",
+  "$id": "https://lattice.dev/schemas/app-config.json",
   "title": "AppConfig",
   "description": "Public, non-secret configuration served by GET /v1/config. Never add secrets here.",
   "type": "object",
@@ -16,10 +17,10 @@
     "collections"
   ],
   "properties": {
-    "version": { "type": "integer", "minimum": 1, "description": "Version of this config format." },
+    "version": { "type": "integer", "const": 1, "description": "Version of this config format." },
     "tenant_id": { "type": "string", "minLength": 1 },
-    "backend_url": { "type": "string", "pattern": "^https?://", "description": "Stable tenant hostname, never an instance address." },
-    "realtime_url": { "type": "string", "pattern": "^https?://", "description": "PocketBase realtime (SSE) endpoint." },
+    "backend_url": { "type": "string", "format": "uri", "pattern": "^https?://[^/\\s?#]+(?:/[^\\s?#]*)?$", "description": "Stable tenant hostname, never an instance address." },
+    "realtime_url": { "type": "string", "format": "uri", "pattern": "^https?://[^/\\s?#]+(?:/[^\\s?#]*)?$", "description": "PocketBase realtime (SSE) endpoint." },
     "app_key": { "type": "string", "minLength": 1, "description": "Publishable key. Not a secret." },
     "schema_version": { "type": "string", "minLength": 1 },
     "min_client_version": { "type": "string", "pattern": "^\\d+\\.\\d+\\.\\d+$", "description": "Oldest client version this backend supports." },

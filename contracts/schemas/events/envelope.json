@@ -1,5 +1,6 @@
 {
   "$schema": "http://json-schema.org/draft-07/schema#",
+  "$id": "https://lattice.dev/schemas/events/envelope.json",
   "title": "EventEnvelope",
   "description": "Envelope for every event/webhook payload. Always versioned.",
   "type": "object",
@@ -9,7 +10,7 @@
     "id": { "type": "string", "minLength": 1, "description": "Unique event id (use as idempotency key)." },
     "type": { "type": "string", "pattern": "^[a-z_]+(\\.[a-z_]+)+$", "description": "e.g. payment.succeeded" },
     "version": { "type": "integer", "minimum": 1 },
-    "occurred_at": { "type": "string", "pattern": "^\\d{4}-\\d{2}-\\d{2}T", "description": "RFC 3339 timestamp." },
+    "occurred_at": { "type": "string", "format": "date-time", "description": "RFC 3339 timestamp." },
     "tenant_id": { "type": "string", "minLength": 1 },
     "data": { "type": "object", "additionalProperties": true }
   }

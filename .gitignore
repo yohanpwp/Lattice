@@ -45,6 +45,7 @@ Thumbs.db
 
 # Dependencies (if any vendored, though go.mod handles standard deps)
 vendor/
+node_modules/
 
 # Local Dev Databases / Containers
 /data/

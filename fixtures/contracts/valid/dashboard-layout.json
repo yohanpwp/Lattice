@@ -1,0 +1,1 @@
+{"id":"main","name":"Main","layout":[{"id":"orders","type":"table","collection":"orders","x":0,"y":0,"w":12,"h":3,"props":{"filter":"owner = {:owner}","params":{"owner":"u1"},"sort":"-created","fields":["id","created"]}}]}

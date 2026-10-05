@@ -1,5 +1,6 @@
 {
   "$schema": "http://json-schema.org/draft-07/schema#",
+  "$id": "https://lattice.dev/schemas/plugin-manifest.json",
   "title": "PluginManifest",
   "description": "Manifest every plugin ships with. Checked by the registry at startup.",
   "type": "object",

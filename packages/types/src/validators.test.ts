@@ -1,4 +1,4 @@
-import { readFileSync } from "node:fs";
+import { readFileSync, readdirSync } from "node:fs";
 import { describe, expect, it } from "vitest";
 import {
   ContractError,
@@ -21,6 +21,30 @@ const validConfig = {
   collections: ["orders"],
 };
 
+describe("shared TypeScript and Go contract fixtures", () => {
+  const cases = [
+    ["app-config", assertAppConfig],
+    ["features", assertFeatures],
+    ["dashboard-layout", assertDashboardLayout],
+    ["plugin-manifest", assertPluginManifest],
+    ["event-envelope", assertEventEnvelope],
+  ] as const;
+
+  for (const [schema, validate] of cases) {
+    for (const kind of ["valid", "invalid"] as const) {
+      const dir = new URL(`../../../fixtures/contracts/${kind}/`, import.meta.url);
+      const fixtures = readdirSync(dir).filter((name) => name === `${schema}.json` || name.startsWith(`${schema}-`));
+      for (const fixture of fixtures) {
+        it(`${kind} ${schema} fixture ${fixture} matches the shared contract`, () => {
+          const value = JSON.parse(readFileSync(new URL(fixture, dir), "utf8"));
+          if (kind === "valid") expect(() => validate(value)).not.toThrow();
+          else expect(() => validate(value)).toThrow(ContractError);
+        });
+      }
+    }
+  }
+});
+
 describe("AppConfig", () => {
   it("accepts a valid config", () => {
     expect(assertAppConfig(validConfig).tenant_id).toBe("tenant_dev");
@@ -38,10 +62,7 @@ describe("AppConfig", () => {
   });
 
   it("matches the backend example tenant config (cross-layer contract test)", () => {
-    const raw = readFileSync(
-      new URL("../../../backend/config/tenant.example.json", import.meta.url),
-      "utf8",
-    );
+    const raw = readFileSync(new URL("../../../backend/tenant.example.json", import.meta.url), "utf8");
     expect(() => assertAppConfig(JSON.parse(raw))).not.toThrow();
   });
 });

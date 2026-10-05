@@ -1,5 +1,6 @@
 {
   "$schema": "http://json-schema.org/draft-07/schema#",
+  "$id": "https://lattice.dev/schemas/features.json",
   "title": "Features",
   "description": "Per-tenant feature flags (served by GET /v1/features, planned for M2). Options must never contain secrets.",
   "type": "object",

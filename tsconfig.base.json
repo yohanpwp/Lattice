@@ -8,7 +8,6 @@
     "noUncheckedIndexedAccess": true,
     "esModuleInterop": true,
     "skipLibCheck": true,
-    "isolatedModules": true,
-    "noEmit": true
+    "declaration": true
   }
 }

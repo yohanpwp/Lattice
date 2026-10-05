@@ -1,0 +1,1 @@
+{"version":2,"tenant_id":"tenant_dev","backend_url":"ftp://acme.example.com","realtime_url":"/api/realtime","app_key":"pk_dev_000000","schema_version":"schema_opaque_2026_a","min_client_version":"0.1","features":["orders","orders"],"collections":[]}
