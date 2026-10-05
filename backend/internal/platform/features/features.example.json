@@ -1,0 +1,8 @@
+{
+  "features": {
+    "payments": {
+      "enabled": false,
+      "options": {}
+    }
+  }
+}
