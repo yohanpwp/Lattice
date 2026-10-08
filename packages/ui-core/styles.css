@@ -1,0 +1,122 @@
+/* Styles for @yourproduct/ui-web. Colors are tokens so apps can theme them. */
+:root {
+  --yp-bg: #f6f7f9;
+  --yp-surface: #ffffff;
+  --yp-text: #14171f;
+  --yp-muted: #5d6677;
+  --yp-border: #dfe3ea;
+  --yp-accent: #2f5bea;
+  --yp-error: #b42318;
+  --yp-radius: 12px;
+  --yp-row-height: 3.25rem;
+}
+
+:root:not([data-theme="light"]) {
+  color-scheme: light dark;
+}
+
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    --yp-bg: #0f1218;
+    --yp-surface: #181c25;
+    --yp-text: #e8ebf2;
+    --yp-muted: #9aa3b5;
+    --yp-border: #2a303d;
+    --yp-accent: #7d9bff;
+    --yp-error: #ff8a80;
+  }
+}
+
+:root[data-theme="dark"] {
+  --yp-bg: #0f1218;
+  --yp-surface: #181c25;
+  --yp-text: #e8ebf2;
+  --yp-muted: #9aa3b5;
+  --yp-border: #2a303d;
+  --yp-accent: #7d9bff;
+  --yp-error: #ff8a80;
+}
+
+.yp-grid {
+  display: grid;
+  grid-template-columns: repeat(12, minmax(0, 1fr));
+  grid-auto-rows: var(--yp-row-height);
+  gap: 1rem;
+}
+
+.yp-widget {
+  grid-column: var(--yp-col);
+  grid-row: var(--yp-row);
+  min-width: 0;
+  overflow: hidden;
+  display: flex;
+  flex-direction: column;
+  padding: 1rem;
+  background: var(--yp-surface);
+  border: 1px solid var(--yp-border);
+  border-radius: var(--yp-radius);
+}
+
+.yp-widget-title {
+  margin: 0 0 0.5rem;
+  font-size: 0.8rem;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: var(--yp-muted);
+}
+
+.yp-kpi {
+  margin: 0;
+  font-size: 2.25rem;
+  font-weight: 700;
+  line-height: 1.1;
+}
+
+.yp-muted {
+  margin: 0;
+  color: var(--yp-muted);
+}
+
+.yp-error {
+  margin: 0;
+  color: var(--yp-error);
+}
+
+.yp-scroll {
+  overflow: auto;
+}
+
+.yp-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 0.875rem;
+}
+
+.yp-table th,
+.yp-table td {
+  padding: 0.4rem 0.5rem;
+  text-align: left;
+  border-bottom: 1px solid var(--yp-border);
+  white-space: nowrap;
+}
+
+.yp-list {
+  margin: 0;
+  padding-left: 1.1rem;
+  overflow: auto;
+}
+
+/* Narrow screens (phones, small windows): stack widgets in one column. */
+@media (max-width: 720px) {
+  .yp-grid {
+    grid-template-columns: minmax(0, 1fr);
+    grid-auto-rows: auto;
+  }
+
+  .yp-widget {
+    grid-column: 1 / -1;
+    grid-row: auto;
+    min-height: 8rem;
+  }
+}

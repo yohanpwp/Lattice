@@ -53,6 +53,11 @@ export class ProductClient {
     this.authStore = authStore;
   }
 
+  /** Resolves when any saved session has been loaded. */
+  get sessionRestored(): Promise<void> {
+    return this.authStore.ready;
+  }
+
   static async connect(options: ConnectOptions): Promise<ProductClient> {
     const config = await fetchAppConfig(options.backendUrl, options.platform.fetch);
     return ProductClient.fromConfig(config, options);
