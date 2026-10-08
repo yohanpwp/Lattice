@@ -1,6 +1,7 @@
 package main
 
 import (
+	"errors"
 	"log"
 	"os"
 
@@ -24,12 +25,12 @@ func main() {
 	app.OnServe().BindFunc(func(se *core.ServeEvent) error {
 		// Load config only when serving, so other CLI commands
 		// (e.g. `superuser create`, `migrate`) work without it.
-		cfg, err := tenant.Load(envOr("TENANT_CONFIG", "tenant.json"))
+		cfg, err := loadTenantConfig()
 		if err != nil {
 			return err
 		}
 
-		flags, err := features.Load(envOr("FEATURES_CONFIG", "features.json"))
+		flags, err := loadFeaturesConfig()
 		if err != nil {
 			return err
 		}
@@ -56,9 +57,31 @@ func main() {
 	}
 }
 
-func envOr(key, fallback string) string {
-	if v := os.Getenv(key); v != "" {
-		return v
+func loadTenantConfig() (*tenant.Config, error) {
+	if path := os.Getenv("TENANT_CONFIG"); path != "" {
+		return tenant.Load(path)
 	}
-	return fallback
+	if _, err := os.Stat("tenant.json"); err == nil {
+		return tenant.Load("tenant.json")
+	}
+	if _, err := os.Stat("tenant.example.json"); err == nil {
+		log.Println("Notice: tenant.json not found, using tenant.example.json for development")
+		return tenant.Load("tenant.example.json")
+	}
+	return nil, errors.New("tenant configuration not found (expected tenant.json or tenant.example.json)")
+}
+
+func loadFeaturesConfig() (*features.Flags, error) {
+	if path := os.Getenv("FEATURES_CONFIG"); path != "" {
+		return features.Load(path)
+	}
+	if _, err := os.Stat("features.json"); err == nil {
+		return features.Load("features.json")
+	}
+	if _, err := os.Stat("features.example.json"); err == nil {
+		log.Println("Notice: features.json not found, using features.example.json for development")
+		return features.Load("features.example.json")
+	}
+	log.Println("Notice: features config not found, defaulting to empty features")
+	return features.Empty(), nil
 }

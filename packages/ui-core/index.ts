@@ -13,5 +13,4 @@ export * from "./format";
 export * from "./useWidgetData";
 export * from "./validators";
 export * from "./client";
-export * from "./generated/types";
-export * from "./generated/schemas";
+export * from "@lattice/types";

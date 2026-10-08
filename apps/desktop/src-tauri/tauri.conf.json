@@ -1,19 +1,19 @@
 {
   "$schema": "https://schema.tauri.app/config/2",
-  "productName": "YourProduct",
+  "productName": "Lattice",
   "version": "0.1.0",
-  "identifier": "com.yourcompany.yourproduct",
+  "identifier": "com.lattice.app",
   "build": {
-    "beforeDevCommand": "pnpm --filter @yourproduct/client dev",
+    "beforeDevCommand": "pnpm --filter @lattice/client dev",
     "devUrl": "http://localhost:5173",
-    "beforeBuildCommand": "pnpm --filter @yourproduct/client build",
+    "beforeBuildCommand": "pnpm --filter @lattice/client build",
     "frontendDist": "../../client/dist"
   },
   "app": {
     "windows": [
       {
         "label": "main",
-        "title": "YourProduct",
+        "title": "Lattice",
         "width": 1200,
         "height": 800,
         "minWidth": 480,

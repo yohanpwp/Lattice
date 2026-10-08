@@ -4,10 +4,10 @@
   "private": true,
   "type": "module",
   "exports": {
-    ".": "./index.ts"
+    ".": "./index.ts",
+    "./styles.css": "./styles.css"
   },
   "scripts": {
-    "gen": "node ./gen.mjs",
     "typecheck": "tsc --noEmit",
     "test": "vitest run"
   },
@@ -22,10 +22,6 @@
     "@types/node": "22.15.30",
     "@types/react": "^19.0.0",
     "@types/react-dom": "^19.0.0",
-    "ajv": "8.17.1",
-    "ajv-formats": "3.0.1",
-    "esbuild": "0.25.5",
-    "json-schema-to-typescript": "15.0.4",
     "react": "^19.0.0",
     "react-dom": "^19.0.0",
     "typescript": "5.9.3",
