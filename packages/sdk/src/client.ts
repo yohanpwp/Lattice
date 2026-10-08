@@ -1,10 +1,9 @@
 import PocketBase, { type RecordModel } from "pocketbase";
 import { assertAppConfig, assertFeatures, type AppConfig, type Features } from "@lattice/types";
-import { createAuthStore, type PersistentAuthStore } from "./authStore";
+import { AuthPersistenceError, createAuthStore, type PersistentAuthStore } from "./authStore";
 import { fetchAppConfig } from "./config";
 import { ClientTooOldError } from "./errors";
 import type { PlatformAdapters } from "./platform";
-import { PaymentsApi } from "./payments";
 import { isClientCompatible } from "./version";
 
 export interface ClientOptions {
@@ -48,14 +47,10 @@ export class ProductClient {
   readonly config: AppConfig;
   readonly pb: PocketBase;
   readonly authStore: PersistentAuthStore;
-  /** Payments (checkout, payment status). Requires the "payments" feature. */
-  readonly payments: PaymentsApi;
-
   private constructor(config: AppConfig, pb: PocketBase, authStore: PersistentAuthStore) {
     this.config = config;
     this.pb = pb;
     this.authStore = authStore;
-    this.payments = new PaymentsApi(pb, () => this.hasFeature("payments"));
   }
 
   static async connect(options: ConnectOptions): Promise<ProductClient> {
@@ -131,16 +126,24 @@ export class ProductClient {
    * an offline app does not sign people out.
    */
   async refreshSession(): Promise<boolean> {
-    if (!this.pb.authStore.isValid) return false;
+    if (!this.pb.authStore.token) return false;
+    if (!this.pb.authStore.isValid) {
+      this.pb.authStore.clear();
+      await this.authStore.flush();
+      return false;
+    }
 
     const collection = this.pb.authStore.record?.collectionName ?? "users";
     try {
       await this.pb.collection(collection).authRefresh();
+      await this.authStore.flush();
       return true;
     } catch (err) {
+      if (err instanceof AuthPersistenceError) throw err;
       const status = (err as { status?: number } | null)?.status;
       if (status === 401 || status === 403 || status === 404) {
         this.pb.authStore.clear();
+        await this.authStore.flush();
         return false;
       }
       return true;

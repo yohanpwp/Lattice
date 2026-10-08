@@ -50,6 +50,20 @@ func (s *Store) EnqueueTx(app core.App, e outbox.Event) error {
 	if err != nil {
 		return fmt.Errorf("outbox collection missing (did the migration run?): %w", err)
 	}
+	existing, err := app.FindRecordsByFilter(
+		CollectionName,
+		"event_id = {:id}",
+		"",
+		1,
+		0,
+		dbx.Params{"id": e.ID},
+	)
+	if err != nil {
+		return fmt.Errorf("outbox: check duplicate event id: %w", err)
+	}
+	if len(existing) > 0 {
+		return outbox.ErrDuplicateEvent
+	}
 
 	occurred, err := types.ParseDateTime(e.OccurredAt)
 	if err != nil {
@@ -71,6 +85,21 @@ func (s *Store) EnqueueTx(app core.App, e outbox.Event) error {
 		if strings.Contains(err.Error(), "UNIQUE constraint failed") {
 			return outbox.ErrDuplicateEvent
 		}
+		// PocketBase can report a uniqueness collision through record field
+		// validation instead of the database constraint. Recheck with a bound
+		// filter to classify that concurrent duplicate without hiding other
+		// validation or persistence errors.
+		duplicates, checkErr := app.FindRecordsByFilter(
+			CollectionName,
+			"event_id = {:id}",
+			"",
+			1,
+			0,
+			dbx.Params{"id": e.ID},
+		)
+		if checkErr == nil && len(duplicates) > 0 {
+			return outbox.ErrDuplicateEvent
+		}
 		return fmt.Errorf("outbox: save event: %w", err)
 	}
 	return nil
@@ -86,7 +115,7 @@ func (s *Store) Due(_ context.Context, now time.Time, limit int) ([]outbox.Entry
 	records, err := s.app.FindRecordsByFilter(
 		CollectionName,
 		"status = 'pending' && next_attempt_at <= {:now}",
-		"+occurred_at",
+		"+occurred_at,+event_id",
 		limit,
 		0,
 		dbx.Params{"now": nowValue.String()},

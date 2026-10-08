@@ -1,0 +1,30 @@
+{
+  "id": "pbc_0000000001",
+  "name": "outbox",
+  "type": "base",
+  "listRule": null,
+  "viewRule": null,
+  "createRule": null,
+  "updateRule": null,
+  "deleteRule": null,
+  "fields": [
+    { "id": "text0000000001", "name": "id", "type": "text", "required": true, "system": true, "primaryKey": true, "autogeneratePattern": "[a-z0-9]{15}", "min": 15, "max": 15, "pattern": "^[a-z0-9]+$", "hidden": false, "presentable": false, "help": "" },
+    { "id": "text0000000002", "name": "event_id", "type": "text", "required": true, "system": false, "primaryKey": false, "autogeneratePattern": "", "min": 0, "max": 0, "pattern": "", "hidden": false, "presentable": false, "help": "" },
+    { "id": "text0000000003", "name": "type", "type": "text", "required": true, "system": false, "primaryKey": false, "autogeneratePattern": "", "min": 0, "max": 0, "pattern": "", "hidden": false, "presentable": false, "help": "" },
+    { "id": "number0000000001", "name": "version", "type": "number", "required": true, "system": false, "onlyInt": true, "min": null, "max": null, "presentable": false, "help": "" },
+    { "id": "date0000000001", "name": "occurred_at", "type": "date", "required": true, "system": false, "min": "", "max": "", "presentable": false, "help": "" },
+    { "id": "text0000000004", "name": "tenant_id", "type": "text", "required": true, "system": false, "primaryKey": false, "autogeneratePattern": "", "min": 0, "max": 0, "pattern": "", "hidden": false, "presentable": false, "help": "" },
+    { "id": "json0000000001", "name": "data", "type": "json", "required": false, "system": false, "maxSize": 1048576, "presentable": false, "help": "" },
+    { "id": "select000000001", "name": "status", "type": "select", "required": true, "system": false, "maxSelect": 1, "values": ["pending", "delivered", "failed"], "presentable": false, "help": "" },
+    { "id": "number0000000002", "name": "attempts", "type": "number", "required": false, "system": false, "onlyInt": true, "min": null, "max": null, "presentable": false, "help": "" },
+    { "id": "date0000000002", "name": "next_attempt_at", "type": "date", "required": false, "system": false, "min": "", "max": "", "presentable": false, "help": "" },
+    { "id": "text0000000005", "name": "last_error", "type": "text", "required": false, "system": false, "primaryKey": false, "autogeneratePattern": "", "min": 0, "max": 2000, "pattern": "", "hidden": false, "presentable": false, "help": "" }
+  ],
+  "indexes": [
+    "CREATE UNIQUE INDEX `idx_outbox_event_id` ON `outbox` (event_id)",
+    "CREATE INDEX `idx_outbox_due` ON `outbox` (status, next_attempt_at)"
+  ],
+  "created": "2026-01-01 00:00:00.000Z",
+  "updated": "2026-01-01 00:00:00.000Z",
+  "system": false
+}

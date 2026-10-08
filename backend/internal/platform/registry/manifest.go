@@ -1,9 +1,13 @@
 package registry
 
 import (
+	"encoding/json"
 	"errors"
 	"fmt"
+	"os"
 	"regexp"
+
+	"github.com/Lattice/backend/internal/platform/tenant"
 )
 
 // SupportedInterfaceVersion is the plugin interface version this platform
@@ -28,6 +32,18 @@ type Manifest struct {
 
 // Validate checks the manifest against the contract.
 func (m Manifest) Validate() error {
+	encoded, err := json.Marshal(m)
+	if err != nil {
+		return fmt.Errorf("encode manifest: %w", err)
+	}
+	var document any
+	if err := json.Unmarshal(encoded, &document); err != nil {
+		return fmt.Errorf("decode manifest: %w", err)
+	}
+	if err := tenant.ValidateContractDocument("PluginManifest", document); err != nil {
+		return err
+	}
+
 	var errs []error
 
 	if !namePattern.MatchString(m.Name) {
@@ -68,4 +84,33 @@ func (m Manifest) Validate() error {
 	}
 
 	return errors.Join(errs...)
+}
+
+// ParseManifest decodes a JSON plugin manifest, validates it against the shared
+// contract, then applies registry-specific invariants.
+func ParseManifest(raw []byte) (Manifest, error) {
+	var document any
+	if err := json.Unmarshal(raw, &document); err != nil {
+		return Manifest{}, fmt.Errorf("parse manifest: %w", err)
+	}
+	if err := tenant.ValidateContractDocument("PluginManifest", document); err != nil {
+		return Manifest{}, fmt.Errorf("invalid manifest: %w", err)
+	}
+	var manifest Manifest
+	if err := json.Unmarshal(raw, &manifest); err != nil {
+		return Manifest{}, fmt.Errorf("parse manifest: %w", err)
+	}
+	if err := manifest.Validate(); err != nil {
+		return Manifest{}, fmt.Errorf("invalid manifest: %w", err)
+	}
+	return manifest, nil
+}
+
+// LoadManifest reads and validates a JSON plugin manifest from path.
+func LoadManifest(path string) (Manifest, error) {
+	raw, err := os.ReadFile(path)
+	if err != nil {
+		return Manifest{}, fmt.Errorf("read manifest %s: %w", path, err)
+	}
+	return ParseManifest(raw)
 }

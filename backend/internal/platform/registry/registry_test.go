@@ -2,13 +2,50 @@ package registry
 
 import (
 	"context"
+	"os"
+	"path/filepath"
 	"errors"
 	"reflect"
 	"strings"
 	"testing"
 
 	"github.com/Lattice/backend/internal/platform/outbox"
+	"github.com/Lattice/backend/internal/platform/secrets"
 )
+
+func TestParseManifestUsesSharedContractFixtures(t *testing.T) {
+	root := filepath.Join("..", "..", "..", "..", "fixtures", "contracts")
+	valid, err := os.ReadFile(filepath.Join(root, "valid", "plugin-manifest.json"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	manifest, err := ParseManifest(valid)
+	if err != nil || manifest.Name != "orders" {
+		t.Fatalf("valid shared fixture rejected: manifest=%+v err=%v", manifest, err)
+	}
+
+	invalid, err := os.ReadFile(filepath.Join(root, "invalid", "plugin-manifest.json"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := ParseManifest(invalid); err == nil {
+		t.Fatal("invalid shared fixture was accepted")
+	}
+}
+
+func TestParseManifestRejectsMissingUnknownAndTrailingJSON(t *testing.T) {
+	for name, source := range map[string]string{
+		"missing required field": `{"name":"inventory","version":"1.0.0","interface_version":1}`,
+		"unknown field": `{"name":"inventory","version":"1.0.0","interface_version":1,"license":"MIT","extra":true}`,
+		"trailing document": `{"name":"inventory","version":"1.0.0","interface_version":1,"license":"MIT"} {}`,
+	} {
+		t.Run(name, func(t *testing.T) {
+			if _, err := ParseManifest([]byte(source)); err == nil {
+				t.Fatal("expected invalid manifest to be rejected")
+			}
+		})
+	}
+}
 
 type fakeFlags map[string]map[string]any // name -> options; presence means enabled
 
@@ -25,6 +62,7 @@ type fakePlugin struct {
 	started  *[]string
 	failWith error
 	gotOpts  map[string]any
+	gotSecrets secrets.Store
 }
 
 func (p *fakePlugin) Manifest() Manifest { return p.manifest }
@@ -33,6 +71,7 @@ func (p *fakePlugin) Start(_ context.Context, host Host) error {
 		return p.failWith
 	}
 	p.gotOpts = host.Options
+	p.gotSecrets = host.Secrets
 	*p.started = append(*p.started, p.manifest.Name)
 	return nil
 }
@@ -126,6 +165,36 @@ func TestActivate_PassesOptions(t *testing.T) {
 	}
 	if p.gotOpts["default_provider"] != "omise" {
 		t.Fatalf("options not passed: %v", p.gotOpts)
+	}
+}
+
+func TestActivateWithSecretsInjectsPrivateStoreWithoutEagerReads(t *testing.T) {
+	var started []string
+	p := plugin(&started, "payments")
+	r := New("outbox")
+	if err := r.Register(p); err != nil {
+		t.Fatal(err)
+	}
+	lookups := 0
+	store := secrets.EnvStore{LookupEnv: func(key string) (string, bool) {
+		lookups++
+		if key == "LATTICE_SECRET_PAYMENT_API_KEY" {
+			return "private-value", true
+		}
+		return "", false
+	}}
+	if _, err := r.ActivateWithSecrets(context.Background(), fakeFlags{"payments": nil}, fakeBus{}, store); err != nil {
+		t.Fatal(err)
+	}
+	if lookups != 0 {
+		t.Fatalf("activation eagerly loaded secret values: %d lookups", lookups)
+	}
+	if p.gotSecrets == nil {
+		t.Fatal("plugin host did not receive configured secret store")
+	}
+	value, err := p.gotSecrets.Get(context.Background(), "PAYMENT_API_KEY")
+	if err != nil || value != "private-value" || lookups != 1 {
+		t.Fatalf("private lookup = %q, %v (lookups=%d)", value, err, lookups)
 	}
 }
 

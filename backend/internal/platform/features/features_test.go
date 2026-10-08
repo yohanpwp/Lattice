@@ -48,6 +48,10 @@ func TestLoad_Rejects(t *testing.T) {
 		"bad feature name":        `{"features": {"Payments!": {"enabled": true}}}`,
 		"secret option":           `{"features": {"payments": {"enabled": true, "options": {"omise_secret_key": "x"}}}}`,
 		"nested secret option":    `{"features": {"payments": {"enabled": true, "options": {"a": {"api_key": "x"}}}}}`,
+		"missing features":        `{}`,
+		"null features":           `{"features": null}`,
+		"missing enabled":         `{"features": {"inventory": {}}}`,
+		"trailing document":       `{"features": {}} {"features": {}}`,
 		"not json":                `nope`,
 	}
 	for name, content := range cases {
@@ -56,6 +60,12 @@ func TestLoad_Rejects(t *testing.T) {
 				t.Fatal("expected error, got nil")
 			}
 		})
+	}
+}
+
+func TestValidateRejectsNilFeatureMap(t *testing.T) {
+	if err := (&Flags{}).Validate(); err == nil {
+		t.Fatal("nil features map must not produce a valid public payload")
 	}
 }
 

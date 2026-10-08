@@ -6,18 +6,20 @@ import (
 
 	"github.com/pocketbase/pocketbase"
 	"github.com/pocketbase/pocketbase/core"
+	"github.com/pocketbase/pocketbase/plugins/migratecmd"
 
 	"github.com/Lattice/backend/internal/api"
 	_ "github.com/Lattice/backend/internal/migrations" // registers our schema migrations
 	"github.com/Lattice/backend/internal/platform"
 	"github.com/Lattice/backend/internal/platform/features"
 	"github.com/Lattice/backend/internal/platform/registry"
+	"github.com/Lattice/backend/internal/platform/secrets"
 	"github.com/Lattice/backend/internal/platform/tenant"
-	// paymentspb "github.com/Lattice/backend/internal/plugins/payments/pb"
 )
 
 func main() {
 	app := pocketbase.New()
+	migratecmd.MustRegister(app, app.RootCmd, migratecmd.Config{})
 
 	app.OnServe().BindFunc(func(se *core.ServeEvent) error {
 		// Load config only when serving, so other CLI commands
@@ -35,15 +37,12 @@ func main() {
 		// The feature flags file is the single source of truth for which
 		// features are on; it overrides any list in the tenant config.
 		cfg.Features = flags.EnabledNames()
-
-		// Plugins that need PocketBase (routes, collections) are registered here,
-		// before platform.Start activates the ones this tenant has enabled.
-		/* deps := platform.NewDeps(se, cfg.TenantID, cfg.BackendURL)
-		if err := paymentspb.Register(registry.Default, deps); err != nil {
+		secretStore, err := secrets.NewConfigured(nil)
+		if err != nil {
 			return err
-		} */
+		}
 
-		if err := platform.Start(se.App, cfg.TenantID, flags, registry.Default); err != nil {
+		if err := platform.StartWithSecrets(se.App, cfg.TenantID, flags, registry.Default, secretStore); err != nil {
 			return err
 		}
 

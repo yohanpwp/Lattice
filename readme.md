@@ -84,7 +84,7 @@ Lattice/
 │   ├── internal/
 │   │   ├── platform/   # plugin registry, outbox worker, features, tenant loader, secrets
 │   │   ├── api/        # custom endpoints (/v1/*)
-│   │   └── plugins/    # โมดูลธุรกิจ เช่น payments, crm
+│   │   └── plugins/    # โมดูลธุรกิจในอนาคต (payments อยู่ใน M4)
 │   └── migrations/     # migration เสริมต่อท้ายระบบ PocketBase
 ├── contracts/          # แหล่งความจริง (Single Source of Truth) ของ Schema & API
 │   ├── openapi.yaml    # OpenAPI spec สำหรับ /v1/*

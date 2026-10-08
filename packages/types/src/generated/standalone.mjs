@@ -639,6 +639,7 @@ function validate10(data, { instancePath = "", parentData, parentDataProperty, r
   return errors === 0;
 }
 var validateFeatures = validate11;
+var pattern3 = new RegExp("^[a-z][a-z0-9_-]{0,48}$", "u");
 function validate11(data, { instancePath = "", parentData, parentDataProperty, rootData = data } = {}) {
   ;
   let vErrors = null;
@@ -668,10 +669,10 @@ function validate11(data, { instancePath = "", parentData, parentDataProperty, r
       let data0 = data.features;
       if (data0 && typeof data0 == "object" && !Array.isArray(data0)) {
         for (const key1 in data0) {
-          let data1 = data0[key1];
-          if (data1 && typeof data1 == "object" && !Array.isArray(data1)) {
-            if (data1.enabled === void 0) {
-              const err2 = { instancePath: instancePath + "/features/" + key1.replace(/~/g, "~0").replace(/\//g, "~1"), schemaPath: "#/$defs/Feature/required", keyword: "required", params: { missingProperty: "enabled" }, message: "must have required property 'enabled'" };
+          const _errs4 = errors;
+          if (typeof key1 === "string") {
+            if (!pattern3.test(key1)) {
+              const err2 = { instancePath: instancePath + "/features", schemaPath: "#/properties/features/propertyNames/pattern", keyword: "pattern", params: { pattern: "^[a-z][a-z0-9_-]{0,48}$" }, message: 'must match pattern "^[a-z][a-z0-9_-]{0,48}$"', propertyName: key1 };
               if (vErrors === null) {
                 vErrors = [err2];
               } else {
@@ -679,33 +680,33 @@ function validate11(data, { instancePath = "", parentData, parentDataProperty, r
               }
               errors++;
             }
-            for (const key2 in data1) {
-              if (!(key2 === "enabled" || key2 === "options")) {
-                const err3 = { instancePath: instancePath + "/features/" + key1.replace(/~/g, "~0").replace(/\//g, "~1"), schemaPath: "#/$defs/Feature/additionalProperties", keyword: "additionalProperties", params: { additionalProperty: key2 }, message: "must NOT have additional properties" };
-                if (vErrors === null) {
-                  vErrors = [err3];
-                } else {
-                  vErrors.push(err3);
-                }
-                errors++;
-              }
+          }
+          var valid1 = _errs4 === errors;
+          if (!valid1) {
+            const err3 = { instancePath: instancePath + "/features", schemaPath: "#/properties/features/propertyNames", keyword: "propertyNames", params: { propertyName: key1 }, message: "property name must be valid" };
+            if (vErrors === null) {
+              vErrors = [err3];
+            } else {
+              vErrors.push(err3);
             }
-            if (data1.enabled !== void 0) {
-              if (typeof data1.enabled !== "boolean") {
-                const err4 = { instancePath: instancePath + "/features/" + key1.replace(/~/g, "~0").replace(/\//g, "~1") + "/enabled", schemaPath: "#/$defs/Feature/properties/enabled/type", keyword: "type", params: { type: "boolean" }, message: "must be boolean" };
-                if (vErrors === null) {
-                  vErrors = [err4];
-                } else {
-                  vErrors.push(err4);
-                }
-                errors++;
-              }
-            }
-            if (data1.options !== void 0) {
-              let data3 = data1.options;
-              if (data3 && typeof data3 == "object" && !Array.isArray(data3)) {
+            errors++;
+          }
+        }
+        for (const key2 in data0) {
+          let data1 = data0[key2];
+          if (data1 && typeof data1 == "object" && !Array.isArray(data1)) {
+            if (data1.enabled === void 0) {
+              const err4 = { instancePath: instancePath + "/features/" + key2.replace(/~/g, "~0").replace(/\//g, "~1"), schemaPath: "#/$defs/Feature/required", keyword: "required", params: { missingProperty: "enabled" }, message: "must have required property 'enabled'" };
+              if (vErrors === null) {
+                vErrors = [err4];
               } else {
-                const err5 = { instancePath: instancePath + "/features/" + key1.replace(/~/g, "~0").replace(/\//g, "~1") + "/options", schemaPath: "#/$defs/Feature/properties/options/type", keyword: "type", params: { type: "object" }, message: "must be object" };
+                vErrors.push(err4);
+              }
+              errors++;
+            }
+            for (const key3 in data1) {
+              if (!(key3 === "enabled" || key3 === "options")) {
+                const err5 = { instancePath: instancePath + "/features/" + key2.replace(/~/g, "~0").replace(/\//g, "~1"), schemaPath: "#/$defs/Feature/additionalProperties", keyword: "additionalProperties", params: { additionalProperty: key3 }, message: "must NOT have additional properties" };
                 if (vErrors === null) {
                   vErrors = [err5];
                 } else {
@@ -714,32 +715,56 @@ function validate11(data, { instancePath = "", parentData, parentDataProperty, r
                 errors++;
               }
             }
+            if (data1.enabled !== void 0) {
+              if (typeof data1.enabled !== "boolean") {
+                const err6 = { instancePath: instancePath + "/features/" + key2.replace(/~/g, "~0").replace(/\//g, "~1") + "/enabled", schemaPath: "#/$defs/Feature/properties/enabled/type", keyword: "type", params: { type: "boolean" }, message: "must be boolean" };
+                if (vErrors === null) {
+                  vErrors = [err6];
+                } else {
+                  vErrors.push(err6);
+                }
+                errors++;
+              }
+            }
+            if (data1.options !== void 0) {
+              let data3 = data1.options;
+              if (data3 && typeof data3 == "object" && !Array.isArray(data3)) {
+              } else {
+                const err7 = { instancePath: instancePath + "/features/" + key2.replace(/~/g, "~0").replace(/\//g, "~1") + "/options", schemaPath: "#/$defs/Feature/properties/options/type", keyword: "type", params: { type: "object" }, message: "must be object" };
+                if (vErrors === null) {
+                  vErrors = [err7];
+                } else {
+                  vErrors.push(err7);
+                }
+                errors++;
+              }
+            }
           } else {
-            const err6 = { instancePath: instancePath + "/features/" + key1.replace(/~/g, "~0").replace(/\//g, "~1"), schemaPath: "#/$defs/Feature/type", keyword: "type", params: { type: "object" }, message: "must be object" };
+            const err8 = { instancePath: instancePath + "/features/" + key2.replace(/~/g, "~0").replace(/\//g, "~1"), schemaPath: "#/$defs/Feature/type", keyword: "type", params: { type: "object" }, message: "must be object" };
             if (vErrors === null) {
-              vErrors = [err6];
+              vErrors = [err8];
             } else {
-              vErrors.push(err6);
+              vErrors.push(err8);
             }
             errors++;
           }
         }
       } else {
-        const err7 = { instancePath: instancePath + "/features", schemaPath: "#/properties/features/type", keyword: "type", params: { type: "object" }, message: "must be object" };
+        const err9 = { instancePath: instancePath + "/features", schemaPath: "#/properties/features/type", keyword: "type", params: { type: "object" }, message: "must be object" };
         if (vErrors === null) {
-          vErrors = [err7];
+          vErrors = [err9];
         } else {
-          vErrors.push(err7);
+          vErrors.push(err9);
         }
         errors++;
       }
     }
   } else {
-    const err8 = { instancePath, schemaPath: "#/type", keyword: "type", params: { type: "object" }, message: "must be object" };
+    const err10 = { instancePath, schemaPath: "#/type", keyword: "type", params: { type: "object" }, message: "must be object" };
     if (vErrors === null) {
-      vErrors = [err8];
+      vErrors = [err10];
     } else {
-      vErrors.push(err8);
+      vErrors.push(err10);
     }
     errors++;
   }
@@ -749,11 +774,11 @@ function validate11(data, { instancePath = "", parentData, parentDataProperty, r
 var validateDashboardLayout = validate12;
 var schema15 = { "type": "object", "additionalProperties": false, "required": ["id", "type", "collection", "x", "y", "w", "h"], "properties": { "id": { "type": "string", "minLength": 1 }, "type": { "enum": ["table", "chart", "kpi", "form", "list"] }, "collection": { "type": "string", "pattern": "^[a-zA-Z_][a-zA-Z0-9_]*$" }, "x": { "type": "integer", "minimum": 0 }, "y": { "type": "integer", "minimum": 0 }, "w": { "type": "integer", "minimum": 1, "maximum": 12 }, "h": { "type": "integer", "minimum": 1 }, "props": { "$ref": "#/$defs/WidgetProps" } } };
 var schema16 = { "type": "object", "additionalProperties": false, "properties": { "filter": { "type": "string", "maxLength": 500, "description": "PocketBase filter with {:name} placeholders bound from params." }, "params": { "type": "object", "additionalProperties": { "type": ["string", "number", "boolean"] } }, "sort": { "type": "string", "pattern": "^-?[a-zA-Z_][a-zA-Z0-9_.]*(,-?[a-zA-Z_][a-zA-Z0-9_.]*)*$" }, "metric": { "type": "string", "pattern": "^(count|(sum|avg|min|max):[a-zA-Z_][a-zA-Z0-9_]*)$" }, "groupBy": { "type": "string", "pattern": "^[a-zA-Z_][a-zA-Z0-9_]*(:(day|week|month|year))?$" }, "fields": { "type": "array", "maxItems": 50, "items": { "type": "string", "pattern": "^[a-zA-Z_][a-zA-Z0-9_.]*$" } } } };
-var pattern3 = new RegExp("^[a-zA-Z_][a-zA-Z0-9_]*$", "u");
-var pattern4 = new RegExp("^-?[a-zA-Z_][a-zA-Z0-9_.]*(,-?[a-zA-Z_][a-zA-Z0-9_.]*)*$", "u");
-var pattern5 = new RegExp("^(count|(sum|avg|min|max):[a-zA-Z_][a-zA-Z0-9_]*)$", "u");
-var pattern6 = new RegExp("^[a-zA-Z_][a-zA-Z0-9_]*(:(day|week|month|year))?$", "u");
-var pattern7 = new RegExp("^[a-zA-Z_][a-zA-Z0-9_.]*$", "u");
+var pattern4 = new RegExp("^[a-zA-Z_][a-zA-Z0-9_]*$", "u");
+var pattern5 = new RegExp("^-?[a-zA-Z_][a-zA-Z0-9_.]*(,-?[a-zA-Z_][a-zA-Z0-9_.]*)*$", "u");
+var pattern6 = new RegExp("^(count|(sum|avg|min|max):[a-zA-Z_][a-zA-Z0-9_]*)$", "u");
+var pattern7 = new RegExp("^[a-zA-Z_][a-zA-Z0-9_]*(:(day|week|month|year))?$", "u");
+var pattern8 = new RegExp("^[a-zA-Z_][a-zA-Z0-9_.]*$", "u");
 function validate13(data, { instancePath = "", parentData, parentDataProperty, rootData = data } = {}) {
   let vErrors = null;
   let errors = 0;
@@ -869,7 +894,7 @@ function validate13(data, { instancePath = "", parentData, parentDataProperty, r
     if (data.collection !== void 0) {
       let data2 = data.collection;
       if (typeof data2 === "string") {
-        if (!pattern3.test(data2)) {
+        if (!pattern4.test(data2)) {
           const err11 = { instancePath: instancePath + "/collection", schemaPath: "#/properties/collection/pattern", keyword: "pattern", params: { pattern: "^[a-zA-Z_][a-zA-Z0-9_]*$" }, message: 'must match pattern "^[a-zA-Z_][a-zA-Z0-9_]*$"' };
           if (vErrors === null) {
             vErrors = [err11];
@@ -1053,7 +1078,7 @@ function validate13(data, { instancePath = "", parentData, parentDataProperty, r
         if (data7.sort !== void 0) {
           let data11 = data7.sort;
           if (typeof data11 === "string") {
-            if (!pattern4.test(data11)) {
+            if (!pattern5.test(data11)) {
               const err27 = { instancePath: instancePath + "/props/sort", schemaPath: "#/$defs/WidgetProps/properties/sort/pattern", keyword: "pattern", params: { pattern: "^-?[a-zA-Z_][a-zA-Z0-9_.]*(,-?[a-zA-Z_][a-zA-Z0-9_.]*)*$" }, message: 'must match pattern "^-?[a-zA-Z_][a-zA-Z0-9_.]*(,-?[a-zA-Z_][a-zA-Z0-9_.]*)*$"' };
               if (vErrors === null) {
                 vErrors = [err27];
@@ -1075,7 +1100,7 @@ function validate13(data, { instancePath = "", parentData, parentDataProperty, r
         if (data7.metric !== void 0) {
           let data12 = data7.metric;
           if (typeof data12 === "string") {
-            if (!pattern5.test(data12)) {
+            if (!pattern6.test(data12)) {
               const err29 = { instancePath: instancePath + "/props/metric", schemaPath: "#/$defs/WidgetProps/properties/metric/pattern", keyword: "pattern", params: { pattern: "^(count|(sum|avg|min|max):[a-zA-Z_][a-zA-Z0-9_]*)$" }, message: 'must match pattern "^(count|(sum|avg|min|max):[a-zA-Z_][a-zA-Z0-9_]*)$"' };
               if (vErrors === null) {
                 vErrors = [err29];
@@ -1097,7 +1122,7 @@ function validate13(data, { instancePath = "", parentData, parentDataProperty, r
         if (data7.groupBy !== void 0) {
           let data13 = data7.groupBy;
           if (typeof data13 === "string") {
-            if (!pattern6.test(data13)) {
+            if (!pattern7.test(data13)) {
               const err31 = { instancePath: instancePath + "/props/groupBy", schemaPath: "#/$defs/WidgetProps/properties/groupBy/pattern", keyword: "pattern", params: { pattern: "^[a-zA-Z_][a-zA-Z0-9_]*(:(day|week|month|year))?$" }, message: 'must match pattern "^[a-zA-Z_][a-zA-Z0-9_]*(:(day|week|month|year))?$"' };
               if (vErrors === null) {
                 vErrors = [err31];
@@ -1132,7 +1157,7 @@ function validate13(data, { instancePath = "", parentData, parentDataProperty, r
             for (let i0 = 0; i0 < len0; i0++) {
               let data15 = data14[i0];
               if (typeof data15 === "string") {
-                if (!pattern7.test(data15)) {
+                if (!pattern8.test(data15)) {
                   const err34 = { instancePath: instancePath + "/props/fields/" + i0, schemaPath: "#/$defs/WidgetProps/properties/fields/items/pattern", keyword: "pattern", params: { pattern: "^[a-zA-Z_][a-zA-Z0-9_.]*$" }, message: 'must match pattern "^[a-zA-Z_][a-zA-Z0-9_.]*$"' };
                   if (vErrors === null) {
                     vErrors = [err34];
@@ -1312,8 +1337,8 @@ function validate12(data, { instancePath = "", parentData, parentDataProperty, r
   return errors === 0;
 }
 var validatePluginManifest = validate15;
-var pattern8 = new RegExp("^[a-z][a-z0-9-]{1,48}$", "u");
-var pattern10 = new RegExp("^[a-z_]+:[a-z0-9_*]+$", "u");
+var pattern9 = new RegExp("^[a-z][a-z0-9-]{1,48}$", "u");
+var pattern11 = new RegExp("^[a-z_]+:[a-z0-9_*]+$", "u");
 function validate15(data, { instancePath = "", parentData, parentDataProperty, rootData = data } = {}) {
   ;
   let vErrors = null;
@@ -1369,7 +1394,7 @@ function validate15(data, { instancePath = "", parentData, parentDataProperty, r
     if (data.name !== void 0) {
       let data0 = data.name;
       if (typeof data0 === "string") {
-        if (!pattern8.test(data0)) {
+        if (!pattern9.test(data0)) {
           const err5 = { instancePath: instancePath + "/name", schemaPath: "#/properties/name/pattern", keyword: "pattern", params: { pattern: "^[a-z][a-z0-9-]{1,48}$" }, message: 'must match pattern "^[a-z][a-z0-9-]{1,48}$"' };
           if (vErrors === null) {
             vErrors = [err5];
@@ -1521,7 +1546,7 @@ function validate15(data, { instancePath = "", parentData, parentDataProperty, r
         for (let i2 = 0; i2 < len1; i2++) {
           let data7 = data6[i2];
           if (typeof data7 === "string") {
-            if (!pattern10.test(data7)) {
+            if (!pattern11.test(data7)) {
               const err17 = { instancePath: instancePath + "/permissions/" + i2, schemaPath: "#/properties/permissions/items/pattern", keyword: "pattern", params: { pattern: "^[a-z_]+:[a-z0-9_*]+$" }, message: 'must match pattern "^[a-z_]+:[a-z0-9_*]+$"' };
               if (vErrors === null) {
                 vErrors = [err17];
@@ -1586,7 +1611,7 @@ function validate15(data, { instancePath = "", parentData, parentDataProperty, r
   return errors === 0;
 }
 var validateEventEnvelope = validate16;
-var pattern11 = new RegExp("^[a-z_]+(\\.[a-z_]+)+$", "u");
+var pattern12 = new RegExp("^[a-z_]+(\\.[a-z_]+)+$", "u");
 var formats4 = require_formats().fullFormats["date-time"];
 function validate16(data, { instancePath = "", parentData, parentDataProperty, rootData = data } = {}) {
   ;
@@ -1683,7 +1708,7 @@ function validate16(data, { instancePath = "", parentData, parentDataProperty, r
     if (data.type !== void 0) {
       let data1 = data.type;
       if (typeof data1 === "string") {
-        if (!pattern11.test(data1)) {
+        if (!pattern12.test(data1)) {
           const err9 = { instancePath: instancePath + "/type", schemaPath: "#/properties/type/pattern", keyword: "pattern", params: { pattern: "^[a-z_]+(\\.[a-z_]+)+$" }, message: 'must match pattern "^[a-z_]+(\\.[a-z_]+)+$"' };
           if (vErrors === null) {
             vErrors = [err9];

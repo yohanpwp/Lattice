@@ -85,6 +85,9 @@ func Backoff(attempt int, base, max time.Duration) time.Duration {
 
 // RunOnce delivers one batch of due events and returns how many it processed.
 func (w *Worker) RunOnce(ctx context.Context) (int, error) {
+	if err := ctx.Err(); err != nil {
+		return 0, err
+	}
 	now := w.cfg.Now()
 	entries, err := w.store.Due(ctx, now, w.cfg.BatchSize)
 	if err != nil {
@@ -92,18 +95,29 @@ func (w *Worker) RunOnce(ctx context.Context) (int, error) {
 	}
 
 	var errs []error
+	processed := 0
 	for _, entry := range entries {
+		if err := ctx.Err(); err != nil {
+			errs = append(errs, err)
+			break
+		}
 		if err := w.deliver(ctx, entry, now); err != nil {
 			errs = append(errs, err)
 		}
+		processed++
 	}
-	return len(entries), errors.Join(errs...)
+	return processed, errors.Join(errs...)
 }
 
 func (w *Worker) deliver(ctx context.Context, entry Entry, now time.Time) error {
 	id := entry.Event.ID
 
 	handlerErr := w.dispatcher.Dispatch(ctx, entry.Event)
+	if ctx.Err() != nil {
+		// Shutdown is not a delivery failure. Keep the event pending without
+		// consuming an attempt; the next process can safely retry it.
+		return ctx.Err()
+	}
 	if handlerErr == nil {
 		return w.store.MarkDelivered(ctx, id)
 	}

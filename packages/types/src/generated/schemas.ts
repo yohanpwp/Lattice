@@ -76,7 +76,7 @@ export const featuresSchema = {
   "$schema": "http://json-schema.org/draft-07/schema#",
   "$id": "https://lattice.dev/schemas/features.json",
   "title": "Features",
-  "description": "Per-tenant feature flags (served by GET /v1/features, planned for M2). Options must never contain secrets.",
+  "description": "Per-tenant feature flags served by authenticated GET /v1/features. Options must never contain secrets.",
   "type": "object",
   "additionalProperties": false,
   "required": [
@@ -85,6 +85,9 @@ export const featuresSchema = {
   "properties": {
     "features": {
       "type": "object",
+      "propertyNames": {
+        "pattern": "^[a-z][a-z0-9_-]{0,48}$"
+      },
       "additionalProperties": {
         "$ref": "#/$defs/Feature"
       }

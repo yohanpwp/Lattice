@@ -31,7 +31,7 @@ export interface AppConfig {
 }
 
 /**
- * Per-tenant feature flags (served by GET /v1/features, planned for M2). Options must never contain secrets.
+ * Per-tenant feature flags served by authenticated GET /v1/features. Options must never contain secrets.
  */
 export interface Features {
   features: {

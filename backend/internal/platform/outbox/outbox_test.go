@@ -5,6 +5,7 @@ import (
 	"errors"
 	"io"
 	"log/slog"
+	"math"
 	"strings"
 	"testing"
 	"time"
@@ -45,6 +46,8 @@ func TestNewEventAndValidate(t *testing.T) {
 		"no tenant":   func(e *Event) { e.TenantID = "" },
 		"zero time":   func(e *Event) { e.OccurredAt = time.Time{} },
 		"nil data":    func(e *Event) { e.Data = nil },
+		"non-json data": func(e *Event) { e.Data = map[string]any{"bad": make(chan int)} },
+		"non-finite data": func(e *Event) { e.Data = map[string]any{"bad": math.NaN()} },
 	}
 	for name, mutate := range cases {
 		t.Run(name, func(t *testing.T) {
@@ -200,6 +203,56 @@ func TestWorker_FailingEventDoesNotBlockOthers(t *testing.T) {
 	}
 	if delivered != 1 {
 		t.Fatalf("second event should still be delivered, got %d", delivered)
+	}
+}
+
+func TestWorker_DoesNotDispatchAfterCancellation(t *testing.T) {
+	now := t0
+	store := NewMemoryStore()
+	d := NewDispatcher()
+	ctx, cancel := context.WithCancel(context.Background())
+	called := 0
+	d.Subscribe("order.created", func(context.Context, Event) error {
+		called++
+		cancel()
+		return nil
+	})
+	d.Subscribe("order.created", func(context.Context, Event) error {
+		called++
+		return nil
+	})
+	_ = store.Enqueue(context.Background(), mustEvent(t, "order.created", t0))
+	secondEvent := mustEvent(t, "order.created", t0.Add(time.Second))
+	_ = store.Enqueue(context.Background(), secondEvent)
+
+	w := NewWorker(store, d, quietConfig(&now))
+	_, _ = w.RunOnce(ctx)
+	if called != 1 {
+		t.Fatalf("handlers started after cancellation: called %d times", called)
+	}
+	entries, err := store.Due(context.Background(), now.Add(time.Hour), 10)
+	if err != nil || len(entries) != 2 {
+		t.Fatalf("canceled deliveries should remain pending: entries=%+v err=%v", entries, err)
+	}
+	for _, entry := range entries {
+		if entry.Attempts != 0 || entry.Status != StatusPending {
+			t.Fatalf("shutdown cancellation consumed a retry: %+v", entry)
+		}
+	}
+}
+
+func TestWorker_PreCanceledContextDoesNotLoadOrDispatch(t *testing.T) {
+	now := t0
+	store := NewMemoryStore()
+	_ = store.Enqueue(context.Background(), mustEvent(t, "order.created", t0))
+	d := NewDispatcher()
+	called := false
+	d.Subscribe("order.created", func(context.Context, Event) error { called = true; return nil })
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+
+	if n, err := NewWorker(store, d, quietConfig(&now)).RunOnce(ctx); n != 0 || !errors.Is(err, context.Canceled) || called {
+		t.Fatalf("pre-canceled RunOnce = (%d, %v), called=%v", n, err, called)
 	}
 }
 

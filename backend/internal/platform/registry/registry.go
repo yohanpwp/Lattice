@@ -17,6 +17,7 @@ import (
 	"sync"
 
 	"github.com/Lattice/backend/internal/platform/outbox"
+	"github.com/Lattice/backend/internal/platform/secrets"
 )
 
 // EventBus is what plugins use to talk to each other without direct calls.
@@ -28,6 +29,7 @@ type EventBus interface {
 // Host is handed to a plugin when it starts.
 type Host struct {
 	Events EventBus
+	Secrets secrets.Store
 	// Options are the plugin's non-secret options from the tenant's feature flags.
 	Options map[string]any
 }
@@ -112,6 +114,15 @@ func (r *Registry) Manifests() []Manifest {
 // It fails before starting anything if an enabled plugin targets another
 // interface version, requires something that is unavailable, or has a cycle.
 func (r *Registry) Activate(ctx context.Context, flags FlagReader, bus EventBus) (Report, error) {
+	return r.ActivateWithSecrets(ctx, flags, bus, secrets.EmptyStore{})
+}
+
+// ActivateWithSecrets activates enabled plugins with the configured private
+// secret provider. The provider is exposed only to plugin startup code.
+func (r *Registry) ActivateWithSecrets(ctx context.Context, flags FlagReader, bus EventBus, secretStore secrets.Store) (Report, error) {
+	if secretStore == nil {
+		secretStore = secrets.EmptyStore{}
+	}
 	r.mu.Lock()
 	enabled := map[string]Plugin{}
 	var skipped []string
@@ -144,7 +155,7 @@ func (r *Registry) Activate(ctx context.Context, flags FlagReader, bus EventBus)
 
 	report := Report{Skipped: skipped}
 	for _, name := range order {
-		host := Host{Events: bus}
+		host := Host{Events: bus, Secrets: secretStore}
 		if flags != nil {
 			host.Options = flags.Options(name)
 		}

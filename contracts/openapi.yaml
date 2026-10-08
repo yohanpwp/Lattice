@@ -3,7 +3,9 @@ info:
   title: Product custom API
   version: 1.1.0
   description: >
-    Custom routes served under /v1. PocketBase's own /api/* endpoints are NOT
+    Implemented M0-M2 routes served under /v1. Payment endpoints are deferred
+    to M4 and are intentionally absent until the backend implements them.
+    PocketBase's own /api/* endpoints are NOT
     described here; clients reach them through the SDK (which wraps the
     PocketBase JS SDK).
 servers:
@@ -55,111 +57,6 @@ paths:
                 $ref: ./schemas/features.json
         "401":
           description: Missing or invalid auth token
-  /v1/payments/checkout:
-    post:
-      operationId: createCheckout
-      summary: Start (or resume, or replay) a payment for an order
-      description: >
-        Requires the payments feature and a signed-in user. The amount comes
-        from the order on the server. Retrying with the same idempotency_key
-        returns the same payment and never creates a second charge. The
-        customer completes payment at `payment_url`.
-      security:
-        - pocketbaseToken: []
-      requestBody:
-        required: true
-        content:
-          application/json:
-            schema:
-              $ref: ./schemas/payments/checkout-request.json
-      responses:
-        "200":
-          description: The payment
-          content:
-            application/json:
-              schema:
-                $ref: ./schemas/payments/payment.json
-        "400":
-          description: invalid_request or provider_not_enabled
-          content:
-            application/json:
-              schema:
-                $ref: "#/components/schemas/Error"
-        "401":
-          description: Not signed in
-        "404":
-          description: order_not_found (also returned for another user's order)
-          content:
-            application/json:
-              schema:
-                $ref: "#/components/schemas/Error"
-        "409":
-          description: order_already_paid or idempotency_conflict
-          content:
-            application/json:
-              schema:
-                $ref: "#/components/schemas/Error"
-        "422":
-          description: charge_rejected (the provider permanently declined)
-          content:
-            application/json:
-              schema:
-                $ref: "#/components/schemas/Error"
-        "503":
-          description: temporarily_unavailable. Retry with the SAME idempotency_key.
-          content:
-            application/json:
-              schema:
-                $ref: "#/components/schemas/Error"
-  /v1/payments/{id}:
-    get:
-      operationId: getPayment
-      summary: Read one of your own payments
-      security:
-        - pocketbaseToken: []
-      parameters:
-        - name: id
-          in: path
-          required: true
-          schema:
-            type: string
-      responses:
-        "200":
-          description: The payment
-          content:
-            application/json:
-              schema:
-                $ref: ./schemas/payments/payment.json
-        "401":
-          description: Not signed in
-        "404":
-          description: Not found (also returned for another user's payment)
-  /v1/webhooks/payments/{provider}:
-    post:
-      operationId: receivePaymentWebhook
-      summary: Webhook called by a payment provider
-      description: >
-        Not for clients. Authenticated by the provider's signature over the
-        raw body (and a timestamp), not by a user token. This URL is part of
-        the contract with every provider, which is why it is versioned.
-        Duplicate deliveries are harmless.
-      parameters:
-        - name: provider
-          in: path
-          required: true
-          schema:
-            type: string
-      responses:
-        "200":
-          description: Accepted (also for duplicates, ignored event types and unknown payments)
-        "400":
-          description: invalid_signature or invalid_request
-        "404":
-          description: unknown_provider
-        "413":
-          description: Body too large
-        "500":
-          description: Temporary failure; the provider should retry
 components:
   securitySchemes:
     pocketbaseToken:

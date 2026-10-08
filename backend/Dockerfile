@@ -15,8 +15,9 @@ FROM alpine:3.20
 RUN apk add --no-cache ca-certificates
 COPY --from=build /out/server /app/server
 
-# Tenant config is mounted at /config/tenant.json; data lives in /pb_data
+# Tenant and feature config are mounted at /config; data lives in /pb_data.
 ENV TENANT_CONFIG=/config/tenant.json
+ENV FEATURES_CONFIG=/config/features.json
 VOLUME /pb_data
 EXPOSE 8090
 

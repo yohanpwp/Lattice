@@ -2,8 +2,9 @@
 
 Source of truth for everything clients and plugins depend on.
 
-- `openapi.yaml`: custom `/v1/*` routes only. PocketBase's `/api/*` is not redefined here.
+- `openapi.yaml`: implemented M0-M2 custom `/v1/*` routes only. Payment endpoints are deferred to M4. PocketBase's `/api/*` is not redefined here.
 - `schemas/*.json`: JSON Schema (draft-07). `schemas/events/` holds event envelopes.
+- `collections/`: PocketBase-compatible core collection definitions; the outbox definition is tested against the migration.
 - `packages/types`: generated TypeScript types, schema constants, and browser-safe standalone validators.
 - `packages/sdk`: one ProductClient and injected storage/realtime adapters for every app.
 - `backend/internal/platform/tenant/schema_bundle.go`: generated schema copy compiled into the backend; the Docker image does not need the repository root.

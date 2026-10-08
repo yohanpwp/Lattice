@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"testing"
 
 	"github.com/pocketbase/pocketbase"
@@ -55,5 +56,51 @@ func TestConfigRouteServesSharedSchemaDocument(t *testing.T) {
 	}
 	if received.Version != 1 || received.SchemaVersion != "opaque_schema_id" {
 		t.Fatalf("unexpected config document: %#v", received)
+	}
+}
+
+func TestFeaturesRouteRequiresAuthAndServesSharedSchemaDocument(t *testing.T) {
+	app := pocketbase.New()
+	flags := &features.Flags{Features: map[string]features.Feature{
+		"orders": {Enabled: true, Options: map[string]any{"mode": "read"}},
+	}}
+	r := router.NewRouter[*core.RequestEvent](func(w http.ResponseWriter, req *http.Request) (*core.RequestEvent, router.EventCleanupFunc) {
+		event := &core.RequestEvent{App: app, Event: router.Event{Response: w, Request: req}}
+		if req.Header.Get("Authorization") != "" {
+			event.Auth = core.NewRecord(core.NewAuthCollection("users"))
+		}
+		return event, func() {}
+	})
+	Register(&core.ServeEvent{App: app, Router: r}, nil, flags)
+	mux, err := r.BuildMux()
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	unauthorized := httptest.NewRecorder()
+	mux.ServeHTTP(unauthorized, httptest.NewRequest(http.MethodGet, "/v1/features", nil))
+	if unauthorized.Code != http.StatusUnauthorized {
+		t.Fatalf("unauthenticated /v1/features status = %d, want 401", unauthorized.Code)
+	}
+
+	request := httptest.NewRequest(http.MethodGet, "/v1/features", nil)
+	request.Header.Set("Authorization", "pb-test-token")
+	response := httptest.NewRecorder()
+	mux.ServeHTTP(response, request)
+	if response.Code != http.StatusOK {
+		t.Fatalf("authenticated /v1/features status = %d", response.Code)
+	}
+	var document any
+	if err := json.Unmarshal(response.Body.Bytes(), &document); err != nil {
+		t.Fatal(err)
+	}
+	if err := tenant.ValidateContractDocument("Features", document); err != nil {
+		t.Fatalf("GET /v1/features returned raw data outside shared schema: %v", err)
+	}
+	if err := flags.Validate(); err != nil {
+		t.Fatalf("fixture features should validate: %v", err)
+	}
+	if strings.Contains(response.Body.String(), "pb-test-token") {
+		t.Fatal("auth token leaked into features response")
 	}
 }

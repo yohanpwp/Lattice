@@ -3,7 +3,6 @@
 package features
 
 import (
-	"bytes"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -11,6 +10,8 @@ import (
 	"regexp"
 	"sort"
 	"strings"
+
+	"github.com/Lattice/backend/internal/platform/tenant"
 )
 
 var namePattern = regexp.MustCompile(`^[a-z][a-z0-9_-]{0,48}$`)
@@ -46,15 +47,17 @@ func Load(path string) (*Flags, error) {
 		return nil, fmt.Errorf("read %s: %w", path, err)
 	}
 
-	dec := json.NewDecoder(bytes.NewReader(raw))
-	dec.DisallowUnknownFields()
-
-	var flags Flags
-	if err := dec.Decode(&flags); err != nil {
+	var document any
+	if err := json.Unmarshal(raw, &document); err != nil {
 		return nil, fmt.Errorf("parse %s: %w", path, err)
 	}
-	if flags.Features == nil {
-		flags.Features = map[string]Feature{}
+	if err := tenant.ValidateContractDocument("Features", document); err != nil {
+		return nil, fmt.Errorf("invalid %s: %w", path, err)
+	}
+
+	var flags Flags
+	if err := json.Unmarshal(raw, &flags); err != nil {
+		return nil, fmt.Errorf("parse %s: %w", path, err)
 	}
 
 	if err := flags.Validate(); err != nil {
@@ -65,6 +68,21 @@ func Load(path string) (*Flags, error) {
 
 // Validate checks feature names and rejects option keys that look like secrets.
 func (f *Flags) Validate() error {
+	if f == nil {
+		return errors.New("features document is required")
+	}
+	encoded, err := json.Marshal(f)
+	if err != nil {
+		return fmt.Errorf("encode features: %w", err)
+	}
+	var document any
+	if err := json.Unmarshal(encoded, &document); err != nil {
+		return fmt.Errorf("decode features: %w", err)
+	}
+	if err := tenant.ValidateContractDocument("Features", document); err != nil {
+		return err
+	}
+
 	var errs []error
 	for name, feature := range f.Features {
 		if !namePattern.MatchString(name) {

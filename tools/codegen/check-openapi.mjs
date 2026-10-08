@@ -6,9 +6,50 @@ import { parse } from "yaml";
 const root = resolve(fileURLToPath(new URL("../..", import.meta.url)));
 const openapiPath = resolve(root, "contracts/openapi.yaml");
 const document = parse(await readFile(openapiPath, "utf8"));
-const paths = Object.keys(document.paths ?? {});
-if (paths.some((path) => path.startsWith("/api/")) || paths.sort().join(",") !== "/v1/config,/v1/health") {
-  throw new Error(`OpenAPI must describe only implemented /v1 routes; found: ${paths.join(", ")}`);
+const expectedOperations = new Map([
+  ["/v1/health", ["get"]],
+  ["/v1/config", ["get"]],
+  ["/v1/features", ["get"]],
+]);
+
+function validateImplementedRoutes(document) {
+  const paths = Object.keys(document.paths ?? {}).sort();
+  const expectedPaths = [...expectedOperations.keys()].sort();
+  if (paths.join(",") !== expectedPaths.join(",")) {
+    throw new Error(`OpenAPI must describe only implemented M0-M2 /v1 routes; found: ${paths.join(", ")}`);
+  }
+  for (const [path, methods] of expectedOperations) {
+    const operations = document.paths[path] ?? {};
+    const actualMethods = Object.keys(operations).filter((key) => /^[a-z]+$/.test(key)).sort();
+    if (actualMethods.join(",") !== [...methods].sort().join(",")) {
+      throw new Error(`${path} methods must be ${methods.join(", ")}; found: ${actualMethods.join(", ")}`);
+    }
+    for (const method of methods) {
+      if (!operations[method]?.responses?.["200"]) {
+        throw new Error(`${method.toUpperCase()} ${path} must document a 200 response`);
+      }
+    }
+  }
+  if (!document.paths["/v1/features"].get.security?.some((scheme) => scheme.pocketbaseToken)) {
+    throw new Error("GET /v1/features must require the PocketBase auth token");
+  }
+  if (!document.components?.securitySchemes?.pocketbaseToken) {
+    throw new Error("OpenAPI must define the pocketbaseToken security scheme");
+  }
+}
+
+validateImplementedRoutes(document);
+
+// These representative regressions must remain rejected by the route checker.
+for (const mutation of [
+  (doc) => { doc.paths["/v1/payments/checkout"] = { post: { responses: { "200": {} } } }; },
+  (doc) => { delete doc.paths["/v1/features"].get.security; },
+]) {
+  const negative = structuredClone(document);
+  mutation(negative);
+  let rejected = false;
+  try { validateImplementedRoutes(negative); } catch { rejected = true; }
+  if (!rejected) throw new Error("OpenAPI route checker accepted an invalid contract regression");
 }
 
 function pointerTarget(document, pointer) {

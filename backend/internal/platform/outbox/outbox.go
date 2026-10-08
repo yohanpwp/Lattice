@@ -15,16 +15,19 @@ import (
 	"context"
 	"crypto/rand"
 	"encoding/hex"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"regexp"
 	"sync"
 	"time"
+
+	"github.com/Lattice/backend/internal/platform/tenant"
 )
 
 var typePattern = regexp.MustCompile(`^[a-z_]+(\.[a-z_]+)+$`)
 
-// Event mirrors contracts/schemas/events/event-envelope.json.
+// Event mirrors contracts/schemas/events/envelope.json.
 type Event struct {
 	ID         string         `json:"id"`
 	Type       string         `json:"type"` // e.g. "payment.succeeded"
@@ -56,6 +59,18 @@ func NewEvent(tenantID, eventType string, version int, data map[string]any, now 
 
 // Validate checks the event against the envelope contract.
 func (e Event) Validate() error {
+	encoded, err := json.Marshal(e)
+	if err != nil {
+		return fmt.Errorf("encode event: %w", err)
+	}
+	var document any
+	if err := json.Unmarshal(encoded, &document); err != nil {
+		return fmt.Errorf("decode event: %w", err)
+	}
+	if err := tenant.ValidateContractDocument("EventEnvelope", document); err != nil {
+		return err
+	}
+
 	var errs []error
 	if e.ID == "" {
 		errs = append(errs, errors.New("id is required"))
@@ -147,8 +162,16 @@ func (d *Dispatcher) Dispatch(ctx context.Context, e Event) error {
 
 	var errs []error
 	for i, h := range handlers {
+		if err := ctx.Err(); err != nil {
+			errs = append(errs, err)
+			break
+		}
 		if err := safeCall(ctx, h, e); err != nil {
 			errs = append(errs, fmt.Errorf("handler %d for %s: %w", i, e.Type, err))
+		}
+		if err := ctx.Err(); err != nil {
+			errs = append(errs, err)
+			break
 		}
 	}
 	return errors.Join(errs...)

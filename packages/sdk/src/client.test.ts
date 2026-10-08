@@ -24,6 +24,7 @@ const config = {
   features: ["orders"],
   collections: ["orders"],
 };
+const featureFlags = { features: { orders: { enabled: true, options: { mode: "read" } } } };
 
 function json(data: unknown, status = 200): Response {
   return new Response(JSON.stringify(data), { status, headers: { "Content-Type": "application/json" } });
@@ -125,6 +126,122 @@ describe("ProductClient bootstrap", () => {
     const client = await ProductClient.fromConfig(config, { clientVersion: "0.1.0", platform: { storage, fetch: apiFetch() } });
     await expect(client.login("a@example.com", "secret")).rejects.toBeInstanceOf(AuthPersistenceError);
     await expect(client.logout()).rejects.toBeInstanceOf(AuthPersistenceError);
+  });
+
+  it("fetches schema-validated features with the PocketBase auth token", async () => {
+    const calls: Array<{ url: string; authorization: string | null }> = [];
+    const fetchImpl = (async (input: RequestInfo | URL, init?: RequestInit) => {
+      const url = String(input);
+      if (url.endsWith("/v1/config")) return json(config);
+      calls.push({ url, authorization: new Headers(init?.headers).get("Authorization") });
+      return json(featureFlags);
+    }) as typeof fetch;
+    const client = await ProductClient.fromConfig(config, { clientVersion: "0.1.0", platform: { storage: createMemoryStorage(), fetch: fetchImpl } });
+    client.authStore.save("pb-user-token");
+    await client.authStore.flush();
+
+    await expect(client.getFeatures()).resolves.toEqual(featureFlags);
+    expect(calls).toEqual([{ url: expect.stringContaining("/v1/features"), authorization: "pb-user-token" }]);
+  });
+
+  it("rejects invalid features and HTTP errors", async () => {
+    let response: Response = json({ features: { orders: {} } });
+    const fetchImpl = (async (input: RequestInfo | URL) => String(input).endsWith("/v1/config") ? json(config) : response) as typeof fetch;
+    const client = await ProductClient.fromConfig(config, { clientVersion: "0.1.0", platform: { storage: createMemoryStorage(), fetch: fetchImpl } });
+    client.authStore.save("pb-user-token");
+    await client.authStore.flush();
+
+    await expect(client.getFeatures()).rejects.toThrow();
+    response = json({ message: "unauthorized" }, 401);
+    await expect(client.getFeatures()).rejects.toThrow();
+  });
+
+  it("persists a changed refreshed token and restores it in a new client", async () => {
+    const initialToken = "e30.eyJleHAiOjQ3MDAwMDAwMDB9.sig";
+    const refreshedToken = "e30.eyJleHAiOjQ3MDAwMDAwMDEwfQ.sig";
+    const values = new Map<string, string>();
+    const refreshFetch = (async (input: RequestInfo | URL) => {
+      const url = String(input);
+      if (url.endsWith("/v1/config")) return json(config);
+      if (url.includes("auth-refresh")) return json({ token: refreshedToken, record: { id: "user_1", collectionName: "users" } });
+      return json({});
+    }) as typeof fetch;
+    const storage: StorageAdapter = {
+      getItem: async (key) => values.get(key) ?? null,
+      setItem: async (key, value) => { values.set(key, value); },
+      removeItem: async (key) => { values.delete(key); },
+    };
+    const client = await ProductClient.fromConfig(config, { clientVersion: "0.1.0", platform: { storage, fetch: refreshFetch } });
+    client.authStore.save(initialToken, { id: "user_1", collectionName: "users" } as never);
+    await client.authStore.flush();
+    expect(await client.refreshSession()).toBe(true);
+    expect([...values.values()].some((value) => value.includes(refreshedToken))).toBe(true);
+    expect([...values.values()].some((value) => value.includes(initialToken))).toBe(false);
+
+    const restored = await ProductClient.fromConfig(config, { clientVersion: "0.1.0", platform: { storage, fetch: refreshFetch } });
+    expect(restored.authStore.token).toBe(refreshedToken);
+  });
+
+  it("clears expired and rejected sessions, retains offline sessions, and surfaces storage failures", async () => {
+    const validToken = "e30.eyJleHAiOjQ3MDAwMDAwMDB9.sig";
+    const expiredToken = "e30.eyJleHAiOjF9.sig";
+    const values = new Map<string, string>();
+    const storage: StorageAdapter = {
+      getItem: async (key) => values.get(key) ?? null,
+      setItem: async (key, value) => { values.set(key, value); },
+      removeItem: async (key) => { values.delete(key); },
+    };
+    const noRefresh = (status: number) => (async (input: RequestInfo | URL) =>
+      String(input).endsWith("/v1/config") ? json(config) : json({ message: "rejected" }, status)) as typeof fetch;
+
+    const expired = await ProductClient.fromConfig(config, { clientVersion: "0.1.0", platform: { storage, fetch: noRefresh(401) } });
+    expired.authStore.save(expiredToken, { id: "user_1", collectionName: "users" } as never);
+    await expired.authStore.flush();
+    expect(await expired.refreshSession()).toBe(false);
+    expect(values.size).toBe(0);
+
+    const rejected = await ProductClient.fromConfig(config, { clientVersion: "0.1.0", platform: { storage, fetch: noRefresh(401) } });
+    rejected.authStore.save(validToken, { id: "user_1", collectionName: "users" } as never);
+    await rejected.authStore.flush();
+    expect(await rejected.refreshSession()).toBe(false);
+    expect(values.size).toBe(0);
+
+    const offlineFetch = (async (input: RequestInfo | URL) => {
+      if (String(input).endsWith("/v1/config")) return json(config);
+      throw new Error("offline");
+    }) as typeof fetch;
+    const offline = await ProductClient.fromConfig(config, { clientVersion: "0.1.0", platform: { storage, fetch: offlineFetch } });
+    offline.authStore.save(validToken, { id: "user_1", collectionName: "users" } as never);
+    await offline.authStore.flush();
+    expect(await offline.refreshSession()).toBe(true);
+    expect(offline.authStore.token).toBe(validToken);
+
+    let rejectRefreshWrite = false;
+    const failingStorage: StorageAdapter = {
+      getItem: async () => null,
+      setItem: async (_key, value) => {
+        if (rejectRefreshWrite && value.includes("refreshed")) throw new Error("disk unavailable");
+        if (rejectRefreshWrite) throw new Error("disk unavailable");
+      },
+      removeItem: async () => {},
+    };
+    const successfulRefresh = (async (input: RequestInfo | URL) =>
+      String(input).endsWith("/v1/config") ? json(config) : json({ token: `${validToken}.new`, record: { id: "user_1", collectionName: "users" } })) as typeof fetch;
+    const failing = await ProductClient.fromConfig(config, { clientVersion: "0.1.0", platform: { storage: failingStorage, fetch: successfulRefresh } });
+    failing.authStore.save(validToken, { id: "user_1", collectionName: "users" } as never);
+    await failing.authStore.flush();
+    rejectRefreshWrite = true;
+    await expect(failing.refreshSession()).rejects.toBeInstanceOf(AuthPersistenceError);
+
+    const failingRemoval: StorageAdapter = {
+      getItem: async () => null,
+      setItem: async () => {},
+      removeItem: async () => { throw new Error("keychain locked"); },
+    };
+    const removalClient = await ProductClient.fromConfig(config, { clientVersion: "0.1.0", platform: { storage: failingRemoval, fetch: noRefresh(401) } });
+    removalClient.authStore.save(validToken, { id: "user_1", collectionName: "users" } as never);
+    await removalClient.authStore.flush();
+    await expect(removalClient.refreshSession()).rejects.toBeInstanceOf(AuthPersistenceError);
   });
 
   it("rejects old clients and mismatched realtime endpoints", async () => {
