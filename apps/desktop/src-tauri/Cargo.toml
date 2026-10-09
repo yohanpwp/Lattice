@@ -1,0 +1,20 @@
+[package]
+name = "lattice-desktop"
+version = "0.1.0"
+description = "Lattice Desktop App"
+authors = ["Lattice Contributors"]
+edition = "2021"
+
+[lib]
+name = "lattice_desktop_lib"
+crate-type = ["staticlib", "cdylib", "rlib"]
+
+[build-dependencies]
+tauri-build = { version = "2.7.1", features = [] }
+
+[dependencies]
+serde_json = "1.0"
+serde = { version = "1.0", features = ["derive"] }
+log = "0.4"
+tauri = { version = "2.12.1", features = [] }
+tauri-plugin-log = "2"
