@@ -1,5 +1,5 @@
-import type { AppConfig, DashboardLayout, EventEnvelope, Features, PluginManifest } from "./generated/types";
-import { validateAppConfig, validateDashboardLayout, validateEventEnvelope, validateFeatures, validatePluginManifest } from "./generated/standalone.mjs";
+import type { AppConfig, DashboardLayout, EventEnvelope, Features, PluginManifest, CheckoutRequest, Payment } from "./generated/types";
+import { validateAppConfig, validateDashboardLayout, validateEventEnvelope, validateFeatures, validatePluginManifest, validateCheckoutRequest, validatePayment } from "./generated/standalone.mjs";
 
 export interface ContractIssue {
   path: string;
@@ -37,3 +37,5 @@ export const assertFeatures = makeAssert<Features>("Features", validateFeatures)
 export const assertDashboardLayout = makeAssert<DashboardLayout>("DashboardLayout", validateDashboardLayout);
 export const assertPluginManifest = makeAssert<PluginManifest>("PluginManifest", validatePluginManifest);
 export const assertEventEnvelope = makeAssert<EventEnvelope>("EventEnvelope", validateEventEnvelope);
+export const assertCheckoutRequest = makeAssert<CheckoutRequest>("CheckoutRequest", validateCheckoutRequest);
+export const assertPayment = makeAssert<Payment>("Payment", validatePayment);

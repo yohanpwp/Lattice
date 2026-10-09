@@ -1,11 +1,9 @@
 openapi: 3.1.0
 info:
   title: Product custom API
-  version: 1.1.0
+  version: 1.2.0
   description: >
-    Implemented M0-M2 routes served under /v1. Payment endpoints are deferred
-    to M4 and are intentionally absent until the backend implements them.
-    PocketBase's own /api/* endpoints are NOT
+    Custom routes served under /v1. PocketBase's own /api/* endpoints are NOT
     described here; clients reach them through the SDK (which wraps the
     PocketBase JS SDK).
 servers:
@@ -57,6 +55,97 @@ paths:
                 $ref: ./schemas/features.json
         "401":
           description: Missing or invalid auth token
+  /v1/payments/checkout:
+    post:
+      operationId: createCheckout
+      summary: Start (or resume, or replay) a payment for an order
+      description: >
+        Requires the payments feature and a signed-in user. Retrying with the same
+        idempotency_key returns the same payment without creating a second charge.
+      security:
+        - pocketbaseToken: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: ./schemas/payments/checkout-request.json
+      responses:
+        "200":
+          description: The payment record
+          content:
+            application/json:
+              schema:
+                $ref: ./schemas/payments/payment.json
+        "400":
+          description: Invalid request or provider not enabled
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "401":
+          description: Not signed in
+        "403":
+          description: Payments feature disabled
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+  /v1/payments/{id}:
+    get:
+      operationId: getPayment
+      summary: Read one of your own payments
+      security:
+        - pocketbaseToken: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          description: The payment record
+          content:
+            application/json:
+              schema:
+                $ref: ./schemas/payments/payment.json
+        "401":
+          description: Not signed in
+        "404":
+          description: Payment not found
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+  /v1/webhooks/payments/{provider}:
+    post:
+      operationId: receivePaymentWebhook
+      summary: Webhook called by a payment provider
+      description: >
+        Authenticated by the provider signature over the raw body, not by a user token.
+        Duplicate deliveries are harmless.
+      parameters:
+        - name: provider
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          description: Accepted (including duplicate deliveries)
+        "400":
+          description: Invalid signature or payload
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "404":
+          description: Unknown provider
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
 components:
   securitySchemes:
     pocketbaseToken:

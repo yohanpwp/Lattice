@@ -17,6 +17,8 @@ const schemaSpecs = [
   ["DashboardLayout", "contracts/schemas/dashboard-layout.json", "dashboard-layout.json"],
   ["PluginManifest", "contracts/schemas/plugin-manifest.json", "plugin-manifest.json"],
   ["EventEnvelope", "contracts/schemas/events/envelope.json", "events/envelope.json"],
+  ["CheckoutRequest", "contracts/schemas/payments/checkout-request.json", "payments/checkout-request.json"],
+  ["Payment", "contracts/schemas/payments/payment.json", "payments/payment.json"],
 ];
 
 async function output(path, content) {

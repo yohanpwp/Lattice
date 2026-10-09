@@ -1,0 +1,31 @@
+{
+  "id": "pbc_0000000002",
+  "name": "payment_ledger",
+  "type": "base",
+  "listRule": null,
+  "viewRule": null,
+  "createRule": null,
+  "updateRule": null,
+  "deleteRule": null,
+  "fields": [
+    { "id": "text0000000010", "name": "id", "type": "text", "required": true, "system": true, "primaryKey": true, "autogeneratePattern": "[a-z0-9]{15}", "min": 15, "max": 15, "pattern": "^[a-z0-9]+$", "hidden": false, "presentable": false, "help": "" },
+    { "id": "text0000000011", "name": "order_id", "type": "text", "required": true, "system": false, "primaryKey": false, "autogeneratePattern": "", "min": 0, "max": 0, "pattern": "", "hidden": false, "presentable": false, "help": "" },
+    { "id": "text0000000012", "name": "user_id", "type": "text", "required": false, "system": false, "primaryKey": false, "autogeneratePattern": "", "min": 0, "max": 0, "pattern": "", "hidden": false, "presentable": false, "help": "" },
+    { "id": "select000000002", "name": "status", "type": "select", "required": true, "system": false, "maxSelect": 1, "values": ["pending", "succeeded", "failed", "refunded", "partially_refunded"], "presentable": false, "help": "" },
+    { "id": "number0000000010", "name": "amount", "type": "number", "required": true, "system": false, "onlyInt": true, "min": 1, "max": null, "presentable": false, "help": "" },
+    { "id": "text0000000013", "name": "currency", "type": "text", "required": true, "system": false, "primaryKey": false, "autogeneratePattern": "", "min": 3, "max": 3, "pattern": "^[A-Z]{3}$", "hidden": false, "presentable": false, "help": "" },
+    { "id": "text0000000014", "name": "provider", "type": "text", "required": true, "system": false, "primaryKey": false, "autogeneratePattern": "", "min": 0, "max": 0, "pattern": "", "hidden": false, "presentable": false, "help": "" },
+    { "id": "text0000000015", "name": "provider_charge_id", "type": "text", "required": false, "system": false, "primaryKey": false, "autogeneratePattern": "", "min": 0, "max": 0, "pattern": "", "hidden": false, "presentable": false, "help": "" },
+    { "id": "text0000000016", "name": "idempotency_key", "type": "text", "required": true, "system": false, "primaryKey": false, "autogeneratePattern": "", "min": 1, "max": 255, "pattern": "", "hidden": false, "presentable": false, "help": "" },
+    { "id": "text0000000017", "name": "payment_url", "type": "text", "required": false, "system": false, "primaryKey": false, "autogeneratePattern": "", "min": 0, "max": 2048, "pattern": "", "hidden": false, "presentable": false, "help": "" },
+    { "id": "json0000000002", "name": "metadata", "type": "json", "required": false, "system": false, "maxSize": 1048576, "presentable": false, "help": "" }
+  ],
+  "indexes": [
+    "CREATE UNIQUE INDEX `idx_payment_ledger_provider_charge` ON `payment_ledger` (`provider_charge_id`) WHERE `provider_charge_id` != ''",
+    "CREATE UNIQUE INDEX `idx_payment_ledger_idempotency` ON `payment_ledger` (`idempotency_key`)",
+    "CREATE INDEX `idx_payment_ledger_order` ON `payment_ledger` (`order_id`)"
+  ],
+  "created": "2026-01-01 00:00:00.000Z",
+  "updated": "2026-01-01 00:00:00.000Z",
+  "system": false
+}

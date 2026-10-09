@@ -42,15 +42,19 @@ function normalizeRealtimeURL(value: string): string {
   return url.href.replace(/\/$/, "");
 }
 
+import { PaymentsClient } from "./payments";
+
 /** Central API for every client platform. */
 export class ProductClient {
   readonly config: AppConfig;
   readonly pb: PocketBase;
   readonly authStore: PersistentAuthStore;
+  readonly payments: PaymentsClient;
   private constructor(config: AppConfig, pb: PocketBase, authStore: PersistentAuthStore) {
     this.config = config;
     this.pb = pb;
     this.authStore = authStore;
+    this.payments = new PaymentsClient(pb);
   }
 
   /** Resolves when any saved session has been loaded. */

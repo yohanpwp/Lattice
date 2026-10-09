@@ -4,3 +4,5 @@ export declare const validateFeatures: { (data: unknown): boolean; errors?: Arra
 export declare const validateDashboardLayout: { (data: unknown): boolean; errors?: Array<{ instancePath?: string; message?: string }> | null };
 export declare const validatePluginManifest: { (data: unknown): boolean; errors?: Array<{ instancePath?: string; message?: string }> | null };
 export declare const validateEventEnvelope: { (data: unknown): boolean; errors?: Array<{ instancePath?: string; message?: string }> | null };
+export declare const validateCheckoutRequest: { (data: unknown): boolean; errors?: Array<{ instancePath?: string; message?: string }> | null };
+export declare const validatePayment: { (data: unknown): boolean; errors?: Array<{ instancePath?: string; message?: string }> | null };

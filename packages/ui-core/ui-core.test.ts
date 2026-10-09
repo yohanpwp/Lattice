@@ -20,7 +20,6 @@ import {
   ContractError,
   buildListOptions,
   perPageFor,
-  ProductClient,
   type DataClient,
 } from "./index";
 import { createMemoryStorage } from "@lattice/sdk";
@@ -283,9 +282,3 @@ describe("generated validators", () => {
   });
 });
 
-describe("ProductClient re-export", () => {
-  it("exposes ProductClient from @lattice/ui-core", () => {
-    expect(ProductClient).toBeDefined();
-    expect(typeof ProductClient.connect).toBe("function");
-  });
-});

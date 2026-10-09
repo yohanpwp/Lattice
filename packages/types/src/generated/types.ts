@@ -120,3 +120,96 @@ export interface EventEnvelope {
     [k: string]: unknown;
   };
 }
+
+/**
+ * Request to start or resume checkout for an order.
+ */
+export interface CheckoutRequest {
+  order_id: string;
+  /**
+   * Amount in minor currency units (cents).
+   */
+  amount: number;
+  /**
+   * Three-letter ISO 4217 currency code (e.g. USD, THB, EUR).
+   */
+  currency: string;
+  /**
+   * Optional payment provider name. Defaults to the configured provider.
+   */
+  provider?: string;
+  /**
+   * Client-supplied idempotency key.
+   */
+  idempotency_key: string;
+  /**
+   * URL the customer is redirected to after checkout.
+   */
+  return_url?: string;
+  /**
+   * Optional key-value metadata.
+   */
+  metadata?: {
+    [k: string]: unknown;
+  };
+}
+
+/**
+ * Payment record managed by the payment ledger.
+ */
+export interface Payment {
+  /**
+   * Unique identifier of the payment ledger record.
+   */
+  id: string;
+  /**
+   * Reference to the associated order.
+   */
+  order_id: string;
+  /**
+   * User who created the payment.
+   */
+  user_id?: string;
+  /**
+   * Current status of the payment.
+   */
+  status: 'pending' | 'succeeded' | 'failed' | 'refunded' | 'partially_refunded';
+  /**
+   * Payment amount in minor currency units.
+   */
+  amount: number;
+  /**
+   * Three-letter currency code.
+   */
+  currency: string;
+  /**
+   * Payment provider name.
+   */
+  provider: string;
+  /**
+   * Charge identifier returned by the payment provider.
+   */
+  provider_charge_id?: string;
+  /**
+   * Client-supplied idempotency key.
+   */
+  idempotency_key: string;
+  /**
+   * URL for customer payment completion (if pending).
+   */
+  payment_url?: string;
+  /**
+   * Creation timestamp.
+   */
+  created?: string;
+  /**
+   * Last update timestamp.
+   */
+  updated?: string;
+  /**
+   * Custom metadata.
+   */
+  metadata?: {
+    [k: string]: unknown;
+  };
+}

@@ -11,6 +11,4 @@ export * from "./workspace";
 export * from "./metrics";
 export * from "./format";
 export * from "./useWidgetData";
-export * from "./validators";
-export * from "./client";
 export * from "@lattice/types";

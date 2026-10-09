@@ -10,13 +10,16 @@ const expectedOperations = new Map([
   ["/v1/health", ["get"]],
   ["/v1/config", ["get"]],
   ["/v1/features", ["get"]],
+  ["/v1/payments/checkout", ["post"]],
+  ["/v1/payments/{id}", ["get"]],
+  ["/v1/webhooks/payments/{provider}", ["post"]],
 ]);
 
 function validateImplementedRoutes(document) {
   const paths = Object.keys(document.paths ?? {}).sort();
   const expectedPaths = [...expectedOperations.keys()].sort();
   if (paths.join(",") !== expectedPaths.join(",")) {
-    throw new Error(`OpenAPI must describe only implemented M0-M2 /v1 routes; found: ${paths.join(", ")}`);
+    throw new Error(`OpenAPI must describe only implemented M0-M4 /v1 routes; found: ${paths.join(", ")}`);
   }
   for (const [path, methods] of expectedOperations) {
     const operations = document.paths[path] ?? {};
@@ -33,6 +36,12 @@ function validateImplementedRoutes(document) {
   if (!document.paths["/v1/features"].get.security?.some((scheme) => scheme.pocketbaseToken)) {
     throw new Error("GET /v1/features must require the PocketBase auth token");
   }
+  if (!document.paths["/v1/payments/checkout"].post.security?.some((scheme) => scheme.pocketbaseToken)) {
+    throw new Error("POST /v1/payments/checkout must require the PocketBase auth token");
+  }
+  if (!document.paths["/v1/payments/{id}"].get.security?.some((scheme) => scheme.pocketbaseToken)) {
+    throw new Error("GET /v1/payments/{id} must require the PocketBase auth token");
+  }
   if (!document.components?.securitySchemes?.pocketbaseToken) {
     throw new Error("OpenAPI must define the pocketbaseToken security scheme");
   }
@@ -42,8 +51,9 @@ validateImplementedRoutes(document);
 
 // These representative regressions must remain rejected by the route checker.
 for (const mutation of [
-  (doc) => { doc.paths["/v1/payments/checkout"] = { post: { responses: { "200": {} } } }; },
+  (doc) => { doc.paths["/v1/unexpected"] = { post: { responses: { "200": {} } } }; },
   (doc) => { delete doc.paths["/v1/features"].get.security; },
+  (doc) => { delete doc.paths["/v1/payments/checkout"].post.security; },
 ]) {
   const negative = structuredClone(document);
   mutation(negative);

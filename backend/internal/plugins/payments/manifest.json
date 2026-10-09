@@ -1,0 +1,8 @@
+{
+  "name": "payments",
+  "version": "0.1.0",
+  "interface_version": 1,
+  "license": "Proprietary",
+  "requires": ["outbox"],
+  "permissions": ["collections:payment_ledger", "events:emit"]
+}

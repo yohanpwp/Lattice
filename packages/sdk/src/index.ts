@@ -7,3 +7,4 @@ export { createWebStorage } from "./platforms/web";
 export { createDesktopStorage, type DesktopStorageApi } from "./platforms/desktop";
 export { createMobileStorage, type MobileStorageApi } from "./platforms/mobile";
 export { compareVersions, isClientCompatible } from "./version";
+export { PaymentsClient } from "./payments";

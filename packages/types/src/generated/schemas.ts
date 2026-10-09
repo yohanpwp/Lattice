@@ -334,3 +334,135 @@ export const eventEnvelopeSchema = {
     }
   }
 } as const;
+
+export const checkoutRequestSchema = {
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$id": "https://lattice.dev/schemas/payments/checkout-request.json",
+  "title": "CheckoutRequest",
+  "description": "Request to start or resume checkout for an order.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "order_id",
+    "amount",
+    "currency",
+    "idempotency_key"
+  ],
+  "properties": {
+    "order_id": {
+      "type": "string",
+      "minLength": 1
+    },
+    "amount": {
+      "type": "integer",
+      "minimum": 1,
+      "description": "Amount in minor currency units (cents)."
+    },
+    "currency": {
+      "type": "string",
+      "pattern": "^[A-Z]{3}$",
+      "description": "Three-letter ISO 4217 currency code (e.g. USD, THB, EUR)."
+    },
+    "provider": {
+      "type": "string",
+      "minLength": 1,
+      "description": "Optional payment provider name. Defaults to the configured provider."
+    },
+    "idempotency_key": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 255,
+      "description": "Client-supplied idempotency key."
+    },
+    "return_url": {
+      "type": "string",
+      "format": "uri",
+      "description": "URL the customer is redirected to after checkout."
+    },
+    "metadata": {
+      "type": "object",
+      "description": "Optional key-value metadata."
+    }
+  }
+} as const;
+
+export const paymentSchema = {
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$id": "https://lattice.dev/schemas/payments/payment.json",
+  "title": "Payment",
+  "description": "Payment record managed by the payment ledger.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "id",
+    "order_id",
+    "status",
+    "amount",
+    "currency",
+    "provider",
+    "idempotency_key"
+  ],
+  "properties": {
+    "id": {
+      "type": "string",
+      "description": "Unique identifier of the payment ledger record."
+    },
+    "order_id": {
+      "type": "string",
+      "description": "Reference to the associated order."
+    },
+    "user_id": {
+      "type": "string",
+      "description": "User who created the payment."
+    },
+    "status": {
+      "type": "string",
+      "enum": [
+        "pending",
+        "succeeded",
+        "failed",
+        "refunded",
+        "partially_refunded"
+      ],
+      "description": "Current status of the payment."
+    },
+    "amount": {
+      "type": "integer",
+      "minimum": 1,
+      "description": "Payment amount in minor currency units."
+    },
+    "currency": {
+      "type": "string",
+      "pattern": "^[A-Z]{3}$",
+      "description": "Three-letter currency code."
+    },
+    "provider": {
+      "type": "string",
+      "description": "Payment provider name."
+    },
+    "provider_charge_id": {
+      "type": "string",
+      "description": "Charge identifier returned by the payment provider."
+    },
+    "idempotency_key": {
+      "type": "string",
+      "description": "Client-supplied idempotency key."
+    },
+    "payment_url": {
+      "type": "string",
+      "description": "URL for customer payment completion (if pending)."
+    },
+    "created": {
+      "type": "string",
+      "description": "Creation timestamp."
+    },
+    "updated": {
+      "type": "string",
+      "description": "Last update timestamp."
+    },
+    "metadata": {
+      "type": "object",
+      "description": "Custom metadata."
+    }
+  }
+} as const;

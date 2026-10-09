@@ -3,9 +3,11 @@ import { describe, expect, it } from "vitest";
 import {
   ContractError,
   assertAppConfig,
+  assertCheckoutRequest,
   assertDashboardLayout,
   assertEventEnvelope,
   assertFeatures,
+  assertPayment,
   assertPluginManifest,
 } from "./index";
 
@@ -139,5 +141,33 @@ describe("Features, PluginManifest, EventEnvelope", () => {
     };
     expect(() => assertEventEnvelope(evt)).not.toThrow();
     expect(() => assertEventEnvelope({ ...evt, version: 0 })).toThrow();
+  });
+
+  it("validates checkout requests", () => {
+    const valid = {
+      order_id: "order_123",
+      amount: 5000,
+      currency: "USD",
+      idempotency_key: "idem_key_1",
+    };
+    expect(assertCheckoutRequest(valid)).toEqual(valid);
+    expect(() => assertCheckoutRequest({ ...valid, amount: 0 })).toThrow(ContractError);
+    expect(() => assertCheckoutRequest({ ...valid, currency: "usd" })).toThrow(ContractError);
+    expect(() => assertCheckoutRequest({ ...valid, order_id: "" })).toThrow(ContractError);
+  });
+
+  it("validates payment records", () => {
+    const valid = {
+      id: "pay_123",
+      order_id: "order_123",
+      status: "pending",
+      amount: 5000,
+      currency: "USD",
+      provider: "mock",
+      idempotency_key: "idem_key_1",
+    };
+    expect(assertPayment(valid)).toEqual(valid);
+    expect(() => assertPayment({ ...valid, status: "unknown_status" })).toThrow(ContractError);
+    expect(() => assertPayment({ ...valid, amount: -10 })).toThrow(ContractError);
   });
 });

@@ -16,6 +16,7 @@ import (
 	"github.com/Lattice/backend/internal/platform/registry"
 	"github.com/Lattice/backend/internal/platform/secrets"
 	"github.com/Lattice/backend/internal/platform/tenant"
+	"github.com/Lattice/backend/internal/plugins/payments"
 )
 
 func main() {
@@ -41,6 +42,10 @@ func main() {
 		secretStore, err := secrets.NewConfigured(nil)
 		if err != nil {
 			return err
+		}
+
+		if flags.Enabled("payments") {
+			payments.InitService(se.App)
 		}
 
 		if err := platform.StartWithSecrets(se.App, cfg.TenantID, flags, registry.Default, secretStore); err != nil {
