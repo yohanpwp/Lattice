@@ -47,6 +47,10 @@ Thumbs.db
 vendor/
 node_modules/
 dist/
+target/
+.gradle/
+build/
+**/src-tauri/gen/
 
 # Local Dev Databases / Containers
 /data/
@@ -59,3 +63,9 @@ dist/
 *.cast
 
 /third_party
+
+# Temporary Root Assets
+lattice_banner.jfif
+
+# Go Workspace Checksums
+go.work.sum

@@ -1,0 +1,24 @@
+Lattice
+Copyright (c) 2026 Lattice Authors & Contributors
+
+This product includes software developed by Lattice Authors & Contributors.
+Website: https://github.com/Lattice
+
+================================================================================
+Upstream Framework Attribution
+================================================================================
+
+This product incorporates and builds upon PocketBase.
+Copyright (c) 2022 - present, Gani Georgiev
+Website: https://pocketbase.io
+Repository: https://github.com/pocketbase/pocketbase
+License: MIT License (see LICENSE.md)
+
+================================================================================
+Third-Party Software Acknowledgements
+================================================================================
+
+This product contains dependencies distributed under permissive open-source
+licenses (including MIT, Apache-2.0, BSD-2-Clause, BSD-3-Clause, ISC, 0BSD,
+CC0-1.0, Unlicense, Python-2.0, and BSL-1.0).
+For full detailed third-party inventory, see THIRD_PARTY_LICENSES.md.

@@ -14,6 +14,7 @@ RUN CGO_ENABLED=0 go build -o /out/server ./cmd/server
 FROM alpine:3.20
 RUN apk add --no-cache ca-certificates
 COPY --from=build /out/server /app/server
+COPY NOTICE LICENSE.md LICENSE-PRODUCT.md THIRD_PARTY_LICENSES.md /licenses/
 
 # Tenant and feature config are mounted at /config; data lives in /pb_data.
 ENV TENANT_CONFIG=/config/tenant.json

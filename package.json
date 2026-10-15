@@ -10,7 +10,8 @@
     "typecheck": "pnpm -r typecheck",
     "test": "pnpm -r test",
     "check:openapi": "node tools/codegen/check-openapi.mjs",
-    "check:browser": "node tools/codegen/check-browser-bundle.mjs"
+    "check:browser": "node tools/codegen/check-browser-bundle.mjs",
+    "check:licenses": "node tools/license-scan/scan.mjs --check"
   },
   "devDependencies": {
     "ajv": "8.17.1",
