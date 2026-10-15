@@ -7,9 +7,13 @@
     "dev": "vite",
     "build": "tsc --noEmit && vite build",
     "preview": "vite preview",
-    "typecheck": "tsc --noEmit"
+    "typecheck": "tsc --noEmit",
+    "test": "vitest run"
   },
   "dependencies": {
+    "@aparajita/capacitor-secure-storage": "7.1.6",
+    "@capacitor/app": "7.0.0",
+    "@capacitor/core": "7.0.1",
     "@lattice/sdk": "workspace:*",
     "@lattice/types": "workspace:*",
     "@lattice/ui-core": "workspace:*",
@@ -22,6 +26,7 @@
     "@types/react-dom": "^19.0.0",
     "@vitejs/plugin-react": "^4.3.4",
     "typescript": "5.9.3",
-    "vite": "^6.2.0"
+    "vite": "^6.2.0",
+    "vitest": "3.2.4"
   }
 }

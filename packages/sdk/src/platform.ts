@@ -15,6 +15,8 @@ export interface PlatformAdapters {
   fetch?: typeof fetch;
   /** Installs a platform EventSource polyfill on globalThis before realtime use. */
   initializeRealtime?: () => Promise<void>;
+  /** Optional callback invoked when a ProductClient is initialized, returning an unregister function. */
+  onClientInitialized?: (client: unknown) => (() => void) | void;
 }
 
 /** Host storage methods used by desktop and mobile application shells. */

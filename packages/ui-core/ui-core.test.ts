@@ -20,6 +20,7 @@ import {
   ContractError,
   buildListOptions,
   perPageFor,
+  resolvePlatform,
   type DataClient,
 } from "./index";
 import { createMemoryStorage } from "@lattice/sdk";
@@ -54,6 +55,30 @@ describe("workspace URL normalization and storage", () => {
 
     await forgetWorkspace(storage);
     expect(await loadSavedWorkspace(storage)).toBeNull();
+  });
+
+  it("resolves platform with strict precedence over storage prop", async () => {
+    const platformStorage = createMemoryStorage();
+    const fallbackStorage = createMemoryStorage();
+    const platform = { storage: platformStorage };
+
+    // When both platform and storage are passed, platform strictly wins
+    const resolved = resolvePlatform(platform, fallbackStorage);
+    expect(resolved).toBe(platform);
+    expect(resolved.storage).toBe(platformStorage);
+
+    // Persistence goes to platform.storage
+    await saveWorkspace(resolved.storage, "https://tenant.example.com");
+    expect(await loadSavedWorkspace(platformStorage)).toBe("https://tenant.example.com");
+    expect(await loadSavedWorkspace(fallbackStorage)).toBeNull();
+
+    // When only storage is passed, wraps into platform adapter
+    const storageOnly = resolvePlatform(undefined, fallbackStorage);
+    expect(storageOnly.storage).toBe(fallbackStorage);
+
+    // When neither is passed, defaults to web storage
+    const defaultPlatform = resolvePlatform(undefined, undefined);
+    expect(defaultPlatform.storage).toBeDefined();
   });
 });
 

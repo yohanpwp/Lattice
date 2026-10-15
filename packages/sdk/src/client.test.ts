@@ -1,4 +1,4 @@
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import {
   AuthPersistenceError,
   ClientTooOldError,
@@ -327,6 +327,267 @@ describe("ProductClient bootstrap", () => {
       expect(FakeEventSource.latest.url).toContain("/api/realtime");
       await unsubscribe();
       expect(FakeEventSource.latest.closed).toBe(true);
+    } finally {
+      Object.defineProperty(globalThis, "EventSource", { configurable: true, value: original });
+    }
+  });
+
+  it("reconnectRealtime resets reconnect backoff and reconnects active subscriptions, and logout disconnects", async () => {
+    const original = globalThis.EventSource;
+    class FakeEventSource {
+      static instances: FakeEventSource[] = [];
+      closed = false;
+      readonly url: string;
+      constructor(url: string | URL) {
+        this.url = String(url);
+        FakeEventSource.instances.push(this);
+      }
+      addEventListener(type: string, callback: EventListener): void {
+        if (type === "PB_CONNECT") queueMicrotask(() => callback({ lastEventId: "client-abc", data: "" } as MessageEvent));
+      }
+      removeEventListener(): void {}
+      close(): void { this.closed = true; }
+      onerror: ((event: Event) => void) | null = null;
+      onmessage: ((event: MessageEvent) => void) | null = null;
+    }
+    Object.defineProperty(globalThis, "EventSource", { configurable: true, value: FakeEventSource });
+    try {
+      FakeEventSource.instances = [];
+      const client = await ProductClient.fromConfig(config, { clientVersion: "0.1.0", platform: { storage: createMemoryStorage(), fetch: apiFetch() } });
+      await client.collection("orders").subscribe("*", () => {});
+      expect(FakeEventSource.instances.length).toBe(1);
+
+      // Simulate a background disconnect with backoff attempts
+      const rt = (client.pb as any).realtime;
+      rt.reconnectAttempts = 5;
+      let timerCleared = false;
+      rt.reconnectTimeoutId = setTimeout(() => {}, 10000);
+      const originalClear = globalThis.clearTimeout;
+      (globalThis as unknown as { clearTimeout: typeof clearTimeout }).clearTimeout = ((id: Parameters<typeof clearTimeout>[0]) => {
+        if (id === rt.reconnectTimeoutId) timerCleared = true;
+        originalClear(id);
+      }) as typeof clearTimeout;
+
+      try {
+        await client.reconnectRealtime();
+        expect(rt.reconnectAttempts).toBe(0);
+        expect(timerCleared).toBe(true);
+
+        // Verify logout clears subscriptions and disconnects
+        await client.logout();
+        expect(rt.clientId).toBe("");
+      } finally {
+        (globalThis as unknown as { clearTimeout: typeof clearTimeout }).clearTimeout = originalClear;
+      }
+    } finally {
+      Object.defineProperty(globalThis, "EventSource", { configurable: true, value: original });
+    }
+  });
+
+  it("preserves automatic retries and active subscriptions on offline realtime reconnect failure", async () => {
+    const original = globalThis.EventSource;
+    class OfflineEventSource {
+      static instances: OfflineEventSource[] = [];
+      closed = false;
+      readonly url: string;
+      constructor(url: string | URL) {
+        this.url = String(url);
+        OfflineEventSource.instances.push(this);
+        // Simulate immediate connection failure when attempting to connect while offline
+        queueMicrotask(() => {
+          if (this.onerror) {
+            this.onerror(new Event("error"));
+          }
+        });
+      }
+      addEventListener(): void {}
+      removeEventListener(): void {}
+      close(): void { this.closed = true; }
+      onerror: ((event: Event) => void) | null = null;
+      onmessage: ((event: MessageEvent) => void) | null = null;
+    }
+
+    class OnlineEventSource {
+      static instances: OnlineEventSource[] = [];
+      closed = false;
+      readonly url: string;
+      constructor(url: string | URL) {
+        this.url = String(url);
+        OnlineEventSource.instances.push(this);
+      }
+      addEventListener(type: string, callback: EventListener): void {
+        if (type === "PB_CONNECT") {
+          queueMicrotask(() => callback({ lastEventId: "client-xyz", data: "" } as MessageEvent));
+        }
+      }
+      removeEventListener(): void {}
+      close(): void { this.closed = true; }
+      onerror: ((event: Event) => void) | null = null;
+      onmessage: ((event: MessageEvent) => void) | null = null;
+    }
+
+    try {
+      // Start online and subscribe to a collection
+      Object.defineProperty(globalThis, "EventSource", { configurable: true, value: OnlineEventSource });
+      const client = await ProductClient.fromConfig(config, {
+        clientVersion: "0.1.0",
+        platform: { storage: createMemoryStorage(), fetch: apiFetch() },
+      });
+      await client.collection("orders").subscribe("*", () => {});
+      const rt = (client.pb as any).realtime;
+      expect(Object.keys(rt.subscriptions).length).toBeGreaterThan(0);
+
+      // Now switch to offline
+      Object.defineProperty(globalThis, "EventSource", { configurable: true, value: OfflineEventSource });
+      // Simulate connection lost while in background: clientId cleared, disconnect called with keepSubscriptions
+      rt.disconnect(true);
+      expect(rt.clientId).toBeFalsy();
+      expect(Object.keys(rt.subscriptions).length).toBeGreaterThan(0);
+
+      // Set initial backoff state
+      rt.reconnectAttempts = 2;
+
+      // Simulate resume triggering reconnectRealtime() while offline
+      await client.reconnectRealtime();
+
+      // Subscriptions must still be retained
+      expect(Object.keys(rt.subscriptions).length).toBeGreaterThan(0);
+      // Reconnect attempts must not be reset to 0 (which would kill retries in PocketBase)
+      expect(rt.reconnectAttempts).toBeGreaterThanOrEqual(1);
+      // A retry timer must be active
+      expect(rt.reconnectTimeoutId).toBeDefined();
+
+      // Clean up timer
+      if (rt.reconnectTimeoutId) {
+        clearTimeout(rt.reconnectTimeoutId);
+      }
+    } finally {
+      Object.defineProperty(globalThis, "EventSource", { configurable: true, value: original });
+    }
+  });
+
+  it("handles transition from offline reconnect backoff to online recovery", async () => {
+    const original = globalThis.EventSource;
+    let isOnline = false;
+
+    class DynamicEventSource {
+      closed = false;
+      readonly url: string;
+      constructor(url: string | URL) {
+        this.url = String(url);
+        queueMicrotask(() => {
+          if (!isOnline) {
+            if (this.onerror) this.onerror(new Event("error"));
+          }
+        });
+      }
+      addEventListener(type: string, callback: EventListener): void {
+        if (type === "PB_CONNECT" && isOnline) {
+          queueMicrotask(() => callback({ lastEventId: "client-recovered", data: "" } as MessageEvent));
+        }
+      }
+      removeEventListener(): void {}
+      close(): void { this.closed = true; }
+      onerror: ((event: Event) => void) | null = null;
+      onmessage: ((event: MessageEvent) => void) | null = null;
+    }
+
+    try {
+      Object.defineProperty(globalThis, "EventSource", { configurable: true, value: DynamicEventSource });
+      const client = await ProductClient.fromConfig(config, {
+        clientVersion: "0.1.0",
+        platform: { storage: createMemoryStorage(), fetch: apiFetch() },
+      });
+
+      // Start with initial connection online
+      isOnline = true;
+      await client.collection("orders").subscribe("*", () => {});
+      const rt = (client.pb as any).realtime;
+      expect(rt.clientId).toBe("client-recovered");
+
+      // Go offline
+      isOnline = false;
+      rt.disconnect(true);
+      expect(rt.clientId).toBeFalsy();
+
+      // Offline reconnect with 0 prior attempts schedules backoff retry
+      await client.reconnectRealtime();
+      expect(rt.reconnectAttempts).toBe(1);
+      expect(rt.reconnectTimeoutId).toBeDefined();
+
+      // Now network returns online WITHOUT another resume event
+      isOnline = true;
+
+      // Automatic retry backoff timer must fire and reconnect successfully
+      await vi.waitFor(() => {
+        expect(rt.clientId).toBe("client-recovered");
+        expect(rt.reconnectAttempts).toBe(0);
+      }, { timeout: 2000, interval: 25 });
+    } finally {
+      Object.defineProperty(globalThis, "EventSource", { configurable: true, value: original });
+    }
+  });
+
+  it("retries across multiple offline intervals and recovers when online without new resume events", async () => {
+    const original = globalThis.EventSource;
+    let isOnline = false;
+
+    class MultiAttemptEventSource {
+      closed = false;
+      readonly url: string;
+      constructor(url: string | URL) {
+        this.url = String(url);
+        queueMicrotask(() => {
+          if (!isOnline) {
+            if (this.onerror) this.onerror(new Event("error"));
+          }
+        });
+      }
+      addEventListener(type: string, callback: EventListener): void {
+        if (type === "PB_CONNECT" && isOnline) {
+          queueMicrotask(() => callback({ lastEventId: "client-recovered-multi", data: "" } as MessageEvent));
+        }
+      }
+      removeEventListener(): void {}
+      close(): void { this.closed = true; }
+      onerror: ((event: Event) => void) | null = null;
+      onmessage: ((event: MessageEvent) => void) | null = null;
+    }
+
+    try {
+      Object.defineProperty(globalThis, "EventSource", { configurable: true, value: MultiAttemptEventSource });
+      const client = await ProductClient.fromConfig(config, {
+        clientVersion: "0.1.0",
+        platform: { storage: createMemoryStorage(), fetch: apiFetch() },
+      });
+
+      isOnline = true;
+      await client.collection("orders").subscribe("*", () => {});
+      const rt = (client.pb as any).realtime;
+      expect(rt.clientId).toBe("client-recovered-multi");
+
+      // Go offline
+      isOnline = false;
+      rt.disconnect(true);
+
+      // Trigger resume while offline
+      await client.reconnectRealtime();
+      expect(rt.reconnectAttempts).toBe(1);
+      expect(rt.reconnectTimeoutId).toBeDefined();
+
+      // Wait until PocketBase's internal retry executes and increments to attempt 2 while still offline
+      await vi.waitFor(() => {
+        expect(rt.reconnectAttempts).toBeGreaterThanOrEqual(2);
+      }, { timeout: 1500, interval: 25 });
+
+      // Now restore connectivity
+      isOnline = true;
+
+      // Ensure automatic recovery completes without any further resume event
+      await vi.waitFor(() => {
+        expect(rt.clientId).toBe("client-recovered-multi");
+        expect(rt.reconnectAttempts).toBe(0);
+      }, { timeout: 2000, interval: 25 });
     } finally {
       Object.defineProperty(globalThis, "EventSource", { configurable: true, value: original });
     }

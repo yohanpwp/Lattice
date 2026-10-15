@@ -3,6 +3,7 @@ import {
   ClientTooOldError,
   ProductClient,
   createWebStorage,
+  type PlatformAdapters,
   type StorageAdapter,
 } from "@lattice/sdk";
 import { ContractError } from "@lattice/types";
@@ -15,6 +16,8 @@ import { forgetWorkspace, loadSavedWorkspace, normalizeWorkspaceUrl, saveWorkspa
 export interface AppProps {
   /** Where the session and saved workspace are stored. Defaults to browser storage. */
   storage?: StorageAdapter;
+  /** Platform adapters. Takes strict precedence over storage. */
+  platform?: PlatformAdapters;
   /** Fixed backend address (web deployments). If unset, the app asks for a workspace. */
   backendUrl?: string;
   clientVersion?: string;
@@ -26,12 +29,23 @@ type Phase =
   | { name: "failed"; message: string; canChangeWorkspace: boolean }
   | { name: "ready"; client: ProductClient };
 
+export function resolvePlatform(platform?: PlatformAdapters, storage?: StorageAdapter): PlatformAdapters {
+  if (platform) return platform;
+  return { storage: storage ?? createWebStorage() };
+}
+
 export function App({
   storage: storageProp,
+  platform: platformProp,
   backendUrl = (import.meta as unknown as { env?: Record<string, string | undefined> }).env?.VITE_BACKEND_URL,
   clientVersion = pkg.version,
 }: AppProps) {
-  const storage = useMemo(() => storageProp ?? createWebStorage(), [storageProp]);
+  const platform = useMemo<PlatformAdapters>(
+    () => resolvePlatform(platformProp, storageProp),
+    [platformProp, storageProp],
+  );
+
+  const storage = platform.storage;
   const fixedBackend = Boolean(backendUrl);
   const [phase, setPhase] = useState<Phase>({ name: "connecting" });
 
@@ -40,7 +54,7 @@ export function App({
       const client = await ProductClient.connect({
         backendUrl: url,
         clientVersion,
-        platform: { storage },
+        platform,
       });
       await client.sessionRestored;
       await client.refreshSession();
@@ -77,6 +91,17 @@ export function App({
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [backendUrl, storage]);
+
+  useEffect(() => {
+    if (phase.name === "ready") {
+      const unregister = platform.onClientInitialized?.(phase.client);
+      return () => {
+        if (typeof unregister === "function") {
+          unregister();
+        }
+      };
+    }
+  }, [phase, platform]);
 
   async function handleWorkspace(address: string) {
     const result = normalizeWorkspaceUrl(address);

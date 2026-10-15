@@ -160,7 +160,74 @@ export class ProductClient {
   }
 
   async logout(): Promise<void> {
+    try {
+      await this.pb.realtime.unsubscribe();
+    } catch {
+      // Ignore if realtime connection is inactive
+    }
     this.pb.authStore.clear();
     await this.authStore.flush();
+  }
+
+  /**
+   * Attempts to reconnect the realtime SSE stream upon resume if there
+   * are active subscriptions or a previously established connection.
+   *
+   * Preserves active subscriptions and re-schedules automatic exponential backoff
+   * if the reconnection attempt fails while offline.
+   */
+  async reconnectRealtime(): Promise<void> {
+    const rt = this.pb.realtime as unknown as {
+      subscriptions?: Record<string, unknown>;
+      clientId?: string;
+      isConnected?: boolean;
+      connect: () => Promise<void>;
+      initConnect?: () => void;
+      reconnectAttempts?: number;
+      maxReconnectAttempts?: number;
+      predefinedReconnectIntervals?: number[];
+      reconnectTimeoutId?: ReturnType<typeof setTimeout>;
+    };
+    if (!rt) return;
+
+    const savedSubscriptions = rt.subscriptions ? { ...rt.subscriptions } : {};
+    const hasSubscriptions = Object.keys(savedSubscriptions).length > 0;
+    if (!hasSubscriptions && !rt.clientId && !rt.isConnected) {
+      return;
+    }
+
+    if (rt.reconnectTimeoutId) {
+      clearTimeout(rt.reconnectTimeoutId);
+      rt.reconnectTimeoutId = undefined;
+    }
+
+    const prevAttempts = rt.reconnectAttempts ?? 0;
+    rt.reconnectAttempts = 0;
+
+    try {
+      await rt.connect();
+    } catch {
+      // Reconnect failed while offline. Restore active subscriptions and
+      // re-schedule automatic retry backoff so retries are preserved.
+      if (rt.subscriptions && Object.keys(rt.subscriptions).length === 0 && hasSubscriptions) {
+        rt.subscriptions = savedSubscriptions;
+      }
+      if (!rt.reconnectTimeoutId) {
+        const intervals = rt.predefinedReconnectIntervals || [200, 300, 500, 1000, 1200, 1500, 2000];
+        const nextAttempt = prevAttempts + 1;
+        const maxAttempts = rt.maxReconnectAttempts ?? Infinity;
+        if (nextAttempt <= maxAttempts) {
+          const delay = intervals[Math.min(nextAttempt - 1, intervals.length - 1)] || 1000;
+          rt.reconnectAttempts = nextAttempt;
+          rt.reconnectTimeoutId = setTimeout(() => {
+            if (typeof rt.initConnect === "function") {
+              rt.initConnect();
+            } else {
+              this.reconnectRealtime().catch(() => {});
+            }
+          }, delay);
+        }
+      }
+    }
   }
 }
