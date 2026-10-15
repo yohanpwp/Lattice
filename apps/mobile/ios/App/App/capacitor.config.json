@@ -1,0 +1,13 @@
+{
+	"appId": "com.lattice.app",
+	"appName": "Lattice",
+	"webDir": "../client/dist",
+	"server": {
+		"androidScheme": "https",
+		"cleartext": false
+	},
+	"packageClassList": [
+		"SecureStorage",
+		"AppPlugin"
+	]
+}

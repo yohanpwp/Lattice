@@ -1,0 +1,24 @@
+PODS:
+  - AparajitaCapacitorSecureStorage (7.1.6):
+    - Capacitor
+    - KeychainSwift (~> 21.0)
+  - Capacitor (7.0.1)
+  - CapacitorApp (7.0.0):
+    - Capacitor
+  - CapacitorCordova (7.0.1)
+  - KeychainSwift (21.0.0)
+
+DEPENDENCIES:
+  - AparajitaCapacitorSecureStorage (= 7.1.6)
+  - Capacitor (= 7.0.1)
+  - CapacitorApp (= 7.0.0)
+  - CapacitorCordova (= 7.0.1)
+
+SPEC CHECKSUMS:
+  AparajitaCapacitorSecureStorage: e78f1496a79895aef14c94f0923019be558c4998
+  Capacitor: 9ecbc72be3f1eec5b4a72d3f9801db8c1605330a
+  CapacitorApp: b7fa1a43a0e3687355bbbb978d30e3bbd2f44154
+  CapacitorCordova: 219198654c6e93eb22f95cbebf063ec0dbb2d5fa
+  KeychainSwift: 9474775e53303c202022b7a3a8ceb1156df5ad76
+
+COCOAPODS: 1.15.2

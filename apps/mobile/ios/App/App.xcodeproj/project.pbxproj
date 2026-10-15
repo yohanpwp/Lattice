@@ -1,0 +1,265 @@
+// !$*UTF8*$!
+{
+	archiveVersion = 1;
+	classes = {
+	};
+	objectVersion = 54;
+	objects = {
+
+/* Begin PBXBuildFile section */
+		50123456789ABCDEF0000001 /* AppDelegate.swift in Sources */ = {isa = PBXBuildFile; fileRef = 50123456789ABCDEF0000002 /* AppDelegate.swift */; };
+		50123456789ABCDEF0000003 /* PrivacyInfo.xcprivacy in Resources */ = {isa = PBXBuildFile; fileRef = 50123456789ABCDEF0000004 /* PrivacyInfo.xcprivacy */; };
+		50123456789ABCDEF0000005 /* notices.txt in Resources */ = {isa = PBXBuildFile; fileRef = 50123456789ABCDEF0000006 /* notices.txt */; };
+		50123456789ABCDEF0000009 /* public in Resources */ = {isa = PBXBuildFile; fileRef = 50123456789ABCDEF0000008 /* public */; };
+		50123456789ABCDEF000000B /* capacitor.config.json in Resources */ = {isa = PBXBuildFile; fileRef = 50123456789ABCDEF000000A /* capacitor.config.json */; };
+		50123456789ABCDEF000000D /* config.xml in Resources */ = {isa = PBXBuildFile; fileRef = 50123456789ABCDEF000000C /* config.xml */; };
+/* End PBXBuildFile section */
+
+/* Begin PBXFileReference section */
+		50123456789ABCDEF0000000 /* App.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = App.app; sourceTree = BUILT_PRODUCTS_DIR; };
+		50123456789ABCDEF0000002 /* AppDelegate.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AppDelegate.swift; sourceTree = "<group>"; };
+		50123456789ABCDEF0000004 /* PrivacyInfo.xcprivacy */ = {isa = PBXFileReference; lastKnownFileType = text.xml; path = PrivacyInfo.xcprivacy; sourceTree = "<group>"; };
+		50123456789ABCDEF0000006 /* notices.txt */ = {isa = PBXFileReference; lastKnownFileType = text; path = notices.txt; sourceTree = "<group>"; };
+		50123456789ABCDEF0000007 /* Info.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist.xml; path = Info.plist; sourceTree = "<group>"; };
+		50123456789ABCDEF0000008 /* public */ = {isa = PBXFileReference; lastKnownFileType = folder; path = public; sourceTree = "<group>"; };
+		50123456789ABCDEF000000A /* capacitor.config.json */ = {isa = PBXFileReference; lastKnownFileType = text.json; path = capacitor.config.json; sourceTree = "<group>"; };
+		50123456789ABCDEF000000C /* config.xml */ = {isa = PBXFileReference; lastKnownFileType = text.xml; path = config.xml; sourceTree = "<group>"; };
+/* End PBXFileReference section */
+
+/* Begin PBXFrameworksBuildPhase section */
+		50123456789ABCDEF0000010 /* Frameworks */ = {
+			isa = PBXFrameworksBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+/* End PBXFrameworksBuildPhase section */
+
+/* Begin PBXGroup section */
+		50123456789ABCDEF0000020 = {
+			isa = PBXGroup;
+			children = (
+				50123456789ABCDEF0000021 /* App */,
+				50123456789ABCDEF0000022 /* Products */,
+			);
+			sourceTree = "<group>";
+		};
+		50123456789ABCDEF0000021 /* App */ = {
+			isa = PBXGroup;
+			children = (
+				50123456789ABCDEF0000002 /* AppDelegate.swift */,
+				50123456789ABCDEF0000007 /* Info.plist */,
+				50123456789ABCDEF0000004 /* PrivacyInfo.xcprivacy */,
+				50123456789ABCDEF0000006 /* notices.txt */,
+				50123456789ABCDEF000000A /* capacitor.config.json */,
+				50123456789ABCDEF000000C /* config.xml */,
+				50123456789ABCDEF0000008 /* public */,
+			);
+			path = App;
+			sourceTree = "<group>";
+		};
+		50123456789ABCDEF0000022 /* Products */ = {
+			isa = PBXGroup;
+			children = (
+				50123456789ABCDEF0000000 /* App.app */,
+			);
+			name = Products;
+			sourceTree = "<group>";
+		};
+/* End PBXGroup section */
+
+/* Begin PBXNativeTarget section */
+		50123456789ABCDEF0000030 /* App */ = {
+			isa = PBXNativeTarget;
+			buildConfigurationList = 50123456789ABCDEF0000040 /* Build configuration list for PBXNativeTarget "App" */;
+			buildPhases = (
+				50123456789ABCDEF0000050 /* Sources */,
+				50123456789ABCDEF0000010 /* Frameworks */,
+				50123456789ABCDEF0000060 /* Resources */,
+			);
+			buildRules = (
+			);
+			dependencies = (
+			);
+			name = App;
+			productName = App;
+			productReference = 50123456789ABCDEF0000000 /* App.app */;
+			productType = "com.apple.product-type.application";
+		};
+/* End PBXNativeTarget section */
+
+/* Begin PBXProject section */
+		50123456789ABCDEF0000100 /* Project object */ = {
+			isa = PBXProject;
+			attributes = {
+				BuildIndependentTargetsInParallel = YES;
+				LastUpgradeCheck = 1500;
+				TargetAttributes = {
+					50123456789ABCDEF0000030 = {
+						CreatedOnToolsVersion = 15.0;
+					};
+				};
+			};
+			buildConfigurationList = 50123456789ABCDEF0000110 /* Build configuration list for PBXProject "App" */;
+			compatibilityVersion = "Xcode 14.0";
+			developmentRegion = en;
+			hasScannedForEncodings = 0;
+			knownRegions = (
+				en,
+				Base,
+			);
+			mainGroup = 50123456789ABCDEF0000020;
+			productRefGroup = 50123456789ABCDEF0000022 /* Products */;
+			projectDirPath = "";
+			projectRoot = "";
+			targets = (
+				50123456789ABCDEF0000030 /* App */,
+			);
+		};
+/* End PBXProject section */
+
+/* Begin PBXResourcesBuildPhase section */
+		50123456789ABCDEF0000060 /* Resources */ = {
+			isa = PBXResourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				50123456789ABCDEF0000003 /* PrivacyInfo.xcprivacy in Resources */,
+				50123456789ABCDEF0000005 /* notices.txt in Resources */,
+				50123456789ABCDEF0000009 /* public in Resources */,
+				50123456789ABCDEF000000B /* capacitor.config.json in Resources */,
+				50123456789ABCDEF000000D /* config.xml in Resources */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+/* End PBXResourcesBuildPhase section */
+
+/* Begin PBXSourcesBuildPhase section */
+		50123456789ABCDEF0000050 /* Sources */ = {
+			isa = PBXSourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				50123456789ABCDEF0000001 /* AppDelegate.swift in Sources */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+/* End PBXSourcesBuildPhase section */
+
+/* Begin XCBuildConfiguration section */
+		50123456789ABCDEF0000111 /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ALWAYS_SEARCH_USER_PATHS = NO;
+				CLANG_ANALYZER_NONNULL = YES;
+				CLANG_CXX_LANGUAGE_STANDARD = "gnu++20";
+				CLANG_ENABLE_MODULES = YES;
+				CLANG_ENABLE_OBJC_ARC = YES;
+				COPY_PHASE_STRIP = NO;
+				DEBUG_INFORMATION_FORMAT = dwarf;
+				ENABLE_STRICT_OBJC_MSGSEND = YES;
+				ENABLE_TESTABILITY = YES;
+				GCC_DYNAMIC_NO_PIC = NO;
+				GCC_NO_COMMON_BLOCKS = YES;
+				GCC_OPTIMIZATION_LEVEL = 0;
+				GCC_PREPROCESSOR_DEFINITIONS = (
+					"DEBUG=1",
+					"$(inherited)",
+				);
+				IPHONEOS_DEPLOYMENT_TARGET = 14.0;
+				MTL_ENABLE_DEBUG_INFO = INCLUDE_SOURCE;
+				ONLY_ACTIVE_ARCH = YES;
+				SDKROOT = iphoneos;
+				SWIFT_ACTIVE_COMPILATION_CONDITIONS = DEBUG;
+				SWIFT_OPTIMIZATION_LEVEL = "-Onone";
+			};
+			name = Debug;
+		};
+		50123456789ABCDEF0000112 /* Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ALWAYS_SEARCH_USER_PATHS = NO;
+				CLANG_ANALYZER_NONNULL = YES;
+				CLANG_CXX_LANGUAGE_STANDARD = "gnu++20";
+				CLANG_ENABLE_MODULES = YES;
+				CLANG_ENABLE_OBJC_ARC = YES;
+				COPY_PHASE_STRIP = NO;
+				DEBUG_INFORMATION_FORMAT = "dwarf-with-dsym";
+				ENABLE_NS_ASSERTIONS = NO;
+				ENABLE_STRICT_OBJC_MSGSEND = YES;
+				GCC_NO_COMMON_BLOCKS = YES;
+				IPHONEOS_DEPLOYMENT_TARGET = 14.0;
+				MTL_ENABLE_DEBUG_INFO = NO;
+				SDKROOT = iphoneos;
+				SWIFT_COMPILATION_MODE = "wholemodule";
+				SWIFT_OPTIMIZATION_LEVEL = "-O";
+				VALIDATE_PRODUCT = YES;
+			};
+			name = Release;
+		};
+		50123456789ABCDEF0000113 /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
+				CODE_SIGN_STYLE = Automatic;
+				CURRENT_PROJECT_VERSION = 1;
+				INFOPLIST_FILE = App/Info.plist;
+				IPHONEOS_DEPLOYMENT_TARGET = 14.0;
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/Frameworks",
+				);
+				MARKETING_VERSION = 0.1.0;
+				PRODUCT_BUNDLE_IDENTIFIER = com.lattice.app;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SWIFT_EMIT_LOC_STRINGS = YES;
+				SWIFT_VERSION = 5.0;
+				TARGETED_DEVICE_FAMILY = "1,2";
+			};
+			name = Debug;
+		};
+		50123456789ABCDEF0000114 /* Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
+				CODE_SIGN_STYLE = Automatic;
+				CURRENT_PROJECT_VERSION = 1;
+				INFOPLIST_FILE = App/Info.plist;
+				IPHONEOS_DEPLOYMENT_TARGET = 14.0;
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/Frameworks",
+				);
+				MARKETING_VERSION = 0.1.0;
+				PRODUCT_BUNDLE_IDENTIFIER = com.lattice.app;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SWIFT_EMIT_LOC_STRINGS = YES;
+				SWIFT_VERSION = 5.0;
+				TARGETED_DEVICE_FAMILY = "1,2";
+			};
+			name = Release;
+		};
+/* End XCBuildConfiguration section */
+
+/* Begin XCConfigurationList section */
+		50123456789ABCDEF0000040 /* Build configuration list for PBXNativeTarget "App" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				50123456789ABCDEF0000113 /* Debug */,
+				50123456789ABCDEF0000114 /* Release */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Release;
+		};
+		50123456789ABCDEF0000110 /* Build configuration list for PBXProject "App" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				50123456789ABCDEF0000111 /* Debug */,
+				50123456789ABCDEF0000112 /* Release */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Release;
+		};
+/* End XCConfigurationList section */
+	};
+	rootObject = 50123456789ABCDEF0000100 /* Project object */;
+}

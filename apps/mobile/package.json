@@ -1,0 +1,30 @@
+{
+  "name": "@lattice/mobile",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "build": "pnpm --filter @lattice/client build && cap sync",
+    "cap": "cap",
+    "sync": "cap sync",
+    "typecheck": "tsc --noEmit",
+    "test": "vitest run"
+  },
+  "dependencies": {
+    "@aparajita/capacitor-secure-storage": "7.1.6",
+    "@capacitor/android": "7.0.1",
+    "@capacitor/app": "7.0.0",
+    "@capacitor/core": "7.0.1",
+    "@capacitor/ios": "7.0.1",
+    "@lattice/client": "workspace:*",
+    "@lattice/sdk": "workspace:*",
+    "@lattice/types": "workspace:*",
+    "@lattice/ui-core": "workspace:*"
+  },
+  "devDependencies": {
+    "@capacitor/cli": "7.0.1",
+    "@types/node": "22.15.30",
+    "typescript": "5.9.3",
+    "vitest": "3.2.4"
+  }
+}
