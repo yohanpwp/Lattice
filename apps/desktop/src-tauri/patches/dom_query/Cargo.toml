@@ -1,0 +1,42 @@
+[package]
+edition = "2021"
+rust-version = "1.75"
+name = "dom_query"
+version = "0.28.0"
+authors = [
+    "niklak <morgenpurple@gmail.com>",
+    "importcjj <importcjj@gmail.com>",
+]
+description = "HTML querying and manipulation with CSS selectors"
+readme = "README.md"
+license = "MIT"
+repository = "https://github.com/niklak/dom_query"
+
+[features]
+atomic = []
+default = []
+hashbrown = ["dep:hashbrown"]
+markdown = []
+
+[lib]
+name = "dom_query"
+path = "src/lib.rs"
+
+[dependencies.foldhash]
+version = "0.2.0"
+
+[dependencies.hashbrown]
+version = "0.16.1"
+features = [
+    "allocator-api2",
+    "inline-more",
+    "default-hasher",
+]
+optional = true
+default-features = false
+
+[dependencies.html5ever]
+version = "0.39.0"
+
+[dependencies.tendril]
+version = "0.5.0"
