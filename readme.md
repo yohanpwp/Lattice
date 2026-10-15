@@ -13,9 +13,8 @@
 - [4. สถาปัตยกรรมระบบ (Architecture Principles)](#4-สถาปัตยกรรมระบบ-architecture-principles)
 - [5. โครงสร้างโปรเจกต์ (Repository Structure)](#5-โครงสร้างโปรเจกต์-repository-structure)
 - [6. การต่อยอดจาก PocketBase (PocketBase Integration Strategy)](#6-การต่อยอดจาก-pocketbase-pocketbase-integration-strategy)
-- [7. ขอบเขต MVP และทิศทางในอนาคต (MVP Scope & Roadmap)](#7-ขอบเขต-mvp-และทิศทางในอนาคต-mvp-scope--roadmap)
-- [8. แผนงานและ Milestone (Milestones)](#8-แผนงานและ-milestone-milestones)
-- [9. ลิขสิทธิ์และการใช้งาน Third-Party (License & Compliance)](#9-ลิขสิทธิ์และการใช้งาน-third-party-license--compliance)
+- [7. ขั้นตอนการเปิดใช้งาน Dev Server (Development & Quick Start)](#7-ขั้นตอนการเปิดใช้งาน-dev-server-development--quick-start)
+- [8. ลิขสิทธิ์และการใช้งาน Third-Party (License & Compliance)](#8-ลิขสิทธิ์และการใช้งาน-third-party-license--compliance)
 
 ---
 
@@ -129,7 +128,84 @@ Lattice/
 
 ---
 
-## 7. ลิขสิทธิ์และการใช้งาน Third-Party (License & Compliance)
+## 7. ขั้นตอนการเปิดใช้งาน Dev Server (Development & Quick Start)
+
+คำแนะนำสำหรับการตั้งค่าและเปิดใช้งานเซิร์ฟเวอร์เพื่อทดสอบและพัฒนาบนเครื่องของคุณ:
+
+### 1. ความต้องการเบื้องต้น (Prerequisites)
+- **Node.js**: v20+ และ **pnpm**: v10+
+- **Go**: v1.23+
+- **Git**
+
+### 2. ติดตั้ง Dependencies
+```bash
+pnpm install
+```
+
+### 3. ตั้งค่าและเปิดใช้งาน Backend Server (PocketBase + Lattice Core)
+
+1. **เตรียมไฟล์คอนฟิก Tenant & Features:**
+   ```bash
+   cd backend
+   cp tenant.example.json tenant.json
+   cp features.example.json features.json
+   ```
+   *(หมายเหตุ: บน Windows PowerShell สามารถใช้คำสั่ง `Copy-Item tenant.example.json tenant.json` และ `Copy-Item features.example.json features.json`)*
+
+2. **รัน Database Migrations และสร้าง Superuser (ครั้งแรก):**
+   ```bash
+   go run ./cmd/server migrate up --dir=./pb_data
+   go run ./cmd/server superuser create admin@example.com 'Password123456!' --dir=./pb_data
+   ```
+
+3. **เปิดเซิร์ฟเวอร์ Backend:**
+   ```bash
+   go run ./cmd/server serve --http=127.0.0.1:8090 --dir=./pb_data
+   ```
+   *(หรือคอมไพล์เป็นไบนารีไว้ใช้งาน: `go build -o server.exe ./cmd/server` แล้วรัน `.\server.exe serve --http=127.0.0.1:8090 --dir=./pb_data`)*
+
+4. **สร้าง User Account เริ่มต้น (ผ่าน REST API):**
+   เปิด Terminal ใหม่แล้วสร้างบัญชีผู้ใช้งานสำหรับทดสอบผ่าน API:
+   - **PowerShell (Windows):**
+     ```powershell
+     $userBody = @{ email = "user@example.com"; password = "Password123456!"; passwordConfirm = "Password123456!" } | ConvertTo-Json
+     Invoke-RestMethod -Uri "http://127.0.0.1:8090/api/collections/users/records" -Method Post -Body $userBody -ContentType "application/json"
+     ```
+   - **Bash / cURL:**
+     ```bash
+     curl -X POST http://127.0.0.1:8090/api/collections/users/records \
+       -H "Content-Type: application/json" \
+       -d '{"email":"user@example.com","password":"Password123456!","passwordConfirm":"Password123456!"}'
+     ```
+
+### 4. เปิดใช้งาน Frontend Client Dev Server (Web SPA)
+
+เปิด Terminal ใหม่ที่โฟลเดอร์หลักของโปรเจกต์ (Root):
+```bash
+pnpm dev
+```
+ระบบจะเปิด Vite dev server ที่: **`http://localhost:5173`**
+
+### 5. ข้อมูลสำหรับเข้าใช้งานและทดสอบ (Example Workspace & Accounts)
+
+| การเข้าใช้งาน | URL | ข้อมูลเชื่อมต่อ / บัญชี |
+| :--- | :--- | :--- |
+| **Frontend Web App** | [`http://localhost:5173`](http://localhost:5173) | • **Workspace URL**: `http://127.0.0.1:8090`<br>• **Email**: `user@example.com`<br>• **Password**: `Password123456!` |
+| **PocketBase Admin UI** | [`http://127.0.0.1:8090/_/`](http://127.0.0.1:8090/_/) | • **Email**: `admin@example.com`<br>• **Password**: `Password123456!` |
+| **API Health Check** | [`http://127.0.0.1:8090/v1/health`](http://127.0.0.1:8090/v1/health) | ตรวจสอบสถานะ Backend (ส่งกลับ `{"status":"ok"}`) |
+| **Tenant Config Endpoint**| [`http://127.0.0.1:8090/v1/config`](http://127.0.0.1:8090/v1/config) | ตรวจสอบข้อมูล Tenant และ Feature flags |
+
+### 6. คำสั่งสำคัญสำหรับการพัฒนาและทดสอบ (Useful Scripts)
+```bash
+pnpm test            # รัน unit tests ทั้งหมดใน monorepo (88 tests)
+pnpm typecheck       # ตรวจสอบ TypeScript types ทุกแพ็กเกจ
+pnpm build           # ทดสอบ build production bundle ของเว็บไคลเอนต์
+pnpm check:licenses  # รัน license scanner ตรวจสอบความถูกต้องของสิทธิ์การใช้งาน
+```
+
+---
+
+## 8. ลิขสิทธิ์และการใช้งาน Third-Party (License & Compliance)
 
 Lattice ให้ความสำคัญอย่างยิ่งต่อความถูกต้องทางลิขสิทธิ์ซอฟต์แวร์และความโปร่งใสของ Open Source:
 
