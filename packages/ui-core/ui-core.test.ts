@@ -1,4 +1,6 @@
+import React from "react";
 import { describe, expect, it } from "vitest";
+import { renderToString } from "react-dom/server";
 import {
   columnsFor,
   defaultDashboard,
@@ -17,12 +19,18 @@ import {
   assertFeatures,
   assertPluginManifest,
   assertEventEnvelope,
+  assertSchemaDefinition,
   ContractError,
   buildListOptions,
   perPageFor,
   resolvePlatform,
+  SchemaNavigation,
+  SchemaRecordModal,
+  CreateSchemaModal,
+  ConfirmModal,
   type DataClient,
 } from "./index";
+import type { SchemaDefinition } from "@lattice/types";
 import { createMemoryStorage } from "@lattice/sdk";
 
 describe("workspace URL normalization and storage", () => {
@@ -304,6 +312,114 @@ describe("generated validators", () => {
       data: { order_id: 123 },
     };
     expect(assertEventEnvelope(validEvent)).toEqual(validEvent);
+  });
+});
+
+describe("schema navigation and validation", () => {
+  const sampleSchema: SchemaDefinition = {
+    schema_id: "inventory",
+    name: "คลังสินค้า",
+    description: "Warehouse inventory stock",
+    icon: "📦",
+    fields: [
+      { name: "sku", label: "SKU Code", type: "text", required: true },
+      { name: "stock", label: "In Stock", type: "number", required: true },
+      { name: "status", label: "Status", type: "select", options: ["available", "low", "empty"] },
+    ],
+  };
+
+  it("validates SchemaDefinition contract assertions", () => {
+    expect(assertSchemaDefinition(sampleSchema)).toEqual(sampleSchema);
+
+    // Invalid schema_id
+    expect(() =>
+      assertSchemaDefinition({
+        ...sampleSchema,
+        schema_id: "123-invalid",
+      }),
+    ).toThrowError(ContractError);
+
+    // Empty fields list
+    expect(() =>
+      assertSchemaDefinition({
+        ...sampleSchema,
+        fields: [],
+      }),
+    ).toThrowError(ContractError);
+  });
+
+  it("renders SchemaNavigation with dynamic schema tabs and active indicators", () => {
+    const html = renderToString(
+      React.createElement(SchemaNavigation, {
+        schemas: [sampleSchema],
+        activeTab: "inventory",
+        onSelectTab: () => {},
+        onOpenCreateSchema: () => {},
+      }),
+    );
+
+    expect(html).toContain("Dashboard Overview");
+    expect(html).toContain("คลังสินค้า");
+    expect(html).toContain("📦");
+    expect(html).toContain("+ New Schema");
+    expect(html).toContain("lattice-tab--active");
+  });
+
+  it("dynamically renders SchemaRecordModal matching schema fields and types", () => {
+    const html = renderToString(
+      React.createElement(SchemaRecordModal, {
+        schema: sampleSchema,
+        isOpen: true,
+        onClose: () => {},
+        onSave: async () => {},
+      }),
+    );
+
+    // Checks that inputs are rendered for all editable fields
+    expect(html).toContain("SKU Code");
+    expect(html).toContain("In Stock");
+    expect(html).toContain("Status");
+    // Checks that select options from the contract are rendered
+    expect(html).toContain('value="available"');
+    expect(html).toContain('value="low"');
+    expect(html).toContain('value="empty"');
+    // Checks that required field indicator is present
+    expect(html).toContain("lattice-req");
+  });
+
+  it("renders CreateSchemaModal dialog and field definitions builder", () => {
+    const html = renderToString(
+      React.createElement(CreateSchemaModal, {
+        isOpen: true,
+        onClose: () => {},
+        onCreate: async () => {},
+      }),
+    );
+
+    expect(html).toContain("Create New Dynamic Schema");
+    expect(html).toContain("Schema ID (Table identifier)");
+    expect(html).toContain("Dataset Fields Definition");
+    expect(html).toContain("+ Add Field");
+  });
+
+  it("renders ConfirmModal with custom title, message, and danger action", () => {
+    const html = renderToString(
+      React.createElement(ConfirmModal, {
+        isOpen: true,
+        title: "Delete Inventory Item",
+        message: "Are you sure you want to delete this record? This cannot be undone.",
+        confirmLabel: "Delete Now",
+        confirmVariant: "danger",
+        onConfirm: () => {},
+        onCancel: () => {},
+      }),
+    );
+
+    expect(html).toContain("Delete Inventory Item");
+    expect(html).toContain("Are you sure you want to delete this record?");
+    expect(html).toContain("Delete Now");
+    expect(html).toContain("lattice-btn-danger");
+    expect(html).toContain("Cancel");
   });
 });
 

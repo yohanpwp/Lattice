@@ -1,5 +1,12 @@
 import PocketBase, { type RecordModel } from "pocketbase";
-import { assertAppConfig, assertFeatures, type AppConfig, type Features } from "@lattice/types";
+import {
+  assertAppConfig,
+  assertFeatures,
+  assertSchemaDefinition,
+  type AppConfig,
+  type Features,
+  type SchemaDefinition,
+} from "@lattice/types";
 import { AuthPersistenceError, createAuthStore, type PersistentAuthStore } from "./authStore";
 import { fetchAppConfig } from "./config";
 import { ClientTooOldError } from "./errors";
@@ -103,6 +110,46 @@ export class ProductClient {
   async getFeatures(): Promise<Features> {
     const data = await this.pb.send("/v1/features", { method: "GET" });
     return assertFeatures(data);
+  }
+
+  /**
+   * Fetches all registered business schema definitions from GET /v1/schemas.
+   * Requires a signed-in user.
+   */
+  async getSchemas(): Promise<SchemaDefinition[]> {
+    const list = await this.pb.send<SchemaDefinition[]>("/v1/schemas", { method: "GET" });
+    return (list ?? []).map((item) => assertSchemaDefinition(item));
+  }
+
+  /**
+   * Fetches a single business schema definition by schema_id from GET /v1/schemas/{id}.
+   * Requires a signed-in user.
+   */
+  async getSchema(id: string): Promise<SchemaDefinition> {
+    const data = await this.pb.send<SchemaDefinition>(`/v1/schemas/${encodeURIComponent(id)}`, { method: "GET" });
+    return assertSchemaDefinition(data);
+  }
+
+  /**
+   * Creates a new business schema definition via POST /v1/schemas.
+   * Backed by a PocketBase collection and stored in schema_definitions.
+   * Requires a signed-in user.
+   */
+  async createSchema(def: SchemaDefinition): Promise<SchemaDefinition> {
+    const valid = assertSchemaDefinition(def);
+    const created = await this.pb.send<SchemaDefinition>("/v1/schemas", {
+      method: "POST",
+      body: valid,
+    });
+    return assertSchemaDefinition(created);
+  }
+
+  /**
+   * Deletes a business schema definition via DELETE /v1/schemas/{id}.
+   * Requires a signed-in user.
+   */
+  async deleteSchema(id: string): Promise<void> {
+    await this.pb.send(`/v1/schemas/${encodeURIComponent(id)}`, { method: "DELETE" });
   }
 
   hasFeature(name: string): boolean {

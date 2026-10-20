@@ -1,0 +1,108 @@
+name: CI & Compliance
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+jobs:
+  license-compliance:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 10.12.1
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24.x
+          cache: pnpm
+      - uses: actions/setup-go@v5
+        with:
+          go-version: 1.27.x
+      - run: pnpm install --frozen-lockfile
+      - run: cd backend && go mod download
+      - name: Run License Scanner Tests
+        run: node tools/license-scan/scan.test.mjs
+      - name: Enforce License Compliance & Stale Check
+        run: node tools/license-scan/scan.mjs --check
+
+  backend-verification:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version: 1.27.x
+      - run: cd backend && go test -race -count=1 ./...
+      - run: cd backend && go vet ./...
+
+  monorepo-verification:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 10.12.1
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24.x
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - run: node tools/codegen/gen.mjs --check
+      - run: node tools/codegen/check-openapi.mjs
+      - run: node tools/codegen/check-browser-bundle.mjs
+      - run: pnpm -r typecheck
+      - run: pnpm -r test
+      - run: pnpm build
+
+  android-build:
+    runs-on: ubuntu-latest
+    needs: [monorepo-verification]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 10.12.1
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24.x
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: 21
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm --filter @lattice/client build
+      - name: Sync Capacitor Android
+        run: cd apps/mobile && npx cap sync android
+      - name: Build Android Debug APK
+        run: cd apps/mobile/android && chmod +x gradlew && ./gradlew assembleDebug --no-daemon
+
+  ios-build:
+    runs-on: macos-latest
+    needs: [monorepo-verification]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 10.12.1
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24.x
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm --filter @lattice/client build
+      - name: Sync Capacitor iOS
+        run: cd apps/mobile && npx cap sync ios
+      - name: Build iOS Simulator App (Unsigned)
+        run: |
+          cd apps/mobile/ios/App
+          xcodebuild -workspace App.xcworkspace \
+            -scheme App \
+            -configuration Debug \
+            -destination 'generic/platform=iOS Simulator' \
+            -derivedDataPath build \
+            CODE_SIGNING_ALLOWED=NO \
+            CODE_SIGNING_REQUIRED=NO \
+            CODE_SIGN_IDENTITY="" \
+            build

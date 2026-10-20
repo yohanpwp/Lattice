@@ -213,3 +213,56 @@ export interface Payment {
     [k: string]: unknown;
   };
 }
+
+/**
+ * Definition of a business schema/dataset. Backed by a PocketBase collection and stored in schema_definitions.
+ */
+export interface SchemaDefinition {
+  /**
+   * Unique identifier for this schema (e.g. inventory, orders, customers).
+   */
+  schema_id: string;
+  /**
+   * Human-readable display name (e.g. คลังสินค้า, Customer Directory).
+   */
+  name: string;
+  /**
+   * Optional description of what this dataset is for.
+   */
+  description?: string;
+  /**
+   * Optional icon identifier or emoji for navigation tabs.
+   */
+  icon?: string;
+  /**
+   * @minItems 1
+   * @maxItems 100
+   */
+  fields: [FieldDefinition, ...FieldDefinition[]];
+  /**
+   * Creation timestamp.
+   */
+  created?: string;
+  /**
+   * Last update timestamp.
+   */
+  updated?: string;
+}
+export interface FieldDefinition {
+  name: string;
+  label?: string;
+  type: 'text' | 'number' | 'bool' | 'email' | 'url' | 'date' | 'select' | 'relation' | 'json' | 'file';
+  required?: boolean;
+  /**
+   * Allowed values for select field types.
+   */
+  options?: string[];
+  /**
+   * Target schema_id for relation field types.
+   */
+  target?: string;
+  /**
+   * True for system-generated fields (id, created, updated).
+   */
+  system?: boolean;
+}

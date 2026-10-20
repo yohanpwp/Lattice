@@ -1,4 +1,5 @@
 import { describe, expect, it, vi } from "vitest";
+import type { SchemaDefinition } from "@lattice/types";
 import {
   AuthPersistenceError,
   ClientTooOldError,
@@ -610,5 +611,71 @@ describe("config transport and host adapters", () => {
       await adapter.removeItem("token");
       expect(await adapter.getItem("token")).toBeNull();
     }
+  });
+});
+
+describe("schema management", () => {
+  it("fetches, gets, creates, and deletes schemas", async () => {
+    const mockSchema: SchemaDefinition = {
+      schema_id: "inventory",
+      name: "Inventory",
+      description: "Warehouse stock items",
+      icon: "📦",
+      fields: [
+        { name: "item_code", label: "Item Code", type: "text", required: true },
+        { name: "quantity", label: "Quantity", type: "number", required: true },
+        { name: "status", label: "Status", type: "select", options: ["in_stock", "low", "out_of_stock"] },
+      ],
+    };
+
+    const calls: Array<{ url: string; method?: string; body?: unknown }> = [];
+    const customFetch: typeof fetch = (async (input: RequestInfo | URL, init?: RequestInit) => {
+      const url = String(input);
+      calls.push({ url, method: init?.method, body: init?.body ? JSON.parse(String(init.body)) : undefined });
+      if (url.endsWith("/v1/config")) return json(config);
+      if (url.includes("auth-with-password")) {
+        const token = `e30.${btoa(JSON.stringify({ exp: Math.floor(Date.now() / 1000) + 3600 }))}.sig`;
+        return json({ token, record: { id: "user_1", collectionName: "users" } });
+      }
+      if (url.endsWith("/v1/schemas") && (!init?.method || init.method === "GET")) {
+        return json([mockSchema]);
+      }
+      if (url.endsWith("/v1/schemas/inventory") && (!init?.method || init.method === "GET")) {
+        return json(mockSchema);
+      }
+      if (url.endsWith("/v1/schemas") && init?.method === "POST") {
+        return json({ ...mockSchema, created: "2026-10-20T12:00:00Z" });
+      }
+      if (url.endsWith("/v1/schemas/inventory") && init?.method === "DELETE") {
+        return json({ status: "deleted" });
+      }
+      return json({});
+    }) as typeof fetch;
+
+    const client = await ProductClient.connect({
+      backendUrl: "https://acme.app.example.com/",
+      clientVersion: "0.1.0",
+      platform: { storage: createMemoryStorage(), fetch: customFetch },
+    });
+    await client.login("admin@example.com", "secret");
+
+    // List schemas
+    const schemas = await client.getSchemas();
+    expect(schemas).toHaveLength(1);
+    expect(schemas[0]?.schema_id).toBe("inventory");
+    expect(schemas[0]?.fields).toHaveLength(3);
+
+    // Get single schema
+    const single = await client.getSchema("inventory");
+    expect(single.name).toBe("Inventory");
+
+    // Create schema
+    const created = await client.createSchema(mockSchema);
+    expect(created.schema_id).toBe("inventory");
+    expect(created.created).toBeDefined();
+
+    // Delete schema
+    await client.deleteSchema("inventory");
+    expect(calls.some((c) => c.url.endsWith("/v1/schemas/inventory") && c.method === "DELETE")).toBe(true);
   });
 });
