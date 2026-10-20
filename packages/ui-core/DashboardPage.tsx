@@ -1,11 +1,11 @@
 import { useCallback, useEffect, useState } from "react";
-import type { SchemaDefinition } from "@lattice/types";
+import type { PageDefinition, SchemaDefinition } from "@lattice/types";
 import type { ProductClient } from "@lattice/sdk";
 import { loadDashboardLayout, type LoadedLayout } from "./dashboardLoader";
 import { Dashboard } from "./Dashboard";
 import { SchemaNavigation } from "./SchemaNavigation";
 import { SchemaView } from "./SchemaView";
-import { CreateSchemaModal } from "./CreateSchemaModal";
+import { DynamicPageView } from "./DynamicPageView";
 
 interface DashboardPageProps {
   client: ProductClient;
@@ -16,10 +16,10 @@ interface DashboardPageProps {
 
 export function DashboardPage({ client, onSignOut, onChangeWorkspace }: DashboardPageProps) {
   const [loaded, setLoaded] = useState<LoadedLayout | null>(null);
+  const [pages, setPages] = useState<PageDefinition[]>([]);
   const [schemas, setSchemas] = useState<SchemaDefinition[]>([]);
   const [activeTab, setActiveTab] = useState<string>("dashboard");
-  const [createSchemaModalOpen, setCreateSchemaModalOpen] = useState(false);
-  const [loadingSchemas, setLoadingSchemas] = useState(true);
+  const [loadingInitial, setLoadingInitial] = useState(true);
 
   const fetchSchemas = useCallback(async () => {
     try {
@@ -27,8 +27,15 @@ export function DashboardPage({ client, onSignOut, onChangeWorkspace }: Dashboar
       setSchemas(list);
     } catch {
       // Fallback gracefully if schemas endpoint unavailable or offline
-    } finally {
-      setLoadingSchemas(false);
+    }
+  }, [client]);
+
+  const fetchPages = useCallback(async () => {
+    try {
+      const list = await client.getPages();
+      setPages(list);
+    } catch {
+      // Fallback gracefully if app_pages collection does not exist or user offline
     }
   }, [client]);
 
@@ -37,25 +44,32 @@ export function DashboardPage({ client, onSignOut, onChangeWorkspace }: Dashboar
     loadDashboardLayout(client, client.config.collections).then((result) => {
       if (!ignore) setLoaded(result);
     });
-    fetchSchemas();
+
+    Promise.all([fetchSchemas(), fetchPages()]).finally(() => {
+      if (!ignore) setLoadingInitial(false);
+    });
+
+    // Subscribe to realtime updates on app_pages collection
+    let unsubscribed = false;
+    client
+      .collection("app_pages")
+      .subscribe("*", () => {
+        if (!unsubscribed) {
+          fetchPages();
+        }
+      })
+      .catch(() => {});
 
     return () => {
       ignore = true;
+      unsubscribed = true;
+      try {
+        client.collection("app_pages").unsubscribe("*").catch(() => {});
+      } catch {}
     };
-  }, [client, fetchSchemas]);
+  }, [client, fetchSchemas, fetchPages]);
 
-  async function handleCreateSchema(newSchema: SchemaDefinition) {
-    const created = await client.createSchema(newSchema);
-    await fetchSchemas();
-    setActiveTab(created.schema_id);
-  }
-
-  async function handleDeleteSchema(schemaId: string) {
-    await client.deleteSchema(schemaId);
-    await fetchSchemas();
-    setActiveTab("dashboard");
-  }
-
+  const selectedPage = pages.find((p) => p.page_id === activeTab);
   const selectedSchema = schemas.find((s) => s.schema_id === activeTab);
 
   return (
@@ -82,10 +96,10 @@ export function DashboardPage({ client, onSignOut, onChangeWorkspace }: Dashboar
       </header>
 
       <SchemaNavigation
+        pages={pages}
         schemas={schemas}
         activeTab={activeTab}
         onSelectTab={setActiveTab}
-        onOpenCreateSchema={() => setCreateSchemaModalOpen(true)}
       />
 
       <main style={{ marginTop: "1.5rem" }}>
@@ -101,13 +115,17 @@ export function DashboardPage({ client, onSignOut, onChangeWorkspace }: Dashboar
           </>
         )}
 
-        {activeTab !== "dashboard" && selectedSchema && (
-          <SchemaView client={client} schema={selectedSchema} onDeleteSchema={handleDeleteSchema} />
+        {activeTab !== "dashboard" && selectedPage && (
+          <DynamicPageView client={client} page={selectedPage} schemas={schemas} />
         )}
 
-        {activeTab !== "dashboard" && !selectedSchema && !loadingSchemas && (
+        {activeTab !== "dashboard" && !selectedPage && selectedSchema && (
+          <SchemaView client={client} schema={selectedSchema} />
+        )}
+
+        {activeTab !== "dashboard" && !selectedPage && !selectedSchema && !loadingInitial && (
           <div className="lattice-empty-card">
-            <p className="yp-muted">Schema "{activeTab}" not found.</p>
+            <p className="yp-muted">Page or Schema "{activeTab}" not found.</p>
             <button
               type="button"
               className="lattice-btn-secondary"
@@ -119,12 +137,6 @@ export function DashboardPage({ client, onSignOut, onChangeWorkspace }: Dashboar
           </div>
         )}
       </main>
-
-      <CreateSchemaModal
-        isOpen={createSchemaModalOpen}
-        onClose={() => setCreateSchemaModalOpen(false)}
-        onCreate={handleCreateSchema}
-      />
     </div>
   );
 }

@@ -678,4 +678,53 @@ describe("schema management", () => {
     await client.deleteSchema("inventory");
     expect(calls.some((c) => c.url.endsWith("/v1/schemas/inventory") && c.method === "DELETE")).toBe(true);
   });
+
+  it("fetches custom pages via getPages() and getPage()", async () => {
+    const mockPageRecord = {
+      id: "rec_page_1",
+      page_id: "orders-board",
+      name: "Orders Board",
+      view_type: "kanban",
+      collection: "orders",
+      config: {
+        groupByField: "status",
+        cardFields: ["title", "total"],
+      },
+      created: "2026-10-20T10:00:00Z",
+      updated: "2026-10-20T10:00:00Z",
+    };
+
+    const customFetch = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+      const url = String(input);
+      if (url.endsWith("/v1/config")) return json(config);
+      if (url.includes("auth-with-password")) {
+        const token = `e30.${btoa(JSON.stringify({ exp: Math.floor(Date.now() / 1000) + 3600 }))}.sig`;
+        return json({ token, record: { id: "u1", collectionName: "users" } });
+      }
+      if (url.includes("/api/collections/app_pages/records") && url.includes("getFirstListItem")) {
+        return json(mockPageRecord);
+      }
+      if (url.includes("/api/collections/app_pages/records")) {
+        return json({ items: [mockPageRecord], totalItems: 1, totalPages: 1 });
+      }
+      return json({});
+    }) as typeof fetch;
+
+    const client = await ProductClient.connect({
+      backendUrl: "https://acme.app.example.com/",
+      clientVersion: "0.1.0",
+      platform: { storage: createMemoryStorage(), fetch: customFetch },
+    });
+    await client.login("admin@example.com", "secret");
+
+    const pages = await client.getPages();
+    expect(pages).toHaveLength(1);
+    expect(pages[0]?.page_id).toBe("orders-board");
+    expect(pages[0]?.view_type).toBe("kanban");
+    expect(pages[0]?.config?.groupByField).toBe("status");
+
+    const single = await client.getPage("orders-board");
+    expect(single?.name).toBe("Orders Board");
+    expect(single?.collection).toBe("orders");
+  });
 });

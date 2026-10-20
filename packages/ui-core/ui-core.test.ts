@@ -20,6 +20,7 @@ import {
   assertPluginManifest,
   assertEventEnvelope,
   assertSchemaDefinition,
+  assertPageDefinition,
   ContractError,
   buildListOptions,
   perPageFor,
@@ -28,9 +29,14 @@ import {
   SchemaRecordModal,
   CreateSchemaModal,
   ConfirmModal,
+  DynamicPageView,
+  TableView,
+  KanbanView,
+  MasterDetailView,
+  SchemaView,
   type DataClient,
 } from "./index";
-import type { SchemaDefinition } from "@lattice/types";
+import type { SchemaDefinition, PageDefinition } from "@lattice/types";
 import { createMemoryStorage } from "@lattice/sdk";
 
 describe("workspace URL normalization and storage", () => {
@@ -348,21 +354,173 @@ describe("schema navigation and validation", () => {
     ).toThrowError(ContractError);
   });
 
-  it("renders SchemaNavigation with dynamic schema tabs and active indicators", () => {
+  it("renders SchemaNavigation with dynamic pages and schema tabs without builder buttons", () => {
+    const samplePage: PageDefinition = {
+      page_id: "inventory-board",
+      name: "Inventory Board",
+      view_type: "kanban",
+      collection: "inventory",
+      icon: "📌",
+    };
+
     const html = renderToString(
       React.createElement(SchemaNavigation, {
+        pages: [samplePage],
         schemas: [sampleSchema],
-        activeTab: "inventory",
+        activeTab: "inventory-board",
         onSelectTab: () => {},
-        onOpenCreateSchema: () => {},
       }),
     );
 
     expect(html).toContain("Dashboard Overview");
+    expect(html).toContain("Inventory Board");
+    expect(html).toContain("📌");
     expect(html).toContain("คลังสินค้า");
     expect(html).toContain("📦");
-    expect(html).toContain("+ New Schema");
+    // Webview navigation must NOT have + New Schema or + New Page buttons
+    expect(html).not.toContain("+ New Schema");
+    expect(html).not.toContain("+ New Page");
     expect(html).toContain("lattice-tab--active");
+  });
+
+  it("renders DynamicPageView with TableView and respects permission guards", () => {
+    const tablePage: PageDefinition = {
+      page_id: "inventory-table",
+      name: "Inventory Table",
+      view_type: "table",
+      collection: "inventory",
+    };
+
+    const fakeClient = {
+      collection: () => ({
+        getList: async () => ({ items: [], totalPages: 1, totalItems: 0 }),
+        subscribe: () => Promise.resolve(() => {}),
+        unsubscribe: () => Promise.resolve(),
+      }),
+      filter: (raw: string) => raw,
+    } as unknown as import("@lattice/sdk").ProductClient;
+
+    // 1. When can_create is false, "+ Add Record" must NOT be rendered
+    const readOnlySchema: SchemaDefinition = {
+      ...sampleSchema,
+      can_create: false,
+      can_update: false,
+      can_delete: false,
+    };
+
+    const readOnlyHtml = renderToString(
+      React.createElement(DynamicPageView, {
+        client: fakeClient,
+        page: tablePage,
+        schemas: [readOnlySchema],
+      }),
+    );
+
+    expect(readOnlyHtml).toContain("Inventory Table");
+    expect(readOnlyHtml).toContain("Table View");
+    expect(readOnlyHtml).not.toContain("+ Add Record");
+    expect(readOnlyHtml).not.toContain("Actions");
+
+    // 2. When can_create is true, "+ Add Record" is rendered
+    const writableSchema: SchemaDefinition = {
+      ...sampleSchema,
+      can_create: true,
+      can_update: true,
+      can_delete: true,
+    };
+
+    const writableHtml = renderToString(
+      React.createElement(DynamicPageView, {
+        client: fakeClient,
+        page: tablePage,
+        schemas: [writableSchema],
+        initialRecords: [{ id: "rec1", sku: "SKU-001", stock: 10, status: "available" }],
+      }),
+    );
+
+    expect(writableHtml).toContain("+ Add Record");
+    expect(writableHtml).toContain("Actions");
+    expect(writableHtml).toContain("Edit");
+    expect(writableHtml).toContain("Delete");
+  });
+
+  it("renders KanbanView with lanes according to select options and respects permissions", () => {
+    const kanbanPage: PageDefinition = {
+      page_id: "inventory-kanban",
+      name: "Inventory Workflow",
+      view_type: "kanban",
+      collection: "inventory",
+      config: {
+        groupByField: "status",
+      },
+    };
+
+    const fakeClient = {
+      collection: () => ({
+        getList: async () => ({ items: [], totalPages: 1, totalItems: 0 }),
+        subscribe: () => Promise.resolve(() => {}),
+        unsubscribe: () => Promise.resolve(),
+      }),
+      filter: (raw: string) => raw,
+    } as unknown as import("@lattice/sdk").ProductClient;
+
+    const schemaWithPermissions: SchemaDefinition = {
+      ...sampleSchema,
+      can_create: true,
+      can_update: false,
+      can_delete: false,
+    };
+
+    const html = renderToString(
+      React.createElement(DynamicPageView, {
+        client: fakeClient,
+        page: kanbanPage,
+        schemas: [schemaWithPermissions],
+      }),
+    );
+
+    expect(html).toContain("Inventory Workflow");
+    expect(html).toContain("Kanban View");
+    expect(html).toContain("available");
+    expect(html).toContain("low");
+    expect(html).toContain("empty");
+    // With can_create: true, column + buttons are visible
+    expect(html).toContain("+ Add Record");
+  });
+
+  it("renders MasterDetailView with master panel and relation section", () => {
+    const masterDetailPage: PageDefinition = {
+      page_id: "customers-detail",
+      name: "Customer Orders",
+      view_type: "master_detail",
+      collection: "inventory",
+      config: {
+        detailCollection: "inventory",
+        relationField: "inventory_id",
+      },
+    };
+
+    const fakeClient = {
+      collection: () => ({
+        getList: async () => ({ items: [], totalPages: 1, totalItems: 0 }),
+        subscribe: () => Promise.resolve(() => {}),
+        unsubscribe: () => Promise.resolve(),
+      }),
+      filter: (raw: string) => raw,
+    } as unknown as import("@lattice/sdk").ProductClient;
+
+    const html = renderToString(
+      React.createElement(DynamicPageView, {
+        client: fakeClient,
+        page: masterDetailPage,
+        schemas: [sampleSchema],
+      }),
+    );
+
+    expect(html).toContain("Customer Orders");
+    expect(html).toContain("Master-Detail View");
+    expect(html).toContain("lattice-master-list-panel");
+    expect(html).toContain("lattice-detail-panel");
   });
 
   it("dynamically renders SchemaRecordModal matching schema fields and types", () => {

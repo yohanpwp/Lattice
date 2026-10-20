@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import type { FieldDefinition, SchemaDefinition } from "@lattice/types";
 import type { ProductClient } from "@lattice/sdk";
 import { SchemaRecordModal } from "./SchemaRecordModal";
@@ -7,10 +7,9 @@ import { ConfirmModal } from "./ConfirmModal";
 export interface SchemaViewProps {
   client: ProductClient;
   schema: SchemaDefinition;
-  onDeleteSchema?: (schemaId: string) => Promise<void>;
 }
 
-export function SchemaView({ client, schema, onDeleteSchema }: SchemaViewProps) {
+export function SchemaView({ client, schema }: SchemaViewProps) {
   const [records, setRecords] = useState<Array<Record<string, unknown>>>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -25,7 +24,11 @@ export function SchemaView({ client, schema, onDeleteSchema }: SchemaViewProps) 
   const [modalOpen, setModalOpen] = useState(false);
   const [editingRecord, setEditingRecord] = useState<Record<string, unknown> | null>(null);
   const [recordToDelete, setRecordToDelete] = useState<Record<string, unknown> | null>(null);
-  const [deleteSchemaConfirm, setDeleteSchemaConfirm] = useState(false);
+
+  const canCreate = schema.can_create !== false;
+  const canUpdate = schema.can_update !== false;
+  const canDelete = schema.can_delete !== false;
+  const hasActions = canUpdate || canDelete;
 
   const loadRecords = useCallback(async () => {
     setLoading(true);
@@ -46,16 +49,21 @@ export function SchemaView({ client, schema, onDeleteSchema }: SchemaViewProps) 
     }
   }, [client, schema.schema_id, page, perPage, sortField, sortDirection]);
 
+  const loadRecordsRef = useRef(loadRecords);
+  loadRecordsRef.current = loadRecords;
+
   useEffect(() => {
     loadRecords();
+  }, [loadRecords]);
 
+  useEffect(() => {
     // Subscribe to PocketBase realtime updates for this collection
     let unsubscribed = false;
     client
       .collection(schema.schema_id)
       .subscribe("*", () => {
         if (!unsubscribed) {
-          loadRecords();
+          loadRecordsRef.current();
         }
       })
       .catch(() => {
@@ -70,7 +78,7 @@ export function SchemaView({ client, schema, onDeleteSchema }: SchemaViewProps) 
         // ignore
       }
     };
-  }, [client, schema.schema_id, loadRecords]);
+  }, [client, schema.schema_id]);
 
   // Reset page when schema changes
   useEffect(() => {
@@ -104,16 +112,6 @@ export function SchemaView({ client, schema, onDeleteSchema }: SchemaViewProps) 
       await loadRecords();
     } catch (err: unknown) {
       setError(err instanceof Error ? err.message : "Failed to delete record");
-    }
-  }
-
-  async function handleConfirmDeleteSchema() {
-    if (!onDeleteSchema) return;
-    try {
-      await onDeleteSchema(schema.schema_id);
-      setDeleteSchemaConfirm(false);
-    } catch (err: unknown) {
-      setError(err instanceof Error ? err.message : "Failed to delete schema");
     }
   }
 
@@ -163,25 +161,16 @@ export function SchemaView({ client, schema, onDeleteSchema }: SchemaViewProps) 
             🔄 Refresh
           </button>
 
-          <button
-            type="button"
-            className="lattice-btn-primary"
-            onClick={() => {
-              setEditingRecord(null);
-              setModalOpen(true);
-            }}
-          >
-            + Add Record
-          </button>
-
-          {onDeleteSchema && (
+          {canCreate && (
             <button
               type="button"
-              className="lattice-btn-secondary lattice-btn-danger-outline"
-              onClick={() => setDeleteSchemaConfirm(true)}
-              title="Delete schema"
+              className="lattice-btn-primary"
+              onClick={() => {
+                setEditingRecord(null);
+                setModalOpen(true);
+              }}
             >
-              🗑 Delete Schema
+              + Add Record
             </button>
           )}
         </div>
@@ -200,10 +189,12 @@ export function SchemaView({ client, schema, onDeleteSchema }: SchemaViewProps) 
           <p className="lattice-empty-title">No records found</p>
           <p className="yp-muted">
             {records.length === 0
-              ? `This collection is empty. Click "+ Add Record" to insert your first record according to the schema.`
+              ? canCreate
+                ? `This collection is empty. Click "+ Add Record" to insert your first record according to the schema.`
+                : `This collection is empty.`
               : `No records match "${searchQuery}".`}
           </p>
-          {records.length === 0 && (
+          {records.length === 0 && canCreate && (
             <button
               type="button"
               className="lattice-btn-primary"
@@ -243,9 +234,11 @@ export function SchemaView({ client, schema, onDeleteSchema }: SchemaViewProps) 
                     </th>
                   );
                 })}
-                <th scope="col" style={{ width: "130px", textAlign: "right" }}>
-                  Actions
-                </th>
+                {hasActions && (
+                  <th scope="col" style={{ width: "130px", textAlign: "right" }}>
+                    Actions
+                  </th>
+                )}
               </tr>
             </thead>
             <tbody>
@@ -256,27 +249,33 @@ export function SchemaView({ client, schema, onDeleteSchema }: SchemaViewProps) 
                     {displayFields.map((field) => (
                       <td key={field.name}>{renderCellValue(item[field.name], field)}</td>
                     ))}
-                    <td style={{ textAlign: "right" }}>
-                      <div className="lattice-table-actions">
-                        <button
-                          type="button"
-                          className="lattice-btn-table"
-                          onClick={() => {
-                            setEditingRecord(item);
-                            setModalOpen(true);
-                          }}
-                        >
-                          Edit
-                        </button>
-                        <button
-                          type="button"
-                          className="lattice-btn-table lattice-btn-table-danger"
-                          onClick={() => setRecordToDelete(item)}
-                        >
-                          Delete
-                        </button>
-                      </div>
-                    </td>
+                    {hasActions && (
+                      <td style={{ textAlign: "right" }}>
+                        <div className="lattice-table-actions">
+                          {canUpdate && (
+                            <button
+                              type="button"
+                              className="lattice-btn-table"
+                              onClick={() => {
+                                setEditingRecord(item);
+                                setModalOpen(true);
+                              }}
+                            >
+                              Edit
+                            </button>
+                          )}
+                          {canDelete && (
+                            <button
+                              type="button"
+                              className="lattice-btn-table lattice-btn-table-danger"
+                              onClick={() => setRecordToDelete(item)}
+                            >
+                              Delete
+                            </button>
+                          )}
+                        </div>
+                      </td>
+                    )}
                   </tr>
                 );
               })}
@@ -353,17 +352,6 @@ export function SchemaView({ client, schema, onDeleteSchema }: SchemaViewProps) 
         confirmVariant="danger"
         onConfirm={handleConfirmDeleteRecord}
         onCancel={() => setRecordToDelete(null)}
-      />
-
-      {/* Delete Schema Confirmation Modal */}
-      <ConfirmModal
-        isOpen={deleteSchemaConfirm}
-        title={`Delete Schema: ${schema.name}`}
-        message={`Are you sure you want to delete schema "${schema.name}" (${schema.schema_id})? All records in this collection will be permanently deleted.`}
-        confirmLabel="Permanently Delete Schema"
-        confirmVariant="danger"
-        onConfirm={handleConfirmDeleteSchema}
-        onCancel={() => setDeleteSchemaConfirm(false)}
       />
     </section>
   );

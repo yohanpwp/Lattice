@@ -14,6 +14,7 @@ var PlatformCollections = map[string]bool{
 	"payment_ledger":     true,
 	"dashboards":         true,
 	"schema_definitions": true,
+	"app_pages":          true,
 }
 
 // DiscoveredCollections returns all business collections in the PocketBase

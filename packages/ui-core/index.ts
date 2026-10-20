@@ -16,4 +16,8 @@ export * from "./SchemaView";
 export * from "./SchemaRecordModal";
 export * from "./CreateSchemaModal";
 export * from "./ConfirmModal";
+export * from "./DynamicPageView";
+export * from "./TableView";
+export * from "./KanbanView";
+export * from "./MasterDetailView";
 export * from "@lattice/types";

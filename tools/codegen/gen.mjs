@@ -20,6 +20,7 @@ const schemaSpecs = [
   ["CheckoutRequest", "contracts/schemas/payments/checkout-request.json", "payments/checkout-request.json"],
   ["Payment", "contracts/schemas/payments/payment.json", "payments/payment.json"],
   ["SchemaDefinition", "contracts/schemas/schema-definition.json", "schema-definition.json"],
+  ["PageDefinition", "contracts/schemas/page-definition.json", "page-definition.json"],
 ];
 
 async function output(path, content) {

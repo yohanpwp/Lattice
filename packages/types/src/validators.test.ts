@@ -9,6 +9,8 @@ import {
   assertFeatures,
   assertPayment,
   assertPluginManifest,
+  assertSchemaDefinition,
+  assertPageDefinition,
 } from "./index";
 
 const validConfig = {
@@ -169,5 +171,47 @@ describe("Features, PluginManifest, EventEnvelope", () => {
     expect(assertPayment(valid)).toEqual(valid);
     expect(() => assertPayment({ ...valid, status: "unknown_status" })).toThrow(ContractError);
     expect(() => assertPayment({ ...valid, amount: -10 })).toThrow(ContractError);
+  });
+
+  it("validates schema definitions with permission capability flags", () => {
+    const valid = {
+      schema_id: "customers",
+      name: "Customer List",
+      fields: [{ name: "name", type: "text" }],
+      can_create: true,
+      can_update: true,
+      can_delete: false,
+    };
+    expect(assertSchemaDefinition(valid)).toEqual(valid);
+  });
+
+  it("validates page definitions for different view types", () => {
+    const validTable = {
+      page_id: "orders-table",
+      name: "Orders Overview",
+      view_type: "table" as const,
+      collection: "orders",
+      config: {
+        columns: ["order_id", "total", "status"],
+        perPage: 25,
+      },
+    };
+    expect(assertPageDefinition(validTable)).toEqual(validTable);
+
+    const validKanban = {
+      page_id: "tasks-board",
+      name: "Task Board",
+      view_type: "kanban" as const,
+      collection: "tasks",
+      config: {
+        groupByField: "status",
+        cardFields: ["title", "assignee"],
+        allowDelete: false,
+      },
+    };
+    expect(assertPageDefinition(validKanban)).toEqual(validKanban);
+
+    expect(() => assertPageDefinition({ ...validKanban, view_type: "invalid_type" })).toThrow(ContractError);
+    expect(() => assertPageDefinition({ ...validKanban, page_id: "Invalid Page ID!" })).toThrow(ContractError);
   });
 });

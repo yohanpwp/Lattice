@@ -31,6 +31,18 @@
       "maxItems": 100,
       "items": { "$ref": "#/$defs/FieldDefinition" }
     },
+    "can_create": {
+      "type": "boolean",
+      "description": "True if PocketBase createRule is enabled for API."
+    },
+    "can_update": {
+      "type": "boolean",
+      "description": "True if PocketBase updateRule is enabled for API."
+    },
+    "can_delete": {
+      "type": "boolean",
+      "description": "True if PocketBase deleteRule is enabled for API."
+    },
     "created": {
       "type": "string",
       "description": "Creation timestamp."

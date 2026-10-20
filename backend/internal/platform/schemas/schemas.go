@@ -42,6 +42,9 @@ type SchemaDefinition struct {
 	Description string            `json:"description,omitempty"`
 	Icon        string            `json:"icon,omitempty"`
 	Fields      []FieldDefinition `json:"fields"`
+	CanCreate   bool              `json:"can_create"`
+	CanUpdate   bool              `json:"can_update"`
+	CanDelete   bool              `json:"can_delete"`
 	Created     string            `json:"created,omitempty"`
 	Updated     string            `json:"updated,omitempty"`
 }
@@ -91,6 +94,12 @@ func (s *Service) ListSchemas(ctx context.Context) ([]SchemaDefinition, error) {
 				if mErr == nil {
 					_ = json.Unmarshal(data, &def.Fields)
 				}
+			}
+
+			if col, _ := s.app.FindCollectionByNameOrId(def.SchemaID); col != nil {
+				def.CanCreate = col.CreateRule != nil
+				def.CanUpdate = col.UpdateRule != nil
+				def.CanDelete = col.DeleteRule != nil
 			}
 
 			recordedMap[def.SchemaID] = true
@@ -146,6 +155,13 @@ func (s *Service) GetSchema(ctx context.Context, schemaID string) (*SchemaDefini
 				_ = json.Unmarshal(data, &def.Fields)
 			}
 		}
+
+		if col, _ := s.app.FindCollectionByNameOrId(def.SchemaID); col != nil {
+			def.CanCreate = col.CreateRule != nil
+			def.CanUpdate = col.UpdateRule != nil
+			def.CanDelete = col.DeleteRule != nil
+		}
+
 		return &def, nil
 	}
 
@@ -252,6 +268,9 @@ func (s *Service) CreateSchema(ctx context.Context, def SchemaDefinition) (*Sche
 		def.Created = time.Now().UTC().Format(time.RFC3339)
 		def.Updated = def.Created
 	}
+	def.CanCreate = true
+	def.CanUpdate = true
+	def.CanDelete = true
 
 	return &def, nil
 }
@@ -329,10 +348,13 @@ func RegisterSyncHooks(app core.App) {
 // CollectionToSchemaDefinition converts a PocketBase Collection model into a clean SchemaDefinition.
 func CollectionToSchemaDefinition(col *core.Collection) SchemaDefinition {
 	def := SchemaDefinition{
-		SchemaID: col.Name,
-		Name:     col.Name,
-		Created:  col.Created.String(),
-		Updated:  col.Updated.String(),
+		SchemaID:  col.Name,
+		Name:      col.Name,
+		CanCreate: col.CreateRule != nil,
+		CanUpdate: col.UpdateRule != nil,
+		CanDelete: col.DeleteRule != nil,
+		Created:   col.Created.String(),
+		Updated:   col.Updated.String(),
 	}
 
 	for _, f := range col.Fields {

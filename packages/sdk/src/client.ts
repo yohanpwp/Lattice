@@ -3,9 +3,11 @@ import {
   assertAppConfig,
   assertFeatures,
   assertSchemaDefinition,
+  assertPageDefinition,
   type AppConfig,
   type Features,
   type SchemaDefinition,
+  type PageDefinition,
 } from "@lattice/types";
 import { AuthPersistenceError, createAuthStore, type PersistentAuthStore } from "./authStore";
 import { fetchAppConfig } from "./config";
@@ -150,6 +152,64 @@ export class ProductClient {
    */
   async deleteSchema(id: string): Promise<void> {
     await this.pb.send(`/v1/schemas/${encodeURIComponent(id)}`, { method: "DELETE" });
+  }
+
+  /**
+   * Fetches all registered custom pages from app_pages collection.
+   * Requires a signed-in user.
+   */
+  async getPages(): Promise<PageDefinition[]> {
+    try {
+      const records = await this.pb.collection("app_pages").getFullList({
+        sort: "created",
+        requestKey: null,
+      });
+      return records.map((rec) =>
+        assertPageDefinition({
+          page_id: rec.page_id,
+          name: rec.name,
+          description: rec.description || undefined,
+          icon: rec.icon || undefined,
+          view_type: rec.view_type,
+          collection: rec.collection,
+          config: rec.config ?? {},
+          created: rec.created,
+          updated: rec.updated,
+        }),
+      );
+    } catch (err) {
+      const status = (err as { status?: number } | null)?.status;
+      if (status === 404) return [];
+      throw err;
+    }
+  }
+
+  /**
+   * Fetches a single custom page definition by page_id.
+   * Requires a signed-in user.
+   */
+  async getPage(pageId: string): Promise<PageDefinition | null> {
+    try {
+      const rec = await this.pb.collection("app_pages").getFirstListItem(
+        this.filter("page_id = {:id}", { id: pageId }),
+        { requestKey: null },
+      );
+      return assertPageDefinition({
+        page_id: rec.page_id,
+        name: rec.name,
+        description: rec.description || undefined,
+        icon: rec.icon || undefined,
+        view_type: rec.view_type,
+        collection: rec.collection,
+        config: rec.config ?? {},
+        created: rec.created,
+        updated: rec.updated,
+      });
+    } catch (err) {
+      const status = (err as { status?: number } | null)?.status;
+      if (status === 404) return null;
+      throw err;
+    }
   }
 
   hasFeature(name: string): boolean {

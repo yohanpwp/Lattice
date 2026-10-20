@@ -7,3 +7,4 @@ export declare const validateEventEnvelope: { (data: unknown): boolean; errors?:
 export declare const validateCheckoutRequest: { (data: unknown): boolean; errors?: Array<{ instancePath?: string; message?: string }> | null };
 export declare const validatePayment: { (data: unknown): boolean; errors?: Array<{ instancePath?: string; message?: string }> | null };
 export declare const validateSchemaDefinition: { (data: unknown): boolean; errors?: Array<{ instancePath?: string; message?: string }> | null };
+export declare const validatePageDefinition: { (data: unknown): boolean; errors?: Array<{ instancePath?: string; message?: string }> | null };

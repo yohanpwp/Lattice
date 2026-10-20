@@ -847,3 +847,276 @@ button:disabled {
   font-size: 0.8rem;
   font-family: monospace;
 }
+
+/* Kanban Board Layout */
+.lattice-kanban-view {
+  background: var(--lattice-surface);
+  border: 1px solid var(--lattice-border);
+  border-radius: 8px;
+  margin: 0 1.5rem;
+  overflow: hidden;
+}
+
+.lattice-kanban-board {
+  display: flex;
+  gap: 1rem;
+  overflow-x: auto;
+  padding: 1.5rem;
+  align-items: flex-start;
+  min-height: 480px;
+}
+
+.lattice-kanban-column {
+  background: var(--lattice-bg);
+  border: 1px solid var(--lattice-border);
+  border-radius: 8px;
+  min-width: 270px;
+  max-width: 320px;
+  flex: 1 0 270px;
+  display: flex;
+  flex-direction: column;
+  max-height: calc(100vh - 280px);
+}
+
+.lattice-kanban-column-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 0.75rem 1rem;
+  border-bottom: 1px solid var(--lattice-border);
+  background: var(--lattice-surface);
+  border-radius: 8px 8px 0 0;
+}
+
+.lattice-kanban-column-title {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  font-weight: 600;
+  text-transform: capitalize;
+}
+
+.lattice-kanban-count-badge {
+  background: var(--lattice-border);
+  color: var(--lattice-text);
+  font-size: 0.75rem;
+  padding: 0.15rem 0.45rem;
+  border-radius: 999px;
+}
+
+.lattice-kanban-column-content {
+  padding: 0.75rem;
+  overflow-y: auto;
+  display: flex;
+  flex-direction: column;
+  gap: 0.75rem;
+  flex: 1;
+}
+
+.lattice-kanban-card {
+  background: var(--lattice-surface);
+  border: 1px solid var(--lattice-border);
+  border-radius: 6px;
+  padding: 0.85rem;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.04);
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+}
+
+.lattice-kanban-card-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  font-size: 0.8rem;
+}
+
+.lattice-kanban-card-id {
+  font-family: monospace;
+  color: var(--lattice-muted);
+}
+
+.lattice-kanban-card-actions {
+  display: flex;
+  gap: 0.5rem;
+}
+
+.lattice-btn-link-sm {
+  background: none;
+  border: none;
+  font-size: 0.75rem;
+  color: var(--lattice-primary);
+  cursor: pointer;
+  padding: 0;
+  text-decoration: underline;
+}
+
+.lattice-btn-danger-text {
+  color: var(--lattice-error);
+}
+
+.lattice-kanban-card-body {
+  display: flex;
+  flex-direction: column;
+  gap: 0.35rem;
+  font-size: 0.85rem;
+}
+
+.lattice-kanban-field-row {
+  display: flex;
+  justify-content: space-between;
+  gap: 0.5rem;
+}
+
+.lattice-kanban-field-label {
+  color: var(--lattice-muted);
+  font-size: 0.8rem;
+}
+
+.lattice-kanban-field-value {
+  font-weight: 500;
+  text-align: right;
+  word-break: break-word;
+}
+
+.lattice-kanban-card-footer {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.5rem;
+  margin-top: 0.35rem;
+  padding-top: 0.5rem;
+  border-top: 1px solid var(--lattice-border);
+  font-size: 0.75rem;
+}
+
+.lattice-kanban-move-label {
+  color: var(--lattice-muted);
+}
+
+.lattice-kanban-empty-lane {
+  text-align: center;
+  padding: 1.5rem 0;
+  color: var(--lattice-muted);
+  font-size: 0.8rem;
+  border: 1px dashed var(--lattice-border);
+  border-radius: 4px;
+}
+
+/* Master-Detail Layout */
+.lattice-master-detail-view {
+  background: var(--lattice-surface);
+  border: 1px solid var(--lattice-border);
+  border-radius: 8px;
+  margin: 0 1.5rem;
+  overflow: hidden;
+}
+
+.lattice-master-detail-grid {
+  display: grid;
+  grid-template-columns: 300px 1fr;
+  min-height: 520px;
+  border-top: 1px solid var(--lattice-border);
+}
+
+.lattice-master-list-panel {
+  border-right: 1px solid var(--lattice-border);
+  background: var(--lattice-bg);
+  display: flex;
+  flex-direction: column;
+}
+
+.lattice-master-search-bar {
+  padding: 0.75rem;
+  border-bottom: 1px solid var(--lattice-border);
+}
+
+.lattice-master-items {
+  overflow-y: auto;
+  flex: 1;
+}
+
+.lattice-master-card {
+  padding: 0.85rem 1rem;
+  border-bottom: 1px solid var(--lattice-border);
+  cursor: pointer;
+  transition: background 0.15s;
+}
+
+.lattice-master-card:hover {
+  background: rgba(0, 0, 0, 0.03);
+}
+
+.lattice-master-card--active {
+  background: var(--lattice-surface);
+  border-left: 3px solid var(--lattice-primary);
+  font-weight: 600;
+}
+
+.lattice-master-card-title {
+  font-size: 0.9rem;
+}
+
+.lattice-master-card-sub {
+  font-size: 0.75rem;
+  color: var(--lattice-muted);
+  margin-top: 0.2rem;
+}
+
+.lattice-detail-panel {
+  padding: 1.5rem;
+  overflow-y: auto;
+  background: var(--lattice-surface);
+}
+
+.lattice-detail-header-card {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  margin-bottom: 1.5rem;
+  padding-bottom: 1rem;
+  border-bottom: 1px solid var(--lattice-border);
+}
+
+.lattice-detail-header-actions {
+  display: flex;
+  gap: 0.5rem;
+}
+
+.lattice-detail-fields-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(180px, 1fr));
+  gap: 1rem;
+  margin-bottom: 2rem;
+  padding: 1rem;
+  background: var(--lattice-bg);
+  border-radius: 6px;
+}
+
+.lattice-detail-field-item {
+  display: flex;
+  flex-direction: column;
+  gap: 0.2rem;
+}
+
+.lattice-detail-field-label {
+  font-size: 0.75rem;
+  color: var(--lattice-muted);
+  text-transform: uppercase;
+}
+
+.lattice-detail-field-val {
+  font-size: 0.9rem;
+  font-weight: 500;
+}
+
+.lattice-detail-relation-section {
+  margin-top: 1.5rem;
+}
+
+.lattice-detail-relation-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 1rem;
+}

@@ -506,6 +506,18 @@ export const schemaDefinitionSchema = {
         "$ref": "#/$defs/FieldDefinition"
       }
     },
+    "can_create": {
+      "type": "boolean",
+      "description": "True if PocketBase createRule is enabled for API."
+    },
+    "can_update": {
+      "type": "boolean",
+      "description": "True if PocketBase updateRule is enabled for API."
+    },
+    "can_delete": {
+      "type": "boolean",
+      "description": "True if PocketBase deleteRule is enabled for API."
+    },
     "created": {
       "type": "string",
       "description": "Creation timestamp."
@@ -562,6 +574,122 @@ export const schemaDefinitionSchema = {
         "system": {
           "type": "boolean",
           "description": "True for system-generated fields (id, created, updated)."
+        }
+      }
+    }
+  }
+} as const;
+
+export const pageDefinitionSchema = {
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$id": "https://lattice.dev/schemas/page-definition.json",
+  "title": "PageDefinition",
+  "description": "Definition of a custom application page. Backed by the app_pages collection.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "page_id",
+    "name",
+    "view_type",
+    "collection"
+  ],
+  "properties": {
+    "page_id": {
+      "type": "string",
+      "pattern": "^[a-z][a-z0-9_-]{1,40}$",
+      "description": "Unique identifier for this page (e.g. orders-board, inventory-table)."
+    },
+    "name": {
+      "type": "string",
+      "minLength": 1,
+      "description": "Human-readable display name for the page."
+    },
+    "description": {
+      "type": "string",
+      "description": "Optional page description."
+    },
+    "icon": {
+      "type": "string",
+      "description": "Emoji or icon identifier."
+    },
+    "view_type": {
+      "type": "string",
+      "enum": [
+        "table",
+        "kanban",
+        "master_detail",
+        "dashboard"
+      ],
+      "description": "The view layout used to render this page."
+    },
+    "collection": {
+      "type": "string",
+      "pattern": "^[a-zA-Z_][a-zA-Z0-9_]*$",
+      "description": "Primary schema/collection ID this page binds to."
+    },
+    "config": {
+      "$ref": "#/$defs/PageConfig"
+    },
+    "created": {
+      "type": "string",
+      "description": "Creation timestamp."
+    },
+    "updated": {
+      "type": "string",
+      "description": "Last update timestamp."
+    }
+  },
+  "$defs": {
+    "PageConfig": {
+      "type": "object",
+      "additionalProperties": true,
+      "properties": {
+        "columns": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "groupByField": {
+          "type": "string"
+        },
+        "cardFields": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "detailCollection": {
+          "type": "string"
+        },
+        "relationField": {
+          "type": "string"
+        },
+        "detailColumns": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "defaultFilter": {
+          "type": "string"
+        },
+        "defaultSort": {
+          "type": "string"
+        },
+        "perPage": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 100
+        },
+        "allowCreate": {
+          "type": "boolean"
+        },
+        "allowEdit": {
+          "type": "boolean"
+        },
+        "allowDelete": {
+          "type": "boolean"
         }
       }
     }

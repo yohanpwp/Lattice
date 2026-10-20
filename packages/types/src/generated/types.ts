@@ -240,6 +240,18 @@ export interface SchemaDefinition {
    */
   fields: [FieldDefinition, ...FieldDefinition[]];
   /**
+   * True if PocketBase createRule is enabled for API.
+   */
+  can_create?: boolean;
+  /**
+   * True if PocketBase updateRule is enabled for API.
+   */
+  can_update?: boolean;
+  /**
+   * True if PocketBase deleteRule is enabled for API.
+   */
+  can_delete?: boolean;
+  /**
    * Creation timestamp.
    */
   created?: string;
@@ -265,4 +277,58 @@ export interface FieldDefinition {
    * True for system-generated fields (id, created, updated).
    */
   system?: boolean;
+}
+
+/**
+ * Definition of a custom application page. Backed by the app_pages collection.
+ */
+export interface PageDefinition {
+  /**
+   * Unique identifier for this page (e.g. orders-board, inventory-table).
+   */
+  page_id: string;
+  /**
+   * Human-readable display name for the page.
+   */
+  name: string;
+  /**
+   * Optional page description.
+   */
+  description?: string;
+  /**
+   * Emoji or icon identifier.
+   */
+  icon?: string;
+  /**
+   * The view layout used to render this page.
+   */
+  view_type: 'table' | 'kanban' | 'master_detail' | 'dashboard';
+  /**
+   * Primary schema/collection ID this page binds to.
+   */
+  collection: string;
+  config?: PageConfig;
+  /**
+   * Creation timestamp.
+   */
+  created?: string;
+  /**
+   * Last update timestamp.
+   */
+  updated?: string;
+}
+export interface PageConfig {
+  columns?: string[];
+  groupByField?: string;
+  cardFields?: string[];
+  detailCollection?: string;
+  relationField?: string;
+  detailColumns?: string[];
+  defaultFilter?: string;
+  defaultSort?: string;
+  perPage?: number;
+  allowCreate?: boolean;
+  allowEdit?: boolean;
+  allowDelete?: boolean;
+  [k: string]: unknown;
 }
