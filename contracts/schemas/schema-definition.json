@@ -1,0 +1,78 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$id": "https://lattice.dev/schemas/schema-definition.json",
+  "title": "SchemaDefinition",
+  "description": "Definition of a business schema/dataset. Backed by a PocketBase collection and stored in schema_definitions.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schema_id", "name", "fields"],
+  "properties": {
+    "schema_id": {
+      "type": "string",
+      "pattern": "^[a-z][a-z0-9_]{1,40}$",
+      "description": "Unique identifier for this schema (e.g. inventory, orders, customers)."
+    },
+    "name": {
+      "type": "string",
+      "minLength": 1,
+      "description": "Human-readable display name (e.g. คลังสินค้า, Customer Directory)."
+    },
+    "description": {
+      "type": "string",
+      "description": "Optional description of what this dataset is for."
+    },
+    "icon": {
+      "type": "string",
+      "description": "Optional icon identifier or emoji for navigation tabs."
+    },
+    "fields": {
+      "type": "array",
+      "minItems": 1,
+      "maxItems": 100,
+      "items": { "$ref": "#/$defs/FieldDefinition" }
+    },
+    "created": {
+      "type": "string",
+      "description": "Creation timestamp."
+    },
+    "updated": {
+      "type": "string",
+      "description": "Last update timestamp."
+    }
+  },
+  "$defs": {
+    "FieldDefinition": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["name", "type"],
+      "properties": {
+        "name": {
+          "type": "string",
+          "pattern": "^[a-z][a-z0-9_]{0,40}$"
+        },
+        "label": {
+          "type": "string"
+        },
+        "type": {
+          "enum": ["text", "number", "bool", "email", "url", "date", "select", "relation", "json", "file"]
+        },
+        "required": {
+          "type": "boolean"
+        },
+        "options": {
+          "type": "array",
+          "items": { "type": "string" },
+          "description": "Allowed values for select field types."
+        },
+        "target": {
+          "type": "string",
+          "description": "Target schema_id for relation field types."
+        },
+        "system": {
+          "type": "boolean",
+          "description": "True for system-generated fields (id, created, updated)."
+        }
+      }
+    }
+  }
+}

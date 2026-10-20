@@ -5,14 +5,18 @@ package platform
 import (
 	"context"
 	"errors"
+	"strings"
 
 	"github.com/pocketbase/pocketbase/core"
+	"github.com/pocketbase/pocketbase/tools/types"
 
 	"github.com/Lattice/backend/internal/platform/features"
 	"github.com/Lattice/backend/internal/platform/outbox"
 	"github.com/Lattice/backend/internal/platform/outbox/pbstore"
 	"github.com/Lattice/backend/internal/platform/registry"
+	"github.com/Lattice/backend/internal/platform/schemas"
 	"github.com/Lattice/backend/internal/platform/secrets"
+	"github.com/Lattice/backend/internal/platform/tenant"
 )
 
 // Start activates the enabled plugins and runs the outbox worker.
@@ -49,6 +53,32 @@ func StartWithSecrets(app core.App, tenantID string, flags *features.Flags, reg 
 		defer close(workerDone)
 		worker.Run(ctx)
 	}()
+
+	// Bind default API rules for newly created business collections so authenticated
+	// tenant members can immediately view and manage records without manual rule setup.
+	app.OnCollectionCreate().BindFunc(func(e *core.CollectionEvent) error {
+		if e.Collection == nil || e.Collection.System || strings.HasPrefix(e.Collection.Name, "_") {
+			return e.Next()
+		}
+		if tenant.PlatformCollections[e.Collection.Name] {
+			return e.Next()
+		}
+
+		if e.Collection.ListRule == nil && e.Collection.ViewRule == nil &&
+			e.Collection.CreateRule == nil && e.Collection.UpdateRule == nil &&
+			e.Collection.DeleteRule == nil {
+			authRule := "@request.auth.id != ''"
+			e.Collection.ListRule = types.Pointer(authRule)
+			e.Collection.ViewRule = types.Pointer(authRule)
+			e.Collection.CreateRule = types.Pointer(authRule)
+			e.Collection.UpdateRule = types.Pointer(authRule)
+			e.Collection.DeleteRule = types.Pointer(authRule)
+		}
+
+		return e.Next()
+	})
+
+	schemas.RegisterSyncHooks(app)
 
 	app.OnTerminate().BindFunc(func(e *core.TerminateEvent) error {
 		cancel()

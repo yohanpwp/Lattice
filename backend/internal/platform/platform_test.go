@@ -203,3 +203,36 @@ func TestTerminateCancelsPluginsStopsWorkerBeforeNextHookAndClosesStore(t *testi
 		t.Fatal("secret store was not closed after termination hooks")
 	}
 }
+
+func TestOnCollectionCreateDefaultsBusinessRules(t *testing.T) {
+	app, err := tests.NewTestApp(t.TempDir())
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(app.Cleanup)
+
+	reg := registry.New("outbox")
+	if err := Start(app, "tenant_test", features.Empty(), reg); err != nil {
+		t.Fatal(err)
+	}
+
+	// Create a new business collection without explicit rules
+	customCol := core.NewBaseCollection("orders")
+	customCol.Fields.Add(&core.TextField{Name: "order_num", Required: true})
+	if err := app.Save(customCol); err != nil {
+		t.Fatalf("failed to save custom collection: %v", err)
+	}
+
+	savedCol, err := app.FindCollectionByNameOrId("orders")
+	if err != nil {
+		t.Fatalf("expected orders collection: %v", err)
+	}
+
+	expectedRule := "@request.auth.id != ''"
+	if savedCol.ListRule == nil || *savedCol.ListRule != expectedRule {
+		t.Errorf("expected ListRule %q, got %v", expectedRule, savedCol.ListRule)
+	}
+	if savedCol.CreateRule == nil || *savedCol.CreateRule != expectedRule {
+		t.Errorf("expected CreateRule %q, got %v", expectedRule, savedCol.CreateRule)
+	}
+}

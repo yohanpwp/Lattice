@@ -55,6 +55,97 @@ paths:
                 $ref: ./schemas/features.json
         "401":
           description: Missing or invalid auth token
+  /v1/schemas:
+    get:
+      operationId: listSchemas
+      summary: List all business schemas
+      description: Requires a signed-in user.
+      security:
+        - pocketbaseToken: []
+      responses:
+        "200":
+          description: List of business schemas
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: ./schemas/schema-definition.json
+        "401":
+          description: Missing or invalid auth token
+    post:
+      operationId: createSchema
+      summary: Create a new business schema
+      description: Requires a signed-in user.
+      security:
+        - pocketbaseToken: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: ./schemas/schema-definition.json
+      responses:
+        "200":
+          description: The created schema definition
+          content:
+            application/json:
+              schema:
+                $ref: ./schemas/schema-definition.json
+        "400":
+          description: Invalid schema definition
+        "401":
+          description: Missing or invalid auth token
+  /v1/schemas/{id}:
+    get:
+      operationId: getSchema
+      summary: Get a business schema by ID
+      description: Requires a signed-in user.
+      security:
+        - pocketbaseToken: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          description: The schema definition
+          content:
+            application/json:
+              schema:
+                $ref: ./schemas/schema-definition.json
+        "404":
+          description: Schema not found
+        "401":
+          description: Missing or invalid auth token
+    delete:
+      operationId: deleteSchema
+      summary: Delete a business schema by ID
+      description: Requires a signed-in user.
+      security:
+        - pocketbaseToken: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          description: Schema deleted successfully
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  status:
+                    type: string
+        "404":
+          description: Schema not found
+        "401":
+          description: Missing or invalid auth token
   /v1/payments/checkout:
     post:
       operationId: createCheckout

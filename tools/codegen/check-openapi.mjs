@@ -10,6 +10,8 @@ const expectedOperations = new Map([
   ["/v1/health", ["get"]],
   ["/v1/config", ["get"]],
   ["/v1/features", ["get"]],
+  ["/v1/schemas", ["get", "post"]],
+  ["/v1/schemas/{id}", ["delete", "get"]],
   ["/v1/payments/checkout", ["post"]],
   ["/v1/payments/{id}", ["get"]],
   ["/v1/webhooks/payments/{provider}", ["post"]],
@@ -35,6 +37,18 @@ function validateImplementedRoutes(document) {
   }
   if (!document.paths["/v1/features"].get.security?.some((scheme) => scheme.pocketbaseToken)) {
     throw new Error("GET /v1/features must require the PocketBase auth token");
+  }
+  if (!document.paths["/v1/schemas"].get.security?.some((scheme) => scheme.pocketbaseToken)) {
+    throw new Error("GET /v1/schemas must require the PocketBase auth token");
+  }
+  if (!document.paths["/v1/schemas"].post.security?.some((scheme) => scheme.pocketbaseToken)) {
+    throw new Error("POST /v1/schemas must require the PocketBase auth token");
+  }
+  if (!document.paths["/v1/schemas/{id}"].get.security?.some((scheme) => scheme.pocketbaseToken)) {
+    throw new Error("GET /v1/schemas/{id} must require the PocketBase auth token");
+  }
+  if (!document.paths["/v1/schemas/{id}"].delete.security?.some((scheme) => scheme.pocketbaseToken)) {
+    throw new Error("DELETE /v1/schemas/{id} must require the PocketBase auth token");
   }
   if (!document.paths["/v1/payments/checkout"].post.security?.some((scheme) => scheme.pocketbaseToken)) {
     throw new Error("POST /v1/payments/checkout must require the PocketBase auth token");

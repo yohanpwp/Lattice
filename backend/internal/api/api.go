@@ -5,6 +5,7 @@ package api
 import (
 	"encoding/json"
 	"errors"
+	"fmt"
 	"io"
 	"net/http"
 
@@ -12,6 +13,7 @@ import (
 	"github.com/pocketbase/pocketbase/core"
 
 	"github.com/Lattice/backend/internal/platform/features"
+	"github.com/Lattice/backend/internal/platform/schemas"
 	"github.com/Lattice/backend/internal/platform/tenant"
 	"github.com/Lattice/backend/internal/plugins/payments"
 )
@@ -36,13 +38,132 @@ func Register(se *core.ServeEvent, cfg *tenant.Config, flags *features.Flags) {
 	// Public, non-secret configuration for clients (web, desktop, mobile).
 	se.Router.GET("/v1/config", func(e *core.RequestEvent) error {
 		e.Response.Header().Set("Cache-Control", "public, max-age=60")
-		return e.JSON(http.StatusOK, cfg)
+		if cfg == nil {
+			return e.JSON(http.StatusOK, cfg)
+		}
+		res := *cfg
+		res.Collections = tenant.DiscoveredCollections(e.App, cfg.Collections)
+		return e.JSON(http.StatusOK, &res)
 	})
 
 	// Per-tenant feature flags and their non-secret options.
 	// Requires a signed-in user.
 	se.Router.GET("/v1/features", func(e *core.RequestEvent) error {
 		return e.JSON(http.StatusOK, flags)
+	}).Bind(apis.RequireAuth())
+
+	schemaSvc := schemas.NewService(se.App)
+
+	// List all business schemas with fields (requires auth)
+	se.Router.GET("/v1/schemas", func(e *core.RequestEvent) error {
+		list, err := schemaSvc.ListSchemas(e.Request.Context())
+		if err != nil {
+			return e.JSON(http.StatusInternalServerError, map[string]string{
+				"error":   "internal_error",
+				"message": err.Error(),
+			})
+		}
+		return e.JSON(http.StatusOK, list)
+	}).Bind(apis.RequireAuth())
+
+	// Get a specific business schema by ID (requires auth)
+	se.Router.GET("/v1/schemas/{id}", func(e *core.RequestEvent) error {
+		id := e.Request.PathValue("id")
+		item, err := schemaSvc.GetSchema(e.Request.Context(), id)
+		if err != nil {
+			if errors.Is(err, schemas.ErrSchemaNotFound) {
+				return e.JSON(http.StatusNotFound, map[string]string{
+					"error":   "not_found",
+					"message": fmt.Sprintf("schema %q not found", id),
+				})
+			}
+			return e.JSON(http.StatusInternalServerError, map[string]string{
+				"error":   "internal_error",
+				"message": err.Error(),
+			})
+		}
+		return e.JSON(http.StatusOK, item)
+	}).Bind(apis.RequireAuth())
+
+	// Create a new business schema (requires auth)
+	se.Router.POST("/v1/schemas", func(e *core.RequestEvent) error {
+		var rawDoc any
+		if err := e.BindBody(&rawDoc); err != nil {
+			return e.JSON(http.StatusBadRequest, map[string]string{
+				"error":   "invalid_request",
+				"message": err.Error(),
+			})
+		}
+
+		if err := tenant.ValidateContractDocument("SchemaDefinition", rawDoc); err != nil {
+			return e.JSON(http.StatusBadRequest, map[string]string{
+				"error":   "invalid_request",
+				"message": err.Error(),
+			})
+		}
+
+		encoded, err := json.Marshal(rawDoc)
+		if err != nil {
+			return e.JSON(http.StatusBadRequest, map[string]string{
+				"error":   "invalid_request",
+				"message": err.Error(),
+			})
+		}
+
+		var def schemas.SchemaDefinition
+		if err := json.Unmarshal(encoded, &def); err != nil {
+			return e.JSON(http.StatusBadRequest, map[string]string{
+				"error":   "invalid_request",
+				"message": err.Error(),
+			})
+		}
+
+		created, err := schemaSvc.CreateSchema(e.Request.Context(), def)
+		if err != nil {
+			if errors.Is(err, schemas.ErrSchemaAlreadyExists) {
+				return e.JSON(http.StatusConflict, map[string]string{
+					"error":   "conflict",
+					"message": err.Error(),
+				})
+			}
+			if errors.Is(err, schemas.ErrReservedSchemaID) || errors.Is(err, schemas.ErrInvalidSchemaID) || errors.Is(err, schemas.ErrInvalidFieldName) {
+				return e.JSON(http.StatusBadRequest, map[string]string{
+					"error":   "invalid_request",
+					"message": err.Error(),
+				})
+			}
+			return e.JSON(http.StatusBadRequest, map[string]string{
+				"error":   "failed_to_create_schema",
+				"message": err.Error(),
+			})
+		}
+
+		return e.JSON(http.StatusOK, created)
+	}).Bind(apis.RequireAuth())
+
+	// Delete a business schema (requires auth)
+	se.Router.DELETE("/v1/schemas/{id}", func(e *core.RequestEvent) error {
+		id := e.Request.PathValue("id")
+		if err := schemaSvc.DeleteSchema(e.Request.Context(), id); err != nil {
+			if errors.Is(err, schemas.ErrSchemaNotFound) {
+				return e.JSON(http.StatusNotFound, map[string]string{
+					"error":   "not_found",
+					"message": fmt.Sprintf("schema %q not found", id),
+				})
+			}
+			if errors.Is(err, schemas.ErrReservedSchemaID) {
+				return e.JSON(http.StatusForbidden, map[string]string{
+					"error":   "forbidden",
+					"message": err.Error(),
+				})
+			}
+			return e.JSON(http.StatusBadRequest, map[string]string{
+				"error":   "failed_to_delete_schema",
+				"message": err.Error(),
+			})
+		}
+
+		return e.JSON(http.StatusOK, map[string]string{"status": "deleted"})
 	}).Bind(apis.RequireAuth())
 
 	// Payment checkout route (requires auth and payments feature flag)
