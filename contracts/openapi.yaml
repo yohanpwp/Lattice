@@ -237,6 +237,174 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/Error"
+  /v1/workspace/setup:
+    post:
+      operationId: setupWorkspace
+      summary: One-time first owner initialization
+      description: Requires valid operator setup token. Permanently closes setup.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: ./schemas/workspace-setup-request.json
+      responses:
+        "200":
+          description: Workspace initialized and owner created
+          content:
+            application/json:
+              schema:
+                $ref: ./schemas/workspace-user.json
+        "401":
+          description: Invalid setup token
+        "409":
+          description: Workspace is already initialized
+  /v1/workspace/users:
+    get:
+      operationId: listWorkspaceUsers
+      summary: List all workspace users and their permissions
+      security:
+        - pocketbaseToken: []
+      responses:
+        "200":
+          description: List of workspace users
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: ./schemas/workspace-user.json
+        "403":
+          description: Owner or admin role required
+  /v1/workspace/users/{id}:
+    patch:
+      operationId: updateWorkspaceUser
+      summary: Update a workspace user's role or permissions
+      security:
+        - pocketbaseToken: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          description: Updated workspace user
+          content:
+            application/json:
+              schema:
+                $ref: ./schemas/workspace-user.json
+        "403":
+          description: Owner or admin role required
+  /v1/workspace/invitations:
+    get:
+      operationId: getWorkspaceInvitations
+      summary: List pending invitations for the workspace
+      security:
+        - pocketbaseToken: []
+      responses:
+        "200":
+          description: List of pending invitations
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: ./schemas/workspace-invitation.json
+        "403":
+          description: Owner or admin role required
+    post:
+      operationId: createInvitation
+      summary: Invite a new member or admin to the workspace
+      security:
+        - pocketbaseToken: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: ./schemas/workspace-invitation.json
+      responses:
+        "200":
+          description: Created invitation
+          content:
+            application/json:
+              schema:
+                $ref: ./schemas/workspace-invitation.json
+        "403":
+          description: Owner or admin role required
+  /v1/workspace/invitations/accept:
+    post:
+      operationId: acceptInvitation
+      summary: Accept an invitation to join the workspace
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [token, name, password]
+              properties:
+                token:
+                  type: string
+                name:
+                  type: string
+                password:
+                  type: string
+      responses:
+        "200":
+          description: Invitation accepted, user created
+          content:
+            application/json:
+              schema:
+                $ref: ./schemas/workspace-user.json
+        "400":
+          description: Invalid, expired, or revoked invitation token
+  /v1/workspace/invitations/{id}/reissue:
+    post:
+      operationId: reissueInvitation
+      summary: Reissue a fresh invitation token for an unaccepted invitation
+      security:
+        - pocketbaseToken: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          description: Reissued invitation token
+          content:
+            application/json:
+              schema:
+                $ref: ./schemas/workspace-invitation.json
+        "403":
+          description: Forbidden - admin cannot reissue admin invitations
+        "404":
+          description: Invitation not found
+  /v1/workspace/permissions:
+    get:
+      operationId: getMyPermissions
+      summary: Get the current authenticated user's role and permissions
+      security:
+        - pocketbaseToken: []
+      responses:
+        "200":
+          description: Current user role and permissions
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [user_id, role, permissions]
+                properties:
+                  user_id:
+                    type: string
+                  role:
+                    type: string
+                  permissions:
+                    type: object
 components:
   securitySchemes:
     pocketbaseToken:

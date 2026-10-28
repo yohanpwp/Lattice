@@ -6,6 +6,8 @@ import { Dashboard } from "./Dashboard";
 import { SchemaNavigation } from "./SchemaNavigation";
 import { SchemaView } from "./SchemaView";
 import { DynamicPageView } from "./DynamicPageView";
+import { CreateSchemaModal } from "./CreateSchemaModal";
+import { WorkspaceMembersModal } from "./WorkspaceMembersModal";
 
 interface DashboardPageProps {
   client: ProductClient;
@@ -20,6 +22,8 @@ export function DashboardPage({ client, onSignOut, onChangeWorkspace }: Dashboar
   const [schemas, setSchemas] = useState<SchemaDefinition[]>([]);
   const [activeTab, setActiveTab] = useState<string>("dashboard");
   const [loadingInitial, setLoadingInitial] = useState(true);
+  const [createSchemaModalOpen, setCreateSchemaModalOpen] = useState(false);
+  const [membersModalOpen, setMembersModalOpen] = useState(false);
 
   const fetchSchemas = useCallback(async () => {
     try {
@@ -69,14 +73,25 @@ export function DashboardPage({ client, onSignOut, onChangeWorkspace }: Dashboar
     };
   }, [client, fetchSchemas, fetchPages]);
 
-  const selectedPage = pages.find((p) => p.page_id === activeTab);
-  const selectedSchema = schemas.find((s) => s.schema_id === activeTab);
+  const isOwnerOrAdmin = client.isOwnerOrAdmin;
+  const visibleSchemas = isOwnerOrAdmin
+    ? schemas
+    : schemas.filter((s) => client.hasDatasetPermission(s.schema_id, "read"));
+  const visiblePages = isOwnerOrAdmin
+    ? pages
+    : pages.filter((p) => client.hasDatasetPermission(p.collection, "read"));
+
+  const selectedPage = visiblePages.find((p) => p.page_id === activeTab);
+  const selectedSchema = visibleSchemas.find((s) => s.schema_id === activeTab);
 
   return (
     <div className="app-shell">
       <header className="app-header">
         <div>
           <strong>{client.config.tenant_id}</strong>
+          <span className={`lattice-role-chip lattice-role-chip--${client.currentUserRole || "member"}`} style={{ marginLeft: "0.5rem" }}>
+            {(client.currentUserRole || "member").toUpperCase()}
+          </span>
           {client.config.features.map((feature) => (
             <span key={feature} className="app-chip">
               {feature}
@@ -84,6 +99,11 @@ export function DashboardPage({ client, onSignOut, onChangeWorkspace }: Dashboar
           ))}
         </div>
         <div className="app-actions">
+          {isOwnerOrAdmin && (
+            <button type="button" className="lattice-btn-secondary" onClick={() => setMembersModalOpen(true)}>
+              Manage Team
+            </button>
+          )}
           {onChangeWorkspace && (
             <button type="button" className="app-link" onClick={onChangeWorkspace}>
               Change workspace
@@ -96,10 +116,12 @@ export function DashboardPage({ client, onSignOut, onChangeWorkspace }: Dashboar
       </header>
 
       <SchemaNavigation
-        pages={pages}
-        schemas={schemas}
+        pages={visiblePages}
+        schemas={visibleSchemas}
         activeTab={activeTab}
         onSelectTab={setActiveTab}
+        canCreateSchema={isOwnerOrAdmin}
+        onCreateSchemaClick={() => setCreateSchemaModalOpen(true)}
       />
 
       <main style={{ marginTop: "1.5rem" }}>
@@ -137,6 +159,23 @@ export function DashboardPage({ client, onSignOut, onChangeWorkspace }: Dashboar
           </div>
         )}
       </main>
+
+      <CreateSchemaModal
+        isOpen={createSchemaModalOpen}
+        onClose={() => setCreateSchemaModalOpen(false)}
+        onCreate={async (def) => {
+          await client.createSchema(def);
+          setCreateSchemaModalOpen(false);
+          await fetchSchemas();
+        }}
+      />
+
+      <WorkspaceMembersModal
+        isOpen={membersModalOpen}
+        onClose={() => setMembersModalOpen(false)}
+        client={client}
+        schemas={schemas}
+      />
     </div>
   );
 }

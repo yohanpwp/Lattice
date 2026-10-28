@@ -26,6 +26,7 @@ type Config struct {
 	MinClientVersion string   `json:"min_client_version"`
 	Features         []string `json:"features"`
 	Collections      []string `json:"collections"`
+	HasOwner         *bool    `json:"has_owner,omitempty"`
 }
 
 var (

@@ -1,5 +1,31 @@
-import type { AppConfig, DashboardLayout, EventEnvelope, Features, PluginManifest, CheckoutRequest, Payment, SchemaDefinition, PageDefinition } from "./generated/types";
-import { validateAppConfig, validateDashboardLayout, validateEventEnvelope, validateFeatures, validatePluginManifest, validateCheckoutRequest, validatePayment, validateSchemaDefinition, validatePageDefinition } from "./generated/standalone.mjs";
+import type {
+  AppConfig,
+  DashboardLayout,
+  EventEnvelope,
+  Features,
+  PluginManifest,
+  CheckoutRequest,
+  Payment,
+  SchemaDefinition,
+  PageDefinition,
+  WorkspaceUser,
+  WorkspaceSetupRequest,
+  WorkspaceInvitation,
+} from "./generated/types";
+import {
+  validateAppConfig,
+  validateDashboardLayout,
+  validateEventEnvelope,
+  validateFeatures,
+  validatePluginManifest,
+  validateCheckoutRequest,
+  validatePayment,
+  validateSchemaDefinition,
+  validatePageDefinition,
+  validateWorkspaceUser,
+  validateWorkspaceSetupRequest,
+  validateWorkspaceInvitation,
+} from "./generated/standalone.mjs";
 
 export interface ContractIssue {
   path: string;
@@ -41,3 +67,6 @@ export const assertCheckoutRequest = makeAssert<CheckoutRequest>("CheckoutReques
 export const assertPayment = makeAssert<Payment>("Payment", validatePayment);
 export const assertSchemaDefinition = makeAssert<SchemaDefinition>("SchemaDefinition", validateSchemaDefinition);
 export const assertPageDefinition = makeAssert<PageDefinition>("PageDefinition", validatePageDefinition);
+export const assertWorkspaceUser = makeAssert<WorkspaceUser>("WorkspaceUser", validateWorkspaceUser);
+export const assertWorkspaceSetupRequest = makeAssert<WorkspaceSetupRequest>("WorkspaceSetupRequest", validateWorkspaceSetupRequest);
+export const assertWorkspaceInvitation = makeAssert<WorkspaceInvitation>("WorkspaceInvitation", validateWorkspaceInvitation);

@@ -25,6 +25,7 @@
     "schema_version": { "type": "string", "minLength": 1 },
     "min_client_version": { "type": "string", "pattern": "^\\d+\\.\\d+\\.\\d+$", "description": "Oldest client version this backend supports." },
     "features": { "type": "array", "uniqueItems": true, "items": { "type": "string", "minLength": 1 } },
-    "collections": { "type": "array", "uniqueItems": true, "items": { "type": "string", "minLength": 1 } }
+    "collections": { "type": "array", "uniqueItems": true, "items": { "type": "string", "minLength": 1 } },
+    "has_owner": { "type": "boolean", "description": "True if an owner account has been initialized for this workspace." }
   }
 }

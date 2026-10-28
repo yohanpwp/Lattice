@@ -21,6 +21,9 @@ const schemaSpecs = [
   ["Payment", "contracts/schemas/payments/payment.json", "payments/payment.json"],
   ["SchemaDefinition", "contracts/schemas/schema-definition.json", "schema-definition.json"],
   ["PageDefinition", "contracts/schemas/page-definition.json", "page-definition.json"],
+  ["WorkspaceUser", "contracts/schemas/workspace-user.json", "workspace-user.json"],
+  ["WorkspaceSetupRequest", "contracts/schemas/workspace-setup-request.json", "workspace-setup-request.json"],
+  ["WorkspaceInvitation", "contracts/schemas/workspace-invitation.json", "workspace-invitation.json"],
 ];
 
 async function output(path, content) {

@@ -1120,3 +1120,41 @@ button:disabled {
   align-items: center;
   margin-bottom: 1rem;
 }
+
+.lattice-role-chip {
+  display: inline-block;
+  padding: 0.15rem 0.5rem;
+  font-size: 0.7rem;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  border-radius: 9999px;
+  text-transform: uppercase;
+}
+
+.lattice-role-chip--owner {
+  background: #fef3c7;
+  color: #92400e;
+  border: 1px solid #fcd34d;
+}
+
+.lattice-role-chip--admin {
+  background: #e0e7ff;
+  color: #3730a3;
+  border: 1px solid #a5b4fc;
+}
+
+.lattice-role-chip--member {
+  background: #f1f5f9;
+  color: #475569;
+  border: 1px solid #cbd5e1;
+}
+
+.lattice-modal--large {
+  max-width: 900px;
+  width: 90vw;
+}
+
+.yp-success {
+  color: #16a34a;
+  font-weight: 600;
+}

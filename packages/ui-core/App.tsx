@@ -11,6 +11,8 @@ import pkg from "./package.json";
 import { DashboardPage } from "./DashboardPage";
 import { LoginForm } from "./LoginForm";
 import { WorkspaceForm } from "./WorkspaceForm";
+import { WorkspaceSetupForm } from "./WorkspaceSetupForm";
+import { AcceptInviteForm } from "./AcceptInviteForm";
 import { forgetWorkspace, loadSavedWorkspace, normalizeWorkspaceUrl, saveWorkspace } from "./workspace";
 
 export interface AppProps {
@@ -170,12 +172,50 @@ function failure(err: unknown, canChangeWorkspace: boolean): Phase {
 
 function Session({ client, onChangeWorkspace }: { client: ProductClient; onChangeWorkspace?: () => void }) {
   const signedIn = useSignedIn(client);
+  const [hasOwner, setHasOwner] = useState<boolean>(client.config.has_owner ?? true);
+  const [inviteToken, setInviteToken] = useState<string | null>(() => {
+    if (typeof window !== "undefined") {
+      const params = new URLSearchParams(window.location.search);
+      return params.get("invite");
+    }
+    return null;
+  });
+  const [acceptingInvite, setAcceptingInvite] = useState<boolean>(Boolean(inviteToken));
 
   if (!signedIn) {
+    if (!hasOwner) {
+      return (
+        <WorkspaceSetupForm
+          client={client}
+          onChangeWorkspace={onChangeWorkspace}
+          onSetupComplete={() => setHasOwner(true)}
+        />
+      );
+    }
+
+    if (acceptingInvite) {
+      return (
+        <AcceptInviteForm
+          client={client}
+          initialToken={inviteToken || ""}
+          onAccepted={() => {
+            setAcceptingInvite(false);
+            setInviteToken(null);
+          }}
+          onCancel={() => {
+            setAcceptingInvite(false);
+            setInviteToken(null);
+          }}
+          onChangeWorkspace={onChangeWorkspace}
+        />
+      );
+    }
+
     return (
       <LoginForm
         onSubmit={async (email, password) => void (await client.login(email, password))}
         onChangeWorkspace={onChangeWorkspace}
+        onAcceptInvite={() => setAcceptingInvite(true)}
       />
     );
   }

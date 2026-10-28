@@ -5,6 +5,8 @@ export interface SchemaNavigationProps {
   schemas: SchemaDefinition[];
   activeTab: string;
   onSelectTab: (tabId: string) => void;
+  canCreateSchema?: boolean;
+  onCreateSchemaClick?: () => void;
 }
 
 export function SchemaNavigation({
@@ -12,6 +14,8 @@ export function SchemaNavigation({
   schemas,
   activeTab,
   onSelectTab,
+  canCreateSchema = false,
+  onCreateSchemaClick,
 }: SchemaNavigationProps) {
   function getPageIcon(page: PageDefinition): string {
     if (page.icon) return page.icon;
@@ -69,6 +73,18 @@ export function SchemaNavigation({
             <span className="lattice-tab-label">{schema.name}</span>
           </button>
         ))}
+
+        {canCreateSchema && onCreateSchemaClick && (
+          <button
+            type="button"
+            className="lattice-tab lattice-tab--action"
+            style={{ marginLeft: "auto", border: "1px dashed var(--yp-border, #cbd5e1)", borderRadius: "4px" }}
+            onClick={onCreateSchemaClick}
+          >
+            <span className="lattice-tab-icon">➕</span>
+            <span className="lattice-tab-label">New Dataset</span>
+          </button>
+        )}
       </div>
     </nav>
   );

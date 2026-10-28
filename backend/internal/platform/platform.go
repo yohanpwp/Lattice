@@ -10,6 +10,7 @@ import (
 	"github.com/pocketbase/pocketbase/core"
 	"github.com/pocketbase/pocketbase/tools/types"
 
+	"github.com/Lattice/backend/internal/platform/authz"
 	"github.com/Lattice/backend/internal/platform/features"
 	"github.com/Lattice/backend/internal/platform/outbox"
 	"github.com/Lattice/backend/internal/platform/outbox/pbstore"
@@ -53,6 +54,8 @@ func StartWithSecrets(app core.App, tenantID string, flags *features.Flags, reg 
 		defer close(workerDone)
 		worker.Run(ctx)
 	}()
+
+	authz.RegisterAuthnHooks(app)
 
 	// Bind default API rules for newly created business collections so authenticated
 	// tenant members can immediately view and manage records without manual rule setup.

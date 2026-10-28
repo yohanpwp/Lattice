@@ -25,9 +25,9 @@ export function SchemaView({ client, schema }: SchemaViewProps) {
   const [editingRecord, setEditingRecord] = useState<Record<string, unknown> | null>(null);
   const [recordToDelete, setRecordToDelete] = useState<Record<string, unknown> | null>(null);
 
-  const canCreate = schema.can_create !== false;
-  const canUpdate = schema.can_update !== false;
-  const canDelete = schema.can_delete !== false;
+  const canCreate = client.hasDatasetPermission(schema.schema_id, "create") && schema.can_create !== false;
+  const canUpdate = client.hasDatasetPermission(schema.schema_id, "update") && schema.can_update !== false;
+  const canDelete = client.hasDatasetPermission(schema.schema_id, "delete") && schema.can_delete !== false;
   const hasActions = canUpdate || canDelete;
 
   const loadRecords = useCallback(async () => {

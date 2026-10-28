@@ -28,6 +28,10 @@ export interface AppConfig {
   min_client_version: string;
   features: string[];
   collections: string[];
+  /**
+   * True if an owner account has been initialized for this workspace.
+   */
+  has_owner?: boolean;
 }
 
 /**
@@ -235,6 +239,10 @@ export interface SchemaDefinition {
    */
   icon?: string;
   /**
+   * Optional relation field name targeting users designated for assigned member scoping.
+   */
+  assignee_field?: string;
+  /**
    * @minItems 1
    * @maxItems 100
    */
@@ -331,4 +339,117 @@ export interface PageConfig {
   allowEdit?: boolean;
   allowDelete?: boolean;
   [k: string]: unknown;
+}
+
+/**
+ * Definition of a user account within the workspace.
+ */
+export interface WorkspaceUser {
+  /**
+   * Unique identifier of the user (PocketBase record ID).
+   */
+  id: string;
+  /**
+   * User email address.
+   */
+  email: string;
+  /**
+   * Display name of the user.
+   */
+  name?: string;
+  /**
+   * Workspace role.
+   */
+  role: 'owner' | 'admin' | 'member';
+  /**
+   * True if account is disabled/deactivated.
+   */
+  disabled?: boolean;
+  /**
+   * Dataset permission matrix keyed by schema_id.
+   */
+  permissions?: {
+    [k: string]: DatasetPermission;
+  };
+  /**
+   * Creation timestamp.
+   */
+  created?: string;
+  /**
+   * Last update timestamp.
+   */
+  updated?: string;
+}
+export interface DatasetPermission {
+  read?: boolean;
+  create?: boolean;
+  update?: boolean;
+  delete?: boolean;
+  scope?: 'all' | 'assigned';
+}
+
+/**
+ * Request body for initializing the first owner account of a workspace using a setup secret.
+ */
+export interface WorkspaceSetupRequest {
+  /**
+   * Operator-provided one-time setup secret.
+   */
+  token: string;
+  /**
+   * Display name of the owner.
+   */
+  name?: string;
+  /**
+   * Owner email address.
+   */
+  email: string;
+  /**
+   * Password for the owner account.
+   */
+  password: string;
+}
+
+/**
+ * Definition of an invitation for a member or admin to join the workspace.
+ */
+export interface WorkspaceInvitation {
+  /**
+   * Unique identifier of the invitation record.
+   */
+  id?: string;
+  /**
+   * Email address of the invitee.
+   */
+  email: string;
+  /**
+   * Role to assign to the user upon accepting the invitation.
+   */
+  role: 'admin' | 'member';
+  /**
+   * Initial dataset permissions matrix for the invitee.
+   */
+  permissions?: {
+    [k: string]: unknown;
+  };
+  /**
+   * Single-use invitation token.
+   */
+  token?: string;
+  /**
+   * ISO timestamp when this invitation expires.
+   */
+  expires_at?: string;
+  /**
+   * ISO timestamp when this invitation was accepted.
+   */
+  accepted_at?: string;
+  /**
+   * True if the invitation has been cancelled by an admin or owner.
+   */
+  revoked?: boolean;
+  /**
+   * User ID of the inviter.
+   */
+  invited_by?: string;
 }

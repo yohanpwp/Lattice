@@ -14,6 +14,7 @@ func init() {
 			&core.TextField{Name: "name", Required: true},
 			&core.TextField{Name: "description"},
 			&core.TextField{Name: "icon"},
+			&core.TextField{Name: "assignee_field"},
 			&core.JSONField{Name: "fields", Required: true, MaxSize: 1 << 20},
 			&core.TextField{Name: "collection_id"},
 			&core.AutodateField{Name: "created", OnCreate: true},

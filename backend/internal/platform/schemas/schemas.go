@@ -37,16 +37,17 @@ type FieldDefinition struct {
 }
 
 type SchemaDefinition struct {
-	SchemaID    string            `json:"schema_id"`
-	Name        string            `json:"name"`
-	Description string            `json:"description,omitempty"`
-	Icon        string            `json:"icon,omitempty"`
-	Fields      []FieldDefinition `json:"fields"`
-	CanCreate   bool              `json:"can_create"`
-	CanUpdate   bool              `json:"can_update"`
-	CanDelete   bool              `json:"can_delete"`
-	Created     string            `json:"created,omitempty"`
-	Updated     string            `json:"updated,omitempty"`
+	SchemaID      string            `json:"schema_id"`
+	Name          string            `json:"name"`
+	Description   string            `json:"description,omitempty"`
+	Icon          string            `json:"icon,omitempty"`
+	AssigneeField string            `json:"assignee_field,omitempty"`
+	Fields        []FieldDefinition `json:"fields"`
+	CanCreate     bool              `json:"can_create"`
+	CanUpdate     bool              `json:"can_update"`
+	CanDelete     bool              `json:"can_delete"`
+	Created       string            `json:"created,omitempty"`
+	Updated       string            `json:"updated,omitempty"`
 }
 
 type Service struct {
@@ -85,6 +86,7 @@ func (s *Service) ListSchemas(ctx context.Context) ([]SchemaDefinition, error) {
 			def.Name = rec.GetString("name")
 			def.Description = rec.GetString("description")
 			def.Icon = rec.GetString("icon")
+			def.AssigneeField = rec.GetString("assignee_field")
 			def.Created = rec.GetDateTime("created").String()
 			def.Updated = rec.GetDateTime("updated").String()
 
@@ -145,6 +147,7 @@ func (s *Service) GetSchema(ctx context.Context, schemaID string) (*SchemaDefini
 		def.Name = rec.GetString("name")
 		def.Description = rec.GetString("description")
 		def.Icon = rec.GetString("icon")
+		def.AssigneeField = rec.GetString("assignee_field")
 		def.Created = rec.GetDateTime("created").String()
 		def.Updated = rec.GetDateTime("updated").String()
 
@@ -191,6 +194,27 @@ func (s *Service) CreateSchema(ctx context.Context, def SchemaDefinition) (*Sche
 		return nil, errors.New("schema must contain at least one field")
 	}
 
+	if def.AssigneeField != "" {
+		var targetField *FieldDefinition
+		for i := range def.Fields {
+			if def.Fields[i].Name == def.AssigneeField {
+				targetField = &def.Fields[i]
+				break
+			}
+		}
+		if targetField == nil {
+			return nil, fmt.Errorf("assignee_field %q does not match any defined field", def.AssigneeField)
+		}
+		if targetField.Type != "relation" {
+			return nil, fmt.Errorf("assignee_field %q must be a relation field (got %s)", def.AssigneeField, targetField.Type)
+		}
+		usersCol, _ := s.app.FindCollectionByNameOrId("users")
+		validTarget := targetField.Target == "users" || (usersCol != nil && targetField.Target == usersCol.Id)
+		if !validTarget {
+			return nil, fmt.Errorf("assignee_field %q must be a relation targeting 'users' collection", def.AssigneeField)
+		}
+	}
+
 	existing, _ := s.app.FindCollectionByNameOrId(def.SchemaID)
 	if existing != nil {
 		return nil, ErrSchemaAlreadyExists
@@ -209,6 +233,7 @@ func (s *Service) CreateSchema(ctx context.Context, def SchemaDefinition) (*Sche
 		schemaRec.Set("name", name)
 		schemaRec.Set("description", def.Description)
 		schemaRec.Set("icon", def.Icon)
+		schemaRec.Set("assignee_field", def.AssigneeField)
 		schemaRec.Set("fields", def.Fields)
 		if err := s.app.Save(schemaRec); err != nil {
 			return nil, fmt.Errorf("failed to save schema definition record: %w", err)
@@ -219,12 +244,7 @@ func (s *Service) CreateSchema(ctx context.Context, def SchemaDefinition) (*Sche
 
 	// 2. Build and save PocketBase Collection
 	col := core.NewBaseCollection(def.SchemaID)
-	authRule := "@request.auth.id != ''"
-	col.ListRule = types.Pointer(authRule)
-	col.ViewRule = types.Pointer(authRule)
-	col.CreateRule = types.Pointer(authRule)
-	col.UpdateRule = types.Pointer(authRule)
-	col.DeleteRule = types.Pointer(authRule)
+	col.ListRule, col.ViewRule, col.CreateRule, col.UpdateRule, col.DeleteRule = BuildCollectionRules(def.SchemaID, def.AssigneeField)
 
 	for _, f := range def.Fields {
 		if !fieldNamePattern.MatchString(f.Name) {
@@ -343,6 +363,47 @@ func RegisterSyncHooks(app core.App) {
 		}
 		return e.Next()
 	})
+}
+
+// BuildCollectionRules generates the permission-aware and scope-aware PocketBase collection rules.
+func BuildCollectionRules(schemaID string, assigneeField string) (*string, *string, *string, *string, *string) {
+	if assigneeField != "" {
+		readRule := fmt.Sprintf(
+			"@request.auth.disabled != true && (@request.auth.role = 'owner' || @request.auth.role = 'admin' || (@request.auth.role = 'member' && @request.auth.permissions.%s.read = true && (@request.auth.permissions.%s.scope = 'all' || %s = @request.auth.id)))",
+			schemaID, schemaID, assigneeField,
+		)
+		cRule := fmt.Sprintf(
+			"@request.auth.disabled != true && (@request.auth.role = 'owner' || @request.auth.role = 'admin' || (@request.auth.role = 'member' && @request.auth.permissions.%s.create = true))",
+			schemaID,
+		)
+		uRule := fmt.Sprintf(
+			"@request.auth.disabled != true && (@request.auth.role = 'owner' || @request.auth.role = 'admin' || (@request.auth.role = 'member' && @request.auth.permissions.%s.update = true && (@request.auth.permissions.%s.scope = 'all' || %s = @request.auth.id)))",
+			schemaID, schemaID, assigneeField,
+		)
+		dRule := fmt.Sprintf(
+			"@request.auth.disabled != true && (@request.auth.role = 'owner' || @request.auth.role = 'admin' || (@request.auth.role = 'member' && @request.auth.permissions.%s.delete = true && (@request.auth.permissions.%s.scope = 'all' || %s = @request.auth.id)))",
+			schemaID, schemaID, assigneeField,
+		)
+		return types.Pointer(readRule), types.Pointer(readRule), types.Pointer(cRule), types.Pointer(uRule), types.Pointer(dRule)
+	}
+
+	readRule := fmt.Sprintf(
+		"@request.auth.disabled != true && (@request.auth.role = 'owner' || @request.auth.role = 'admin' || (@request.auth.role = 'member' && @request.auth.permissions.%s.read = true))",
+		schemaID,
+	)
+	cRule := fmt.Sprintf(
+		"@request.auth.disabled != true && (@request.auth.role = 'owner' || @request.auth.role = 'admin' || (@request.auth.role = 'member' && @request.auth.permissions.%s.create = true))",
+		schemaID,
+	)
+	uRule := fmt.Sprintf(
+		"@request.auth.disabled != true && (@request.auth.role = 'owner' || @request.auth.role = 'admin' || (@request.auth.role = 'member' && @request.auth.permissions.%s.update = true))",
+		schemaID,
+	)
+	dRule := fmt.Sprintf(
+		"@request.auth.disabled != true && (@request.auth.role = 'owner' || @request.auth.role = 'admin' || (@request.auth.role = 'member' && @request.auth.permissions.%s.delete = true))",
+		schemaID,
+	)
+	return types.Pointer(readRule), types.Pointer(readRule), types.Pointer(cRule), types.Pointer(uRule), types.Pointer(dRule)
 }
 
 // CollectionToSchemaDefinition converts a PocketBase Collection model into a clean SchemaDefinition.

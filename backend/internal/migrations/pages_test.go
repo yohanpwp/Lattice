@@ -24,22 +24,23 @@ func TestAppPagesMigration(t *testing.T) {
 		t.Fatalf("expected app_pages collection to exist, got error: %v", err)
 	}
 
-	// 2. Verify API rules require authentication
-	expectedRule := "@request.auth.id != ''"
-	if col.ListRule == nil || *col.ListRule != expectedRule {
-		t.Errorf("expected ListRule %q, got %v", expectedRule, col.ListRule)
+	// 2. Verify API rules require authentication and owner/admin for modifications
+	readRule := "@request.auth.id != '' && @request.auth.disabled != true"
+	writeRule := "@request.auth.disabled != true && (@request.auth.role = 'owner' || @request.auth.role = 'admin')"
+	if col.ListRule == nil || *col.ListRule != readRule {
+		t.Errorf("expected ListRule %q, got %v", readRule, col.ListRule)
 	}
-	if col.ViewRule == nil || *col.ViewRule != expectedRule {
-		t.Errorf("expected ViewRule %q, got %v", expectedRule, col.ViewRule)
+	if col.ViewRule == nil || *col.ViewRule != readRule {
+		t.Errorf("expected ViewRule %q, got %v", readRule, col.ViewRule)
 	}
-	if col.CreateRule == nil || *col.CreateRule != expectedRule {
-		t.Errorf("expected CreateRule %q, got %v", expectedRule, col.CreateRule)
+	if col.CreateRule == nil || *col.CreateRule != writeRule {
+		t.Errorf("expected CreateRule %q, got %v", writeRule, col.CreateRule)
 	}
-	if col.UpdateRule == nil || *col.UpdateRule != expectedRule {
-		t.Errorf("expected UpdateRule %q, got %v", expectedRule, col.UpdateRule)
+	if col.UpdateRule == nil || *col.UpdateRule != writeRule {
+		t.Errorf("expected UpdateRule %q, got %v", writeRule, col.UpdateRule)
 	}
-	if col.DeleteRule == nil || *col.DeleteRule != expectedRule {
-		t.Errorf("expected DeleteRule %q, got %v", expectedRule, col.DeleteRule)
+	if col.DeleteRule == nil || *col.DeleteRule != writeRule {
+		t.Errorf("expected DeleteRule %q, got %v", writeRule, col.DeleteRule)
 	}
 
 	// 3. Verify fields exist

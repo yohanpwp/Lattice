@@ -68,6 +68,10 @@ export const appConfigSchema = {
         "type": "string",
         "minLength": 1
       }
+    },
+    "has_owner": {
+      "type": "boolean",
+      "description": "True if an owner account has been initialized for this workspace."
     }
   }
 } as const;
@@ -498,6 +502,11 @@ export const schemaDefinitionSchema = {
       "type": "string",
       "description": "Optional icon identifier or emoji for navigation tabs."
     },
+    "assignee_field": {
+      "type": "string",
+      "pattern": "^[a-z][a-z0-9_]{0,40}$",
+      "description": "Optional relation field name targeting users designated for assigned member scoping."
+    },
     "fields": {
       "type": "array",
       "minItems": 1,
@@ -692,6 +701,182 @@ export const pageDefinitionSchema = {
           "type": "boolean"
         }
       }
+    }
+  }
+} as const;
+
+export const workspaceUserSchema = {
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$id": "https://lattice.dev/schemas/workspace-user.json",
+  "title": "WorkspaceUser",
+  "description": "Definition of a user account within the workspace.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "id",
+    "email",
+    "role"
+  ],
+  "properties": {
+    "id": {
+      "type": "string",
+      "description": "Unique identifier of the user (PocketBase record ID)."
+    },
+    "email": {
+      "type": "string",
+      "format": "email",
+      "description": "User email address."
+    },
+    "name": {
+      "type": "string",
+      "description": "Display name of the user."
+    },
+    "role": {
+      "type": "string",
+      "enum": [
+        "owner",
+        "admin",
+        "member"
+      ],
+      "description": "Workspace role."
+    },
+    "disabled": {
+      "type": "boolean",
+      "description": "True if account is disabled/deactivated."
+    },
+    "permissions": {
+      "type": "object",
+      "additionalProperties": {
+        "$ref": "#/$defs/DatasetPermission"
+      },
+      "description": "Dataset permission matrix keyed by schema_id."
+    },
+    "created": {
+      "type": "string",
+      "description": "Creation timestamp."
+    },
+    "updated": {
+      "type": "string",
+      "description": "Last update timestamp."
+    }
+  },
+  "$defs": {
+    "DatasetPermission": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "read": {
+          "type": "boolean"
+        },
+        "create": {
+          "type": "boolean"
+        },
+        "update": {
+          "type": "boolean"
+        },
+        "delete": {
+          "type": "boolean"
+        },
+        "scope": {
+          "type": "string",
+          "enum": [
+            "all",
+            "assigned"
+          ]
+        }
+      }
+    }
+  }
+} as const;
+
+export const workspaceSetupRequestSchema = {
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$id": "https://lattice.dev/schemas/workspace-setup-request.json",
+  "title": "WorkspaceSetupRequest",
+  "description": "Request body for initializing the first owner account of a workspace using a setup secret.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "token",
+    "email",
+    "password"
+  ],
+  "properties": {
+    "token": {
+      "type": "string",
+      "minLength": 8,
+      "description": "Operator-provided one-time setup secret."
+    },
+    "name": {
+      "type": "string",
+      "description": "Display name of the owner."
+    },
+    "email": {
+      "type": "string",
+      "format": "email",
+      "description": "Owner email address."
+    },
+    "password": {
+      "type": "string",
+      "minLength": 8,
+      "description": "Password for the owner account."
+    }
+  }
+} as const;
+
+export const workspaceInvitationSchema = {
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$id": "https://lattice.dev/schemas/workspace-invitation.json",
+  "title": "WorkspaceInvitation",
+  "description": "Definition of an invitation for a member or admin to join the workspace.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "email",
+    "role"
+  ],
+  "properties": {
+    "id": {
+      "type": "string",
+      "description": "Unique identifier of the invitation record."
+    },
+    "email": {
+      "type": "string",
+      "format": "email",
+      "description": "Email address of the invitee."
+    },
+    "role": {
+      "type": "string",
+      "enum": [
+        "admin",
+        "member"
+      ],
+      "description": "Role to assign to the user upon accepting the invitation."
+    },
+    "permissions": {
+      "type": "object",
+      "additionalProperties": true,
+      "description": "Initial dataset permissions matrix for the invitee."
+    },
+    "token": {
+      "type": "string",
+      "description": "Single-use invitation token."
+    },
+    "expires_at": {
+      "type": "string",
+      "description": "ISO timestamp when this invitation expires."
+    },
+    "accepted_at": {
+      "type": "string",
+      "description": "ISO timestamp when this invitation was accepted."
+    },
+    "revoked": {
+      "type": "boolean",
+      "description": "True if the invitation has been cancelled by an admin or owner."
+    },
+    "invited_by": {
+      "type": "string",
+      "description": "User ID of the inviter."
     }
   }
 } as const;

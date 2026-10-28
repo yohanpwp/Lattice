@@ -156,3 +156,72 @@ func TestSchemasSyncHooks(t *testing.T) {
 		t.Errorf("expected schema_id 'customers', got %q", synced.SchemaID)
 	}
 }
+
+func TestAssigneeFieldValidation(t *testing.T) {
+	app, err := tests.NewTestApp(t.TempDir())
+	if err != nil {
+		t.Fatalf("failed to create test app: %v", err)
+	}
+	t.Cleanup(app.Cleanup)
+
+	svc := schemas.NewService(app)
+	ctx := context.Background()
+
+	// 1. Non-existent assignee field
+	_, err = svc.CreateSchema(ctx, schemas.SchemaDefinition{
+		SchemaID:      "bad_assignee_1",
+		Name:          "Bad Assignee 1",
+		AssigneeField: "non_existent",
+		Fields: []schemas.FieldDefinition{
+			{Name: "title", Type: "text", Required: true},
+		},
+	})
+	if err == nil {
+		t.Fatal("expected error when assignee_field does not exist in fields, got nil")
+	}
+
+	// 2. Assignee field is not a relation (e.g. number)
+	_, err = svc.CreateSchema(ctx, schemas.SchemaDefinition{
+		SchemaID:      "bad_assignee_2",
+		Name:          "Bad Assignee 2",
+		AssigneeField: "amount",
+		Fields: []schemas.FieldDefinition{
+			{Name: "title", Type: "text", Required: true},
+			{Name: "amount", Type: "number", Required: true},
+		},
+	})
+	if err == nil {
+		t.Fatal("expected error when assignee_field is not a relation, got nil")
+	}
+
+	// 3. Assignee field is a relation but does not target "users"
+	_, err = svc.CreateSchema(ctx, schemas.SchemaDefinition{
+		SchemaID:      "bad_assignee_3",
+		Name:          "Bad Assignee 3",
+		AssigneeField: "customer_id",
+		Fields: []schemas.FieldDefinition{
+			{Name: "title", Type: "text", Required: true},
+			{Name: "customer_id", Type: "relation", Target: "customers"},
+		},
+	})
+	if err == nil {
+		t.Fatal("expected error when assignee_field targets collection other than users, got nil")
+	}
+
+	// 4. Valid assignee field targeting users
+	valid, err := svc.CreateSchema(ctx, schemas.SchemaDefinition{
+		SchemaID:      "valid_assignee",
+		Name:          "Valid Assignee",
+		AssigneeField: "assignee",
+		Fields: []schemas.FieldDefinition{
+			{Name: "title", Type: "text", Required: true},
+			{Name: "assignee", Type: "relation", Target: "users"},
+		},
+	})
+	if err != nil || valid == nil {
+		t.Fatalf("expected valid assignee schema to succeed, got error: %v", err)
+	}
+	if valid.AssigneeField != "assignee" {
+		t.Fatalf("expected assignee_field to be 'assignee', got %q", valid.AssigneeField)
+	}
+}

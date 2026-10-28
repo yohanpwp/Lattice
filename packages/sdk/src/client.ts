@@ -4,10 +4,17 @@ import {
   assertFeatures,
   assertSchemaDefinition,
   assertPageDefinition,
+  assertWorkspaceUser,
+  assertWorkspaceSetupRequest,
+  assertWorkspaceInvitation,
   type AppConfig,
   type Features,
   type SchemaDefinition,
   type PageDefinition,
+  type WorkspaceUser,
+  type WorkspaceSetupRequest,
+  type WorkspaceInvitation,
+  type DatasetPermission,
 } from "@lattice/types";
 import { AuthPersistenceError, createAuthStore, type PersistentAuthStore } from "./authStore";
 import { fetchAppConfig } from "./config";
@@ -210,6 +217,123 @@ export class ProductClient {
       if (status === 404) return null;
       throw err;
     }
+  }
+
+  /**
+   * Initializes the workspace and creates the first owner using an operator setup secret.
+   */
+  async setupWorkspace(input: WorkspaceSetupRequest): Promise<WorkspaceUser> {
+    const valid = assertWorkspaceSetupRequest(input);
+    const created = await this.pb.send<WorkspaceUser>("/v1/workspace/setup", {
+      method: "POST",
+      body: valid,
+    });
+    return assertWorkspaceUser(created);
+  }
+
+  /**
+   * Lists all workspace users (requires Owner or Admin).
+   */
+  async getWorkspaceUsers(): Promise<WorkspaceUser[]> {
+    const list = await this.pb.send<WorkspaceUser[]>("/v1/workspace/users", { method: "GET" });
+    return (list ?? []).map((u) => assertWorkspaceUser(u));
+  }
+
+  /**
+   * Updates a workspace user's role, status, or permissions (requires Owner or Admin).
+   */
+  async updateWorkspaceUser(
+    id: string,
+    update: { role?: "owner" | "admin" | "member"; disabled?: boolean; permissions?: Record<string, DatasetPermission> },
+  ): Promise<WorkspaceUser> {
+    const updated = await this.pb.send<WorkspaceUser>(`/v1/workspace/users/${encodeURIComponent(id)}`, {
+      method: "PATCH",
+      body: update,
+    });
+    return assertWorkspaceUser(updated);
+  }
+
+  /**
+   * Creates an invitation for a new member or admin (requires Owner or Admin).
+   */
+  async createInvitation(input: { email: string; role: "admin" | "member"; permissions?: Record<string, unknown> }): Promise<WorkspaceInvitation> {
+    const created = await this.pb.send<WorkspaceInvitation>("/v1/workspace/invitations", {
+      method: "POST",
+      body: input,
+    });
+    return assertWorkspaceInvitation(created);
+  }
+
+  /**
+   * Lists all pending invitations (requires Owner or Admin).
+   */
+  async getWorkspaceInvitations(): Promise<WorkspaceInvitation[]> {
+    const list = await this.pb.send<WorkspaceInvitation[]>("/v1/workspace/invitations", { method: "GET" });
+    return (list ?? []).map((inv) => assertWorkspaceInvitation(inv));
+  }
+
+  /**
+   * Accepts a single-use invitation token and sets up credentials.
+   */
+  async acceptInvitation(input: { token: string; name: string; password: string }): Promise<WorkspaceUser> {
+    const user = await this.pb.send<WorkspaceUser>("/v1/workspace/invitations/accept", {
+      method: "POST",
+      body: input,
+    });
+    return assertWorkspaceUser(user);
+  }
+
+  /**
+   * Revokes an existing invitation (requires Owner or Admin).
+   */
+  async revokeInvitation(id: string): Promise<void> {
+    await this.pb.send(`/v1/workspace/invitations/${encodeURIComponent(id)}`, { method: "DELETE" });
+  }
+
+  /**
+   * Reissues a fresh token for an unaccepted invitation (requires Owner or Admin).
+   */
+  async reissueInvitation(id: string): Promise<WorkspaceInvitation> {
+    const reissued = await this.pb.send<WorkspaceInvitation>(
+      `/v1/workspace/invitations/${encodeURIComponent(id)}/reissue`,
+      { method: "POST" },
+    );
+    return assertWorkspaceInvitation(reissued);
+  }
+
+  /**
+   * Fetches the current authenticated user's role and effective permissions.
+   */
+  async getMyPermissions(): Promise<{ user_id: string; role: string; permissions: Record<string, DatasetPermission> }> {
+    return this.pb.send("/v1/workspace/permissions", { method: "GET" });
+  }
+
+  get currentUserRole(): "owner" | "admin" | "member" | null {
+    const rec = this.pb.authStore.record;
+    if (!rec) return null;
+    return (rec.role as "owner" | "admin" | "member") || null;
+  }
+
+  get isOwner(): boolean {
+    return this.currentUserRole === "owner";
+  }
+
+  get isAdmin(): boolean {
+    return this.currentUserRole === "admin";
+  }
+
+  get isOwnerOrAdmin(): boolean {
+    return this.isOwner || this.isAdmin;
+  }
+
+  hasDatasetPermission(dataset: string, action: "read" | "create" | "update" | "delete"): boolean {
+    if (this.isOwnerOrAdmin) return true;
+    if (this.currentUserRole !== "member") return false;
+    const rec = this.pb.authStore.record as { permissions?: Record<string, DatasetPermission> } | null;
+    if (!rec?.permissions) return false;
+    const perm = rec.permissions[dataset];
+    if (!perm) return false;
+    return Boolean(perm[action]);
   }
 
   hasFeature(name: string): boolean {

@@ -3,9 +3,10 @@ import { useState, type FormEvent } from "react";
 interface LoginFormProps {
   onSubmit: (email: string, password: string) => Promise<void>;
   onChangeWorkspace?: () => void;
+  onAcceptInvite?: () => void;
 }
 
-export function LoginForm({ onSubmit, onChangeWorkspace }: LoginFormProps) {
+export function LoginForm({ onSubmit, onChangeWorkspace, onAcceptInvite }: LoginFormProps) {
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [pending, setPending] = useState(false);
@@ -60,6 +61,11 @@ export function LoginForm({ onSubmit, onChangeWorkspace }: LoginFormProps) {
         <button type="submit" disabled={pending}>
           {pending ? "Signing in…" : "Sign in"}
         </button>
+        {onAcceptInvite && (
+          <button type="button" className="app-link" onClick={onAcceptInvite}>
+            Accept invite token
+          </button>
+        )}
         {onChangeWorkspace && (
           <button type="button" className="app-link" onClick={onChangeWorkspace}>
             Change workspace

@@ -1,0 +1,50 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$id": "https://lattice.dev/schemas/workspace-invitation.json",
+  "title": "WorkspaceInvitation",
+  "description": "Definition of an invitation for a member or admin to join the workspace.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["email", "role"],
+  "properties": {
+    "id": {
+      "type": "string",
+      "description": "Unique identifier of the invitation record."
+    },
+    "email": {
+      "type": "string",
+      "format": "email",
+      "description": "Email address of the invitee."
+    },
+    "role": {
+      "type": "string",
+      "enum": ["admin", "member"],
+      "description": "Role to assign to the user upon accepting the invitation."
+    },
+    "permissions": {
+      "type": "object",
+      "additionalProperties": true,
+      "description": "Initial dataset permissions matrix for the invitee."
+    },
+    "token": {
+      "type": "string",
+      "description": "Single-use invitation token."
+    },
+    "expires_at": {
+      "type": "string",
+      "description": "ISO timestamp when this invitation expires."
+    },
+    "accepted_at": {
+      "type": "string",
+      "description": "ISO timestamp when this invitation was accepted."
+    },
+    "revoked": {
+      "type": "boolean",
+      "description": "True if the invitation has been cancelled by an admin or owner."
+    },
+    "invited_by": {
+      "type": "string",
+      "description": "User ID of the inviter."
+    }
+  }
+}

@@ -1,0 +1,64 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$id": "https://lattice.dev/schemas/workspace-user.json",
+  "title": "WorkspaceUser",
+  "description": "Definition of a user account within the workspace.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["id", "email", "role"],
+  "properties": {
+    "id": {
+      "type": "string",
+      "description": "Unique identifier of the user (PocketBase record ID)."
+    },
+    "email": {
+      "type": "string",
+      "format": "email",
+      "description": "User email address."
+    },
+    "name": {
+      "type": "string",
+      "description": "Display name of the user."
+    },
+    "role": {
+      "type": "string",
+      "enum": ["owner", "admin", "member"],
+      "description": "Workspace role."
+    },
+    "disabled": {
+      "type": "boolean",
+      "description": "True if account is disabled/deactivated."
+    },
+    "permissions": {
+      "type": "object",
+      "additionalProperties": {
+        "$ref": "#/$defs/DatasetPermission"
+      },
+      "description": "Dataset permission matrix keyed by schema_id."
+    },
+    "created": {
+      "type": "string",
+      "description": "Creation timestamp."
+    },
+    "updated": {
+      "type": "string",
+      "description": "Last update timestamp."
+    }
+  },
+  "$defs": {
+    "DatasetPermission": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "read": { "type": "boolean" },
+        "create": { "type": "boolean" },
+        "update": { "type": "boolean" },
+        "delete": { "type": "boolean" },
+        "scope": {
+          "type": "string",
+          "enum": ["all", "assigned"]
+        }
+      }
+    }
+  }
+}

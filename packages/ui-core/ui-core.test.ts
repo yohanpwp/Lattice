@@ -34,6 +34,9 @@ import {
   KanbanView,
   MasterDetailView,
   SchemaView,
+  WorkspaceSetupForm,
+  AcceptInviteForm,
+  WorkspaceMembersModal,
   type DataClient,
 } from "./index";
 import type { SchemaDefinition, PageDefinition } from "@lattice/types";
@@ -578,6 +581,93 @@ describe("schema navigation and validation", () => {
     expect(html).toContain("Delete Now");
     expect(html).toContain("lattice-btn-danger");
     expect(html).toContain("Cancel");
+  });
+
+  it("renders WorkspaceSetupForm with operator secret and owner registration fields", () => {
+    const mockClient = {
+      config: { tenant_id: "tenant_dev" },
+      setupWorkspace: async () => {},
+      login: async () => {},
+    } as unknown as Parameters<typeof WorkspaceSetupForm>[0]["client"];
+
+    const html = renderToString(
+      React.createElement(WorkspaceSetupForm, {
+        client: mockClient,
+      }),
+    );
+
+    expect(html).toContain("Setup your workspace");
+    expect(html).toContain("Operator setup secret");
+    expect(html).toContain("Owner email");
+    expect(html).toContain("Complete setup");
+  });
+
+  it("renders WorkspaceMembersModal with team dialog structure", () => {
+    const mockClient = {
+      isOwner: true,
+      getWorkspaceUsers: async () => [],
+    } as unknown as Parameters<typeof WorkspaceMembersModal>[0]["client"];
+
+    const html = renderToString(
+      React.createElement(WorkspaceMembersModal, {
+        isOpen: true,
+        onClose: () => {},
+        client: mockClient,
+        schemas: [sampleSchema],
+      }),
+    );
+
+    expect(html).toContain("Workspace Team &amp; Access Control");
+    expect(html).toContain("+ Invite Member");
+  });
+
+  it("renders SchemaNavigation with New Dataset button when canCreateSchema is true", () => {
+    const html = renderToString(
+      React.createElement(SchemaNavigation, {
+        schemas: [sampleSchema],
+        activeTab: "dashboard",
+        onSelectTab: () => {},
+        canCreateSchema: true,
+        onCreateSchemaClick: () => {},
+      }),
+    );
+
+    expect(html).toContain("New Dataset");
+  });
+
+  it("renders AcceptInviteForm with invite token, name, and password fields", () => {
+    const mockClient = {
+      config: { tenant_id: "tenant_dev" },
+      acceptInvitation: async () => ({ email: "user@example.com" }),
+      login: async () => {},
+    } as unknown as Parameters<typeof AcceptInviteForm>[0]["client"];
+
+    const html = renderToString(
+      React.createElement(AcceptInviteForm, {
+        client: mockClient,
+        initialToken: "inv_tok_12345",
+      }),
+    );
+
+    expect(html).toContain("Accept Invitation");
+    expect(html).toContain("Invitation Token");
+    expect(html).toContain("Your Full Name");
+    expect(html).toContain("Accept &amp; Sign In");
+    expect(html).toContain("inv_tok_12345");
+  });
+
+  it("renders CreateSchemaModal with Assignee Field selector", () => {
+    const html = renderToString(
+      React.createElement(CreateSchemaModal, {
+        isOpen: true,
+        onClose: () => {},
+        onCreate: async () => {},
+      }),
+    );
+
+    expect(html).toContain("Assignee Field (Optional)");
+    expect(html).toContain("None (No assigned record scoping)");
+    expect(html).toContain("Designating an assignee field enables");
   });
 });
 

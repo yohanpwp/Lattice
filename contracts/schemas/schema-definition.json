@@ -25,6 +25,11 @@
       "type": "string",
       "description": "Optional icon identifier or emoji for navigation tabs."
     },
+    "assignee_field": {
+      "type": "string",
+      "pattern": "^[a-z][a-z0-9_]{0,40}$",
+      "description": "Optional relation field name targeting users designated for assigned member scoping."
+    },
     "fields": {
       "type": "array",
       "minItems": 1,

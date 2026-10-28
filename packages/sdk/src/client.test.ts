@@ -727,4 +727,92 @@ describe("schema management", () => {
     expect(single?.name).toBe("Orders Board");
     expect(single?.collection).toBe("orders");
   });
+
+  it("manages workspace setup, users, and role permissions", async () => {
+    const customFetch = (async (input: RequestInfo | URL, init?: RequestInit) => {
+      const url = String(input);
+      if (url.endsWith("/v1/config")) return json({ ...config, has_owner: false });
+      if (url.endsWith("/v1/workspace/setup")) {
+        return json({
+          id: "owner_1",
+          email: "owner@example.com",
+          name: "Owner Alice",
+          role: "owner",
+          disabled: false,
+        });
+      }
+      if (url.endsWith("/v1/workspace/users")) {
+        return json([
+          {
+            id: "owner_1",
+            email: "owner@example.com",
+            name: "Owner Alice",
+            role: "owner",
+            disabled: false,
+          },
+          {
+            id: "member_1",
+            email: "bob@example.com",
+            name: "Member Bob",
+            role: "member",
+            disabled: false,
+            permissions: {
+              jobs: { read: true, create: true, update: true, delete: false, scope: "assigned" },
+            },
+          },
+        ]);
+      }
+      if (url.includes("auth-with-password")) {
+        const token = `e30.${btoa(JSON.stringify({ exp: Math.floor(Date.now() / 1000) + 3600 }))}.sig`;
+        return json({
+          token,
+          record: {
+            id: "member_1",
+            collectionName: "users",
+            role: "member",
+            permissions: {
+              jobs: { read: true, create: true, update: false, delete: false, scope: "assigned" },
+            },
+          },
+        });
+      }
+      return json({});
+    }) as typeof fetch;
+
+    const client = await ProductClient.connect({
+      backendUrl: "https://acme.app.example.com/",
+      clientVersion: "0.1.0",
+      platform: { storage: createMemoryStorage(), fetch: customFetch },
+    });
+
+    // 1. Workspace setup call
+    const ownerUser = await client.setupWorkspace({
+      token: "lattice_setup_secret123",
+      email: "owner@example.com",
+      name: "Owner Alice",
+      password: "Password123456!",
+    });
+    expect(ownerUser.id).toBe("owner_1");
+    expect(ownerUser.role).toBe("owner");
+
+    // 2. Login as member and test role / permission getters
+    await client.login("bob@example.com", "Password123456!");
+    expect(client.currentUserRole).toBe("member");
+    expect(client.isOwner).toBe(false);
+    expect(client.isAdmin).toBe(false);
+    expect(client.isOwnerOrAdmin).toBe(false);
+
+    // 3. Permission checks
+    expect(client.hasDatasetPermission("jobs", "read")).toBe(true);
+    expect(client.hasDatasetPermission("jobs", "create")).toBe(true);
+    expect(client.hasDatasetPermission("jobs", "update")).toBe(false);
+    expect(client.hasDatasetPermission("jobs", "delete")).toBe(false);
+    expect(client.hasDatasetPermission("customers", "read")).toBe(false); // deny by default
+
+    // 4. List workspace users
+    const users = await client.getWorkspaceUsers();
+    expect(users).toHaveLength(2);
+    expect(users[0]?.role).toBe("owner");
+    expect(users[1]?.role).toBe("member");
+  });
 });

@@ -13,6 +13,7 @@ interface DraftField {
   type: FieldDefinition["type"];
   required: boolean;
   options: string;
+  target?: string;
 }
 
 const FIELD_TYPES: Array<FieldDefinition["type"]> = [
@@ -32,6 +33,7 @@ export function CreateSchemaModal({ isOpen, onClose, onCreate }: CreateSchemaMod
   const [name, setName] = useState("");
   const [description, setDescription] = useState("");
   const [icon, setIcon] = useState("📋");
+  const [assigneeField, setAssigneeField] = useState("");
   const [fields, setFields] = useState<DraftField[]>([
     { name: "title", label: "Title", type: "text", required: true, options: "" },
   ]);
@@ -57,7 +59,14 @@ export function CreateSchemaModal({ isOpen, onClose, onCreate }: CreateSchemaMod
 
   function updateField<K extends keyof DraftField>(index: number, key: K, value: DraftField[K]) {
     setFields((prev) =>
-      prev.map((field, i) => (i === index ? { ...field, [key]: value } : field)),
+      prev.map((field, i) => {
+        if (i !== index) return field;
+        const updated = { ...field, [key]: value };
+        if (key === "type" && value === "relation" && !updated.target) {
+          updated.target = "users";
+        }
+        return updated;
+      }),
     );
   }
 
@@ -101,14 +110,33 @@ export function CreateSchemaModal({ isOpen, onClose, onCreate }: CreateSchemaMod
           def.options = opts;
         }
 
+        if (f.type === "relation") {
+          const target = f.target?.trim().toLowerCase();
+          if (!target) {
+            throw new Error(`Relation field "${fieldName}" must specify a target collection.`);
+          }
+          def.target = target;
+        }
+
         return def;
       });
+
+      if (assigneeField.trim()) {
+        const targetField = compiledFields.find((f) => f.name === assigneeField.trim().toLowerCase());
+        if (!targetField) {
+          throw new Error(`Assignee field "${assigneeField}" does not match any declared field.`);
+        }
+        if (targetField.type !== "relation" || targetField.target !== "users") {
+          throw new Error(`Assignee field "${assigneeField}" must be a relation targeting the 'users' collection.`);
+        }
+      }
 
       const newSchema: SchemaDefinition = {
         schema_id: trimmedId,
         name: name.trim(),
         description: description.trim() || undefined,
         icon: icon.trim() || undefined,
+        assignee_field: assigneeField.trim().toLowerCase() || undefined,
         fields: compiledFields as [FieldDefinition, ...FieldDefinition[]],
       };
 
@@ -265,6 +293,20 @@ export function CreateSchemaModal({ isOpen, onClose, onCreate }: CreateSchemaMod
                     </div>
                   )}
 
+                  {f.type === "relation" && (
+                    <div className="lattice-field-col" style={{ flex: 1.5 }}>
+                      <label className="lattice-sublabel">Target Collection</label>
+                      <input
+                        type="text"
+                        className="lattice-input"
+                        placeholder="e.g. users, customers"
+                        value={f.target || ""}
+                        onChange={(e) => updateField(idx, "target", e.target.value)}
+                        required
+                      />
+                    </div>
+                  )}
+
                   <div className="lattice-field-col-chk">
                     <label className="lattice-checkbox-label">
                       <input
@@ -295,6 +337,35 @@ export function CreateSchemaModal({ isOpen, onClose, onCreate }: CreateSchemaMod
               + Add Field
             </button>
           </fieldset>
+
+          <div className="lattice-form-group" style={{ marginTop: "1rem" }}>
+            <label htmlFor="schema-assignee-field" className="lattice-form-label">
+              Assignee Field (Optional)
+            </label>
+            <select
+              id="schema-assignee-field"
+              className="lattice-input"
+              value={assigneeField}
+              onChange={(e) => setAssigneeField(e.target.value)}
+            >
+              <option value="">None (No assigned record scoping)</option>
+              {fields
+                .filter(
+                  (f) =>
+                    f.name.trim() !== "" &&
+                    f.type === "relation" &&
+                    (!f.target || f.target.trim().toLowerCase() === "users"),
+                )
+                .map((f, i) => (
+                  <option key={i} value={f.name.trim().toLowerCase()}>
+                    {f.name.trim().toLowerCase()} ({f.label || f.name} - user relation)
+                  </option>
+                ))}
+            </select>
+            <span className="yp-muted" style={{ fontSize: "0.75rem", display: "block", marginTop: "0.25rem" }}>
+              Designating an assignee field enables "Assigned Only" record scoping for members. Select a relation field targeting the 'users' collection.
+            </span>
+          </div>
 
           <footer className="lattice-modal-footer">
             <button type="button" className="lattice-btn-secondary" onClick={onClose} disabled={saving}>

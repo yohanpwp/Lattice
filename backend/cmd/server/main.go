@@ -12,6 +12,7 @@ import (
 	"github.com/Lattice/backend/internal/api"
 	_ "github.com/Lattice/backend/internal/migrations" // registers our schema migrations
 	"github.com/Lattice/backend/internal/platform"
+	"github.com/Lattice/backend/internal/platform/authz"
 	"github.com/Lattice/backend/internal/platform/features"
 	"github.com/Lattice/backend/internal/platform/registry"
 	"github.com/Lattice/backend/internal/platform/secrets"
@@ -22,6 +23,7 @@ import (
 func main() {
 	app := pocketbase.New()
 	migratecmd.MustRegister(app, app.RootCmd, migratecmd.Config{})
+	registerWorkspaceCommands(app)
 
 	app.OnServe().BindFunc(func(se *core.ServeEvent) error {
 		// Load config only when serving, so other CLI commands
@@ -34,6 +36,14 @@ func main() {
 		flags, err := loadFeaturesConfig()
 		if err != nil {
 			return err
+		}
+
+		hasOwner, _ := authz.HasOwner(se.App)
+		if !hasOwner {
+			token, err := authz.GetOrCreateSetupToken(se.App)
+			if err == nil && token != "" {
+				log.Printf("\n[Lattice] Workspace requires initial owner setup.\nSetup Secret (valid 24h): %s\n", token)
+			}
 		}
 
 		// The feature flags file is the single source of truth for which
