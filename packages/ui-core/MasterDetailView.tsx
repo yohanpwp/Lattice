@@ -66,23 +66,45 @@ export function MasterDetailView({
   const detailCanUpdate = detailSchema ? detailSchema.can_update !== false : false;
   const detailCanDelete = detailSchema ? detailSchema.can_delete !== false : false;
 
+  const masterDisplayFields = masterSchema.fields.filter((f) => !f.system && f.name !== "id");
+  const masterSearchableFields = masterDisplayFields.filter((f) =>
+    ["text", "email", "url", "select"].includes(f.type),
+  );
+
+  const [debouncedMasterSearch, setDebouncedMasterSearch] = useState(masterSearch);
+
+  useEffect(() => {
+    const timer = setTimeout(() => {
+      setDebouncedMasterSearch(masterSearch);
+    }, 200);
+    return () => clearTimeout(timer);
+  }, [masterSearch]);
+
   // Load master records
   const loadMasterRecords = useCallback(async () => {
     setLoadingMaster(true);
     try {
-      const res = await client.collection(masterSchema.schema_id).getList(1, 50, {
+      const options: Record<string, unknown> = {
         sort: config.defaultSort || "-created",
         requestKey: null,
-      });
+      };
+
+      const trimmed = debouncedMasterSearch.trim();
+      if (trimmed && masterSearchableFields.length > 0) {
+        const clauses = masterSearchableFields.map((f) => `${f.name} ~ {:q}`).join(" || ");
+        options.filter = client.filter(clauses, { q: trimmed });
+      }
+
+      const res = await client.collection(masterSchema.schema_id).getList(1, 50, options);
       const items = res.items as unknown as Array<Record<string, unknown>>;
       setMasterRecords(items);
-      setSelectedMaster((prev) => prev ?? items[0] ?? null);
+      setSelectedMaster((prev) => (prev && items.some((i) => i.id === prev.id) ? prev : items[0] ?? null));
     } catch {
       // Ignore
     } finally {
       setLoadingMaster(false);
     }
-  }, [client, masterSchema.schema_id, config.defaultSort]);
+  }, [client, masterSchema.schema_id, config.defaultSort, debouncedMasterSearch, masterSearchableFields]);
 
   // Load detail records when selectedMaster changes
   const loadDetailRecords = useCallback(async () => {
@@ -151,16 +173,7 @@ export function MasterDetailView({
     };
   }, [client, detailSchema, loadDetailRecords]);
 
-  const masterDisplayFields = masterSchema.fields.filter((f) => !f.system && f.name !== "id");
-  const filteredMasters = masterRecords.filter((rec) => {
-    if (!masterSearch.trim()) return true;
-    const query = masterSearch.toLowerCase();
-    return masterDisplayFields.some((f) => {
-      const val = rec[f.name];
-      if (val === null || val === undefined) return false;
-      return String(val).toLowerCase().includes(query);
-    });
-  });
+  const filteredMasters = masterRecords;
 
   const detailDisplayFields = detailSchema
     ? detailSchema.fields.filter(

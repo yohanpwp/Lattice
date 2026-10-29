@@ -9,13 +9,14 @@ func init() {
 	core.AppMigrations.Register(func(app core.App) error {
 		collection := core.NewBaseCollection("app_pages")
 
-		// API rules: Authenticated users can list, view, create, update, and delete app_pages.
-		authRule := "@request.auth.id != ''"
+		// API rules: Authenticated users can list and view app_pages; owners and admins can modify.
+		authRule := "@request.auth.id != '' && @request.auth.disabled != true"
+		ownerAdminRule := "@request.auth.disabled != true && (@request.auth.role = 'owner' || @request.auth.role = 'admin')"
 		collection.ListRule = types.Pointer(authRule)
 		collection.ViewRule = types.Pointer(authRule)
-		collection.CreateRule = types.Pointer(authRule)
-		collection.UpdateRule = types.Pointer(authRule)
-		collection.DeleteRule = types.Pointer(authRule)
+		collection.CreateRule = types.Pointer(ownerAdminRule)
+		collection.UpdateRule = types.Pointer(ownerAdminRule)
+		collection.DeleteRule = types.Pointer(ownerAdminRule)
 
 		collection.Fields.Add(
 			&core.TextField{Name: "page_id", Required: true},

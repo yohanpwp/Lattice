@@ -6,6 +6,7 @@ export * from "./WorkspaceForm";
 export * from "./WorkspaceSetupForm";
 export * from "./AcceptInviteForm";
 export * from "./WorkspaceMembersModal";
+export * from "./WorkspaceModulesModal";
 export * from "./widgets";
 export * from "./dashboardLoader";
 export * from "./layout";

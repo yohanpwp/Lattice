@@ -11,7 +11,7 @@ const expectedOperations = new Map([
   ["/v1/config", ["get"]],
   ["/v1/features", ["get"]],
   ["/v1/schemas", ["get", "post"]],
-  ["/v1/schemas/{id}", ["delete", "get"]],
+  ["/v1/schemas/{id}", ["delete", "get", "patch"]],
   ["/v1/payments/checkout", ["post"]],
   ["/v1/payments/{id}", ["get"]],
   ["/v1/webhooks/payments/{provider}", ["post"]],

@@ -120,6 +120,39 @@ paths:
           description: Schema not found
         "401":
           description: Missing or invalid auth token
+    patch:
+      operationId: updateSchema
+      summary: Update an existing business schema safely
+      description: Requires an active owner or admin user.
+      security:
+        - pocketbaseToken: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: ./schemas/schema-definition.json
+      responses:
+        "200":
+          description: Schema updated successfully
+          content:
+            application/json:
+              schema:
+                $ref: ./schemas/schema-definition.json
+        "400":
+          description: Invalid schema update or destructive change rejected
+        "401":
+          description: Missing or invalid auth token
+        "403":
+          description: Insufficient permissions
+        "404":
+          description: Schema not found
     delete:
       operationId: deleteSchema
       summary: Delete a business schema by ID

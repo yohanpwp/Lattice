@@ -1,6 +1,7 @@
 package authz
 
 import (
+	"bytes"
 	"crypto/rand"
 	"crypto/sha256"
 	"encoding/hex"
@@ -98,20 +99,25 @@ func HasOwner(app core.App) (bool, error) {
 }
 
 // IsLastOwner checks if the specified user is the only active owner in the workspace.
-func IsLastOwner(app core.App, userID string) bool {
+// Returns (true, nil) if userID is the single active owner, (false, nil) if other active owners exist,
+// or (false, err) if active owner status cannot be verified.
+func IsLastOwner(app core.App, userID string) (bool, error) {
 	if app == nil || !app.IsBootstrapped() || app.DB() == nil {
-		return false
+		return false, errors.New("database not available")
 	}
 	owners, err := app.FindRecordsByFilter("users", "role = {:role} && disabled != true", "", 5, 0, map[string]any{
 		"role": RoleOwner,
 	})
-	if err != nil || len(owners) == 0 {
-		return false
+	if err != nil {
+		return false, fmt.Errorf("failed to query active owners: %w", err)
+	}
+	if len(owners) == 0 {
+		return false, errors.New("cannot verify active owners count: no active owners found")
 	}
 	if len(owners) == 1 && owners[0].Id == userID {
-		return true
+		return true, nil
 	}
-	return false
+	return false, nil
 }
 
 // GetUserPermissions safely extracts and parses dataset permissions from a user record.
@@ -447,6 +453,86 @@ func RecoverOwner(app core.App, email string, password string) (*core.Record, er
 	return rec, nil
 }
 
+type StrictDatasetPermission struct {
+	Read   *bool   `json:"read,omitempty"`
+	Create *bool   `json:"create,omitempty"`
+	Update *bool   `json:"update,omitempty"`
+	Delete *bool   `json:"delete,omitempty"`
+	Scope  *string `json:"scope,omitempty"`
+}
+
+// ValidateAssignedScopePermissions checks that every entry in perms adheres strictly to the DatasetPermission contract
+// (valid types, no unknown properties, valid scope) and that any dataset with ScopeAssigned has a valid SchemaDefinition with a non-empty AssigneeField.
+func ValidateAssignedScopePermissions(app core.App, perms any) error {
+	if perms == nil || app == nil {
+		return nil
+	}
+	var data []byte
+	switch v := perms.(type) {
+	case []byte:
+		data = v
+	case string:
+		data = []byte(v)
+	default:
+		var err error
+		data, err = json.Marshal(perms)
+		if err != nil {
+			return fmt.Errorf("invalid permissions payload: %w", err)
+		}
+	}
+
+	data = bytes.TrimSpace(data)
+	if len(data) == 0 || string(data) == "null" {
+		return nil
+	}
+
+	// Must be a valid JSON object mapping dataset names to permission objects
+	var rawEntries map[string]json.RawMessage
+	dec := json.NewDecoder(bytes.NewReader(data))
+	dec.DisallowUnknownFields()
+	if err := dec.Decode(&rawEntries); err != nil {
+		return fmt.Errorf("invalid permissions format: must be a JSON object: %w", err)
+	}
+
+	// Validate against the shared WorkspaceUser JSON schema contract
+	var docMap map[string]any
+	if err := json.Unmarshal(data, &docMap); err == nil {
+		mockUser := map[string]any{
+			"id":          "usr_contract_chk",
+			"email":       "chk@example.com",
+			"role":        RoleMember,
+			"permissions": docMap,
+		}
+		if err := tenant.ValidateContractDocument("WorkspaceUser", mockUser); err != nil {
+			return fmt.Errorf("permissions violate workspace-user contract: %w", err)
+		}
+	}
+
+	for schemaID, rawVal := range rawEntries {
+		var strictPerm StrictDatasetPermission
+		entryDec := json.NewDecoder(bytes.NewReader(rawVal))
+		entryDec.DisallowUnknownFields()
+		if err := entryDec.Decode(&strictPerm); err != nil {
+			return fmt.Errorf("invalid permission entry for %q: %w", schemaID, err)
+		}
+
+		if strictPerm.Scope != nil && *strictPerm.Scope != "" {
+			scope := *strictPerm.Scope
+			if scope != ScopeAll && scope != ScopeAssigned {
+				return fmt.Errorf("unsupported permission scope %q for %q: must be 'all' or 'assigned'", scope, schemaID)
+			}
+			if scope == ScopeAssigned {
+				schemaDef, err := findSchemaDefinition(app, schemaID)
+				if err != nil || schemaDef == nil || schemaDef.AssigneeField == "" {
+					return fmt.Errorf("cannot grant 'assigned' scope on dataset %q: dataset does not have an assignee_field configured", schemaID)
+				}
+			}
+		}
+	}
+
+	return nil
+}
+
 // CreateInvitation generates an invitation for a member or admin.
 func CreateInvitation(app core.App, inviter *core.Record, email string, role string, perms map[string]any) (*core.Record, error) {
 	if role != RoleAdmin && role != RoleMember {
@@ -478,10 +564,21 @@ func CreateInvitation(app core.App, inviter *core.Record, email string, role str
 		rec.Set("invited_by", inviter.Id)
 	}
 
-	if err := app.Save(rec); err != nil {
-		return nil, err
+	var savedRec *core.Record
+	txErr := app.RunInTransaction(func(txApp core.App) error {
+		if err := ValidateAssignedScopePermissions(txApp, perms); err != nil {
+			return err
+		}
+		if err := txApp.Save(rec); err != nil {
+			return err
+		}
+		savedRec = rec
+		return nil
+	})
+	if txErr != nil {
+		return nil, txErr
 	}
-	return rec, nil
+	return savedRec, nil
 }
 
 // AcceptInvitation consumes a single-use invitation and creates the user account.
@@ -490,53 +587,71 @@ func AcceptInvitation(app core.App, token string, name string, password string) 
 		return nil, errors.New("token and password (min 8 chars) are required")
 	}
 
-	invCol, err := app.FindCollectionByNameOrId("invitations")
-	if err != nil || invCol == nil {
-		return nil, errors.New("invitations collection not found")
-	}
+	var user *core.Record
+	txErr := app.RunInTransaction(func(txApp core.App) error {
+		invCol, err := txApp.FindCollectionByNameOrId("invitations")
+		if err != nil || invCol == nil {
+			return errors.New("invitations collection not found")
+		}
 
-	rec, err := app.FindFirstRecordByFilter("invitations", "token = {:token} && revoked != true", map[string]any{
-		"token": token,
+		usersCol, err := txApp.FindCollectionByNameOrId("users")
+		if err != nil || usersCol == nil {
+			return errors.New("users collection not found")
+		}
+
+		// Reload the invitation fresh inside the transaction
+		rec, err := txApp.FindFirstRecordByFilter("invitations", "token = {:token}", map[string]any{
+			"token": token,
+		})
+		if err != nil || rec == nil {
+			return ErrInvalidInvitation
+		}
+
+		// Verify revocation state inside transaction
+		if rec.GetBool("revoked") {
+			return ErrInvalidInvitation
+		}
+
+		// Verify single-use acceptance state inside transaction
+		if rec.GetString("accepted_at") != "" {
+			return ErrInvalidInvitation
+		}
+
+		// Verify token expiry inside transaction
+		expiresAt := rec.GetDateTime("expires_at").Time()
+		if time.Now().After(expiresAt) {
+			return ErrInvalidInvitation
+		}
+
+		email := rec.GetString("email")
+		existingUser, _ := txApp.FindFirstRecordByFilter("users", "email = {:email}", map[string]any{"email": email})
+		if existingUser != nil {
+			return errors.New("a user with this email address already exists")
+		}
+
+		if err := ValidateAssignedScopePermissions(txApp, rec.Get("permissions")); err != nil {
+			return fmt.Errorf("cannot accept invitation: %w", err)
+		}
+
+		user = core.NewRecord(usersCol)
+		user.Set("email", email)
+		user.Set("name", name)
+		user.Set("role", rec.GetString("role"))
+		user.Set("permissions", rec.Get("permissions"))
+		user.Set("disabled", false)
+		user.SetPassword(password)
+
+		if err := txApp.Save(user); err != nil {
+			return err
+		}
+
+		// Mark invitation accepted
+		rec.Set("accepted_at", types.NowDateTime())
+		return txApp.Save(rec)
 	})
-	if err != nil || rec == nil {
-		return nil, ErrInvalidInvitation
+	if txErr != nil {
+		return nil, txErr
 	}
-
-	if rec.GetString("accepted_at") != "" {
-		return nil, ErrInvalidInvitation
-	}
-
-	expiresAt := rec.GetDateTime("expires_at").Time()
-	if time.Now().After(expiresAt) {
-		return nil, ErrInvalidInvitation
-	}
-
-	usersCol, err := app.FindCollectionByNameOrId("users")
-	if err != nil || usersCol == nil {
-		return nil, errors.New("users collection not found")
-	}
-
-	email := rec.GetString("email")
-	existingUser, _ := app.FindFirstRecordByFilter("users", "email = {:email}", map[string]any{"email": email})
-	if existingUser != nil {
-		return nil, errors.New("a user with this email address already exists")
-	}
-
-	user := core.NewRecord(usersCol)
-	user.Set("email", email)
-	user.Set("name", name)
-	user.Set("role", rec.GetString("role"))
-	user.Set("permissions", rec.Get("permissions"))
-	user.Set("disabled", false)
-	user.SetPassword(password)
-
-	if err := app.Save(user); err != nil {
-		return nil, err
-	}
-
-	// Mark invitation accepted
-	rec.Set("accepted_at", types.NowDateTime())
-	_ = app.Save(rec)
 
 	return user, nil
 }
@@ -692,7 +807,11 @@ func RegisterAuthnHooks(app core.App) {
 		// Owner protection: cannot disable or demote the last active owner
 		if origRecord.GetString("role") == RoleOwner {
 			if target.GetString("role") != RoleOwner || target.GetBool("disabled") {
-				if IsLastOwner(app, target.Id) {
+				isLast, err := IsLastOwner(app, target.Id)
+				if err != nil {
+					return apis.NewForbiddenError("Cannot demote or disable owner: active owners count could not be verified.", err)
+				}
+				if isLast {
 					return apis.NewForbiddenError("Cannot demote or disable the last active workspace owner.", nil)
 				}
 			}
@@ -700,7 +819,11 @@ func RegisterAuthnHooks(app core.App) {
 
 		// Self-demoting guard: if an owner demotes themselves, ensure another owner exists
 		if isSelf && origRecord.GetString("role") == RoleOwner && target.GetString("role") != RoleOwner {
-			if IsLastOwner(app, target.Id) {
+			isLast, err := IsLastOwner(app, target.Id)
+			if err != nil {
+				return apis.NewForbiddenError("Cannot demote yourself: active owners count could not be verified.", err)
+			}
+			if isLast {
 				return apis.NewForbiddenError("Cannot demote yourself: at least one active owner must remain.", nil)
 			}
 		}
@@ -724,15 +847,114 @@ func RegisterAuthnHooks(app core.App) {
 			if IsAdmin(e.Auth) && !IsOwner(e.Auth) {
 				return apis.NewForbiddenError("Admins cannot delete owner or admin accounts.", nil)
 			}
-			if target.GetString("role") == RoleOwner && IsLastOwner(app, target.Id) {
-				return apis.NewForbiddenError("Cannot delete the last active workspace owner.", nil)
+			if target.GetString("role") == RoleOwner {
+				isLast, err := IsLastOwner(app, target.Id)
+				if err != nil {
+					return apis.NewForbiddenError("Cannot delete owner: active owners count could not be verified.", err)
+				}
+				if isLast {
+					return apis.NewForbiddenError("Cannot delete the last active workspace owner.", nil)
+				}
 			}
 		}
 
 		return e.Next()
 	})
 
-	// 5. Business collections: Enforce active account, dataset permissions & assigned record scoping
+	// 5. Page and dashboard administration: owner and admin write only, active accounts only
+	app.OnRecordCreateRequest("app_pages", "dashboards").BindFunc(func(e *core.RecordRequestEvent) error {
+		if err := checkActiveAccount(e.Auth); err != nil {
+			return err
+		}
+		if e.HasSuperuserAuth() {
+			return e.Next()
+		}
+		if e.Auth == nil {
+			return apis.NewUnauthorizedError("Authentication required.", nil)
+		}
+		if !IsOwnerOrAdmin(e.Auth) {
+			return apis.NewForbiddenError("Only workspace owners and admins can configure pages and dashboards.", nil)
+		}
+		return e.Next()
+	})
+
+	app.OnRecordUpdateRequest("app_pages", "dashboards").BindFunc(func(e *core.RecordRequestEvent) error {
+		if err := checkActiveAccount(e.Auth); err != nil {
+			return err
+		}
+		if e.HasSuperuserAuth() {
+			return e.Next()
+		}
+		if e.Auth == nil {
+			return apis.NewUnauthorizedError("Authentication required.", nil)
+		}
+		if !IsOwnerOrAdmin(e.Auth) {
+			return apis.NewForbiddenError("Only workspace owners and admins can configure pages and dashboards.", nil)
+		}
+		return e.Next()
+	})
+
+	app.OnRecordDeleteRequest("app_pages", "dashboards").BindFunc(func(e *core.RecordRequestEvent) error {
+		if err := checkActiveAccount(e.Auth); err != nil {
+			return err
+		}
+		if e.HasSuperuserAuth() {
+			return e.Next()
+		}
+		if e.Auth == nil {
+			return apis.NewUnauthorizedError("Authentication required.", nil)
+		}
+		if !IsOwnerOrAdmin(e.Auth) {
+			return apis.NewForbiddenError("Only workspace owners and admins can configure pages and dashboards.", nil)
+		}
+		return e.Next()
+	})
+
+	// 6. Direct mutation of schema_definitions is prohibited (use /v1/schemas API)
+	app.OnRecordCreateRequest("schema_definitions").BindFunc(func(e *core.RecordRequestEvent) error {
+		if e.HasSuperuserAuth() {
+			return e.Next()
+		}
+		return apis.NewForbiddenError("Direct mutation of schema_definitions is prohibited. Use /v1/schemas API.", nil)
+	})
+
+	app.OnRecordUpdateRequest("schema_definitions").BindFunc(func(e *core.RecordRequestEvent) error {
+		if e.HasSuperuserAuth() {
+			return e.Next()
+		}
+		return apis.NewForbiddenError("Direct mutation of schema_definitions is prohibited. Use /v1/schemas API.", nil)
+	})
+
+	app.OnRecordDeleteRequest("schema_definitions").BindFunc(func(e *core.RecordRequestEvent) error {
+		if e.HasSuperuserAuth() {
+			return e.Next()
+		}
+		return apis.NewForbiddenError("Direct mutation of schema_definitions is prohibited. Use /v1/schemas API.", nil)
+	})
+
+	// 7. Direct mutation of invitations and workspace_setup is prohibited
+	app.OnRecordCreateRequest("invitations", "workspace_setup").BindFunc(func(e *core.RecordRequestEvent) error {
+		if e.HasSuperuserAuth() {
+			return e.Next()
+		}
+		return apis.NewForbiddenError("Direct mutation is prohibited. Use workspace management APIs.", nil)
+	})
+
+	app.OnRecordUpdateRequest("invitations", "workspace_setup").BindFunc(func(e *core.RecordRequestEvent) error {
+		if e.HasSuperuserAuth() {
+			return e.Next()
+		}
+		return apis.NewForbiddenError("Direct mutation is prohibited. Use workspace management APIs.", nil)
+	})
+
+	app.OnRecordDeleteRequest("invitations", "workspace_setup").BindFunc(func(e *core.RecordRequestEvent) error {
+		if e.HasSuperuserAuth() {
+			return e.Next()
+		}
+		return apis.NewForbiddenError("Direct mutation is prohibited. Use workspace management APIs.", nil)
+	})
+
+	// 8. Business collections: Enforce active account, dataset permissions & assigned record scoping
 	app.OnRecordsListRequest().BindFunc(func(e *core.RecordsListRequestEvent) error {
 		if err := checkActiveAccount(e.Auth); err != nil {
 			return err
@@ -894,8 +1116,10 @@ func RegisterAuthnHooks(app core.App) {
 					if origRecord.GetString(schemaDef.AssigneeField) != e.Auth.Id {
 						return apis.NewNotFoundError("Record not found.", nil)
 					}
-					// 2. Member cannot reassign to someone else
-					if e.Record.GetString(schemaDef.AssigneeField) != e.Auth.Id {
+					// 2. Member cannot reassign to someone else; preserve assignment if omitted or empty
+					if e.Record.GetString(schemaDef.AssigneeField) == "" {
+						e.Record.Set(schemaDef.AssigneeField, e.Auth.Id)
+					} else if e.Record.GetString(schemaDef.AssigneeField) != e.Auth.Id {
 						return apis.NewForbiddenError("You cannot change the assignment of this record.", nil)
 					}
 				}

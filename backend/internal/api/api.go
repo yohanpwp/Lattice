@@ -59,6 +59,12 @@ func Register(se *core.ServeEvent, cfg *tenant.Config, flags *features.Flags) {
 
 	// List all business schemas with fields (requires auth)
 	se.Router.GET("/v1/schemas", func(e *core.RequestEvent) error {
+		if e.Auth != nil && e.Auth.GetBool("disabled") {
+			return e.JSON(http.StatusUnauthorized, map[string]string{
+				"error":   "unauthorized",
+				"message": "Your account has been disabled.",
+			})
+		}
 		list, err := schemaSvc.ListSchemas(e.Request.Context())
 		if err != nil {
 			return e.JSON(http.StatusInternalServerError, map[string]string{
@@ -71,6 +77,12 @@ func Register(se *core.ServeEvent, cfg *tenant.Config, flags *features.Flags) {
 
 	// Get a specific business schema by ID (requires auth)
 	se.Router.GET("/v1/schemas/{id}", func(e *core.RequestEvent) error {
+		if e.Auth != nil && e.Auth.GetBool("disabled") {
+			return e.JSON(http.StatusUnauthorized, map[string]string{
+				"error":   "unauthorized",
+				"message": "Your account has been disabled.",
+			})
+		}
 		id := e.Request.PathValue("id")
 		item, err := schemaSvc.GetSchema(e.Request.Context(), id)
 		if err != nil {
@@ -90,6 +102,12 @@ func Register(se *core.ServeEvent, cfg *tenant.Config, flags *features.Flags) {
 
 	// Create a new business schema (requires auth + owner/admin)
 	se.Router.POST("/v1/schemas", func(e *core.RequestEvent) error {
+		if e.Auth != nil && e.Auth.GetBool("disabled") {
+			return e.JSON(http.StatusUnauthorized, map[string]string{
+				"error":   "unauthorized",
+				"message": "Your account has been disabled.",
+			})
+		}
 		if !authz.IsOwnerOrAdmin(e.Auth) && !e.HasSuperuserAuth() {
 			return e.JSON(http.StatusForbidden, map[string]string{
 				"error":   "forbidden",
@@ -150,8 +168,69 @@ func Register(se *core.ServeEvent, cfg *tenant.Config, flags *features.Flags) {
 		return e.JSON(http.StatusOK, created)
 	}).Bind(apis.RequireAuth())
 
+	// Update an existing business schema (requires auth + owner/admin)
+	se.Router.PATCH("/v1/schemas/{id}", func(e *core.RequestEvent) error {
+		if e.Auth != nil && e.Auth.GetBool("disabled") {
+			return e.JSON(http.StatusUnauthorized, map[string]string{
+				"error":   "unauthorized",
+				"message": "Your account has been disabled.",
+			})
+		}
+		if !authz.IsOwnerOrAdmin(e.Auth) && !e.HasSuperuserAuth() {
+			return e.JSON(http.StatusForbidden, map[string]string{
+				"error":   "forbidden",
+				"message": "Only workspace owners and admins can update schemas",
+			})
+		}
+		id := e.Request.PathValue("id")
+
+		var rawDoc any
+		if err := e.BindBody(&rawDoc); err != nil {
+			return e.JSON(http.StatusBadRequest, map[string]string{
+				"error":   "invalid_request",
+				"message": err.Error(),
+			})
+		}
+
+		encoded, err := json.Marshal(rawDoc)
+		if err != nil {
+			return e.JSON(http.StatusBadRequest, map[string]string{
+				"error":   "invalid_request",
+				"message": err.Error(),
+			})
+		}
+
+		updated, err := schemaSvc.UpdateSchema(e.Request.Context(), id, encoded)
+		if err != nil {
+			if errors.Is(err, schemas.ErrSchemaNotFound) {
+				return e.JSON(http.StatusNotFound, map[string]string{
+					"error":   "not_found",
+					"message": fmt.Sprintf("schema %q not found", id),
+				})
+			}
+			if errors.Is(err, schemas.ErrReservedSchemaID) {
+				return e.JSON(http.StatusForbidden, map[string]string{
+					"error":   "forbidden",
+					"message": err.Error(),
+				})
+			}
+			return e.JSON(http.StatusBadRequest, map[string]string{
+				"error":   "failed_to_update_schema",
+				"message": err.Error(),
+			})
+		}
+
+		return e.JSON(http.StatusOK, updated)
+	}).Bind(apis.RequireAuth())
+
 	// Delete a business schema (requires auth + owner/admin)
 	se.Router.DELETE("/v1/schemas/{id}", func(e *core.RequestEvent) error {
+		if e.Auth != nil && e.Auth.GetBool("disabled") {
+			return e.JSON(http.StatusUnauthorized, map[string]string{
+				"error":   "unauthorized",
+				"message": "Your account has been disabled.",
+			})
+		}
 		if !authz.IsOwnerOrAdmin(e.Auth) && !e.HasSuperuserAuth() {
 			return e.JSON(http.StatusForbidden, map[string]string{
 				"error":   "forbidden",
@@ -416,10 +495,6 @@ func Register(se *core.ServeEvent, cfg *tenant.Config, flags *features.Flags) {
 		}
 
 		targetID := e.Request.PathValue("id")
-		target, err := se.App.FindRecordById("users", targetID)
-		if err != nil || target == nil {
-			return e.JSON(http.StatusNotFound, map[string]string{"error": "not_found", "message": "User not found"})
-		}
 
 		var body struct {
 			Role        *string         `json:"role"`
@@ -430,39 +505,96 @@ func Register(se *core.ServeEvent, cfg *tenant.Config, flags *features.Flags) {
 			return e.JSON(http.StatusBadRequest, map[string]string{"error": "invalid_request", "message": err.Error()})
 		}
 
-		// Admin authority limits: only owners can appoint or modify owners and admins
-		if authz.IsAdmin(e.Auth) && !authz.IsOwner(e.Auth) && !e.HasSuperuserAuth() {
-			if target.GetString("role") == authz.RoleOwner || target.GetString("role") == authz.RoleAdmin {
-				return e.JSON(http.StatusForbidden, map[string]string{"error": "forbidden", "message": "Admins cannot modify owner or admin accounts"})
-			}
-			if body.Role != nil && (*body.Role == authz.RoleOwner || *body.Role == authz.RoleAdmin) {
-				return e.JSON(http.StatusForbidden, map[string]string{"error": "forbidden", "message": "Only workspace owners can appoint admins or owners"})
-			}
-		}
+		var target *core.Record
+		var notFoundErr error
+		var forbiddenErr error
+		var invalidPermErr error
 
-		// Last owner protection
-		if target.GetString("role") == authz.RoleOwner {
-			if (body.Role != nil && *body.Role != authz.RoleOwner) || (body.Disabled != nil && *body.Disabled) {
-				if authz.IsLastOwner(se.App, target.Id) {
-					return e.JSON(http.StatusForbidden, map[string]string{
-						"error":   "forbidden",
-						"message": "Cannot demote or disable the last active workspace owner",
-					})
+		err := se.App.RunInTransaction(func(txApp core.App) error {
+			actingAuth := e.Auth
+			if !e.HasSuperuserAuth() {
+				if e.Auth == nil {
+					forbiddenErr = errors.New("Only workspace owners and admins can update team members")
+					return forbiddenErr
+				}
+				if e.Auth.Id != "" {
+					freshActor, err := txApp.FindRecordById("users", e.Auth.Id)
+					if err != nil || freshActor == nil || !authz.IsOwnerOrAdmin(freshActor) {
+						forbiddenErr = errors.New("Only workspace owners and admins can update team members")
+						return forbiddenErr
+					}
+					actingAuth = freshActor
+				} else if !authz.IsOwnerOrAdmin(e.Auth) {
+					forbiddenErr = errors.New("Only workspace owners and admins can update team members")
+					return forbiddenErr
 				}
 			}
-		}
 
-		if body.Role != nil {
-			target.Set("role", *body.Role)
-		}
-		if body.Disabled != nil {
-			target.Set("disabled", *body.Disabled)
-		}
-		if body.Permissions != nil {
-			target.Set("permissions", *body.Permissions)
-		}
+			freshTarget, err := txApp.FindRecordById("users", targetID)
+			if err != nil || freshTarget == nil {
+				notFoundErr = errors.New("User not found")
+				return notFoundErr
+			}
 
-		if err := se.App.Save(target); err != nil {
+			// Admin authority limits checked against freshTarget and fresh actingAuth inside transaction
+			if authz.IsAdmin(actingAuth) && !authz.IsOwner(actingAuth) && !e.HasSuperuserAuth() {
+				if freshTarget.GetString("role") == authz.RoleOwner || freshTarget.GetString("role") == authz.RoleAdmin {
+					forbiddenErr = errors.New("Admins cannot modify owner or admin accounts")
+					return forbiddenErr
+				}
+				if body.Role != nil && (*body.Role == authz.RoleOwner || *body.Role == authz.RoleAdmin) {
+					forbiddenErr = errors.New("Only workspace owners can appoint admins or owners")
+					return forbiddenErr
+				}
+			}
+
+			// Last owner protection checked against freshTarget and fresh active owner count inside transaction
+			if freshTarget.GetString("role") == authz.RoleOwner {
+				if (body.Role != nil && *body.Role != authz.RoleOwner) || (body.Disabled != nil && *body.Disabled) {
+					isLast, err := authz.IsLastOwner(txApp, freshTarget.Id)
+					if err != nil {
+						forbiddenErr = errors.New("Cannot demote or disable the last active workspace owner")
+						return forbiddenErr
+					}
+					if isLast {
+						forbiddenErr = errors.New("Cannot demote or disable the last active workspace owner")
+						return forbiddenErr
+					}
+				}
+			}
+
+			if body.Role != nil {
+				freshTarget.Set("role", *body.Role)
+			}
+			if body.Disabled != nil {
+				freshTarget.Set("disabled", *body.Disabled)
+			}
+			if body.Permissions != nil {
+				if err := authz.ValidateAssignedScopePermissions(txApp, *body.Permissions); err != nil {
+					invalidPermErr = err
+					return err
+				}
+				freshTarget.Set("permissions", *body.Permissions)
+			}
+			if err := txApp.Save(freshTarget); err != nil {
+				return err
+			}
+			target = freshTarget
+			return nil
+		})
+		if err != nil {
+			if notFoundErr != nil {
+				return e.JSON(http.StatusNotFound, map[string]string{"error": "not_found", "message": notFoundErr.Error()})
+			}
+			if forbiddenErr != nil {
+				return e.JSON(http.StatusForbidden, map[string]string{"error": "forbidden", "message": forbiddenErr.Error()})
+			}
+			if invalidPermErr != nil {
+				return e.JSON(http.StatusBadRequest, map[string]string{
+					"error":   "invalid_permissions",
+					"message": invalidPermErr.Error(),
+				})
+			}
 			return e.JSON(http.StatusBadRequest, map[string]string{"error": "update_failed", "message": err.Error()})
 		}
 

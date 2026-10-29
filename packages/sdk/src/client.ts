@@ -15,11 +15,12 @@ import {
   type WorkspaceSetupRequest,
   type WorkspaceInvitation,
   type DatasetPermission,
+  type WorkspaceModule,
 } from "@lattice/types";
 import { AuthPersistenceError, createAuthStore, type PersistentAuthStore } from "./authStore";
 import { fetchAppConfig } from "./config";
 import { ClientTooOldError } from "./errors";
-import type { PlatformAdapters } from "./platform";
+import { createMemoryStorage, type PlatformAdapters } from "./platform";
 import { isClientCompatible } from "./version";
 
 export interface ClientOptions {
@@ -65,11 +66,13 @@ export class ProductClient {
   readonly config: AppConfig;
   readonly pb: PocketBase;
   readonly authStore: PersistentAuthStore;
+  readonly platform: PlatformAdapters;
   readonly payments: PaymentsClient;
-  private constructor(config: AppConfig, pb: PocketBase, authStore: PersistentAuthStore) {
+  private constructor(config: AppConfig, pb: PocketBase, authStore: PersistentAuthStore, platform?: PlatformAdapters) {
     this.config = config;
     this.pb = pb;
     this.authStore = authStore;
+    this.platform = platform ?? { storage: createMemoryStorage() };
     this.payments = new PaymentsClient(pb);
   }
 
@@ -109,7 +112,7 @@ export class ProductClient {
       };
     };
 
-    return new ProductClient(valid, pb, authStore);
+    return new ProductClient(valid, pb, authStore, options.platform);
   }
 
   /**
@@ -151,6 +154,18 @@ export class ProductClient {
       body: valid,
     });
     return assertSchemaDefinition(created);
+  }
+
+  /**
+   * Safely updates an existing business schema definition via PATCH /v1/schemas/{id}.
+   * Requires owner or admin user.
+   */
+  async updateSchema(id: string, update: Partial<SchemaDefinition>): Promise<SchemaDefinition> {
+    const updated = await this.pb.send<SchemaDefinition>(`/v1/schemas/${encodeURIComponent(id)}`, {
+      method: "PATCH",
+      body: update,
+    });
+    return assertSchemaDefinition(updated);
   }
 
   /**
@@ -217,6 +232,50 @@ export class ProductClient {
       if (status === 404) return null;
       throw err;
     }
+  }
+
+  /**
+   * Creates a custom page definition in app_pages (requires Owner or Admin).
+   */
+  async createPage(page: PageDefinition): Promise<PageDefinition> {
+    const valid = assertPageDefinition(page);
+    const rec = await this.pb.collection("app_pages").create(valid);
+    return assertPageDefinition({
+      page_id: rec.page_id,
+      name: rec.name,
+      description: rec.description || undefined,
+      icon: rec.icon || undefined,
+      view_type: rec.view_type,
+      collection: rec.collection,
+      config: rec.config ?? {},
+      created: rec.created,
+      updated: rec.updated,
+    });
+  }
+
+  /**
+   * Updates an existing custom page definition in app_pages (requires Owner or Admin).
+   */
+  async updatePage(recordId: string, page: Partial<PageDefinition>): Promise<PageDefinition> {
+    const rec = await this.pb.collection("app_pages").update(recordId, page);
+    return assertPageDefinition({
+      page_id: rec.page_id,
+      name: rec.name,
+      description: rec.description || undefined,
+      icon: rec.icon || undefined,
+      view_type: rec.view_type,
+      collection: rec.collection,
+      config: rec.config ?? {},
+      created: rec.created,
+      updated: rec.updated,
+    });
+  }
+
+  /**
+   * Deletes a custom page definition from app_pages (requires Owner or Admin).
+   */
+  async deletePage(recordId: string): Promise<void> {
+    await this.pb.collection("app_pages").delete(recordId);
   }
 
   /**
@@ -314,6 +373,10 @@ export class ProductClient {
     return (rec.role as "owner" | "admin" | "member") || null;
   }
 
+  get currentUserId(): string | null {
+    return this.pb.authStore.record?.id || null;
+  }
+
   get isOwner(): boolean {
     return this.currentUserRole === "owner";
   }
@@ -336,8 +399,131 @@ export class ProductClient {
     return Boolean(perm[action]);
   }
 
+  getDatasetScope(dataset: string): "all" | "assigned" | null {
+    if (this.isOwnerOrAdmin) return "all";
+    if (this.currentUserRole !== "member") return null;
+    const rec = this.pb.authStore.record as { permissions?: Record<string, DatasetPermission> } | null;
+    return rec?.permissions?.[dataset]?.scope || null;
+  }
+
   hasFeature(name: string): boolean {
     return this.config.features.includes(name);
+  }
+
+  /**
+   * Retrieves list of disabled module IDs for this tenant workspace.
+   */
+  async getDisabledModules(): Promise<string[]> {
+    try {
+      const key = `lattice:disabled_modules:${encodeURIComponent(this.config.backend_url)}:${encodeURIComponent(this.config.tenant_id)}`;
+      const raw = await this.platform.storage.getItem(key);
+      if (!raw) return [];
+      const parsed = JSON.parse(raw);
+      return Array.isArray(parsed) ? parsed : [];
+    } catch {
+      return [];
+    }
+  }
+
+  /**
+   * Checks whether a module is currently enabled.
+   */
+  async isModuleEnabled(moduleId: string): Promise<boolean> {
+    const disabled = await this.getDisabledModules();
+    return !disabled.includes(moduleId);
+  }
+
+  /**
+   * Enables or disables a module in the workspace.
+   * Requires owner or admin authority.
+   */
+  async setModuleEnabled(moduleId: string, enabled: boolean): Promise<void> {
+    if (!this.isOwnerOrAdmin) {
+      throw new Error("Only workspace owners and admins can configure workspace modules");
+    }
+    const current = await this.getDisabledModules();
+    const set = new Set(current);
+    if (enabled) {
+      set.delete(moduleId);
+    } else {
+      set.add(moduleId);
+    }
+    const key = `lattice:disabled_modules:${encodeURIComponent(this.config.backend_url)}:${encodeURIComponent(this.config.tenant_id)}`;
+    await this.platform.storage.setItem(key, JSON.stringify(Array.from(set)));
+  }
+
+  /**
+   * Discovers and returns all workspace modules (dashboards, features, datasets, and pages)
+   * mapped with their active status, dataset linkages, and custom pages.
+   */
+  async getModules(): Promise<WorkspaceModule[]> {
+    const disabled = new Set(await this.getDisabledModules());
+    const modules: WorkspaceModule[] = [];
+
+    // 1. Dashboard module
+    modules.push({
+      id: "dashboard",
+      name: "Dashboard & Analytics",
+      description: "Overview metrics, KPIs, and operational dashboard summaries",
+      icon: "📊",
+      enabled: !disabled.has("dashboard"),
+    });
+
+    // 2. Built-in feature flags from tenant config
+    for (const feat of this.config.features) {
+      const id = `feature_${feat}`;
+      const name = feat.charAt(0).toUpperCase() + feat.slice(1).replace(/[-_]/g, " ");
+      modules.push({
+        id,
+        name: `Feature: ${name}`,
+        description: `Built-in workspace capability flag (${feat})`,
+        icon: "⚡",
+        enabled: !disabled.has(id),
+        feature_flag: feat,
+      });
+    }
+
+    // 3. Schema datasets and their mapped custom pages
+    const [schemas, pages] = await Promise.all([
+      this.getSchemas().catch(() => [] as SchemaDefinition[]),
+      this.getPages().catch(() => [] as PageDefinition[]),
+    ]);
+
+    const mappedPageIds = new Set<string>();
+
+    for (const schema of schemas) {
+      const id = schema.schema_id;
+      const associatedPages = pages.filter((p) => p.collection === schema.schema_id);
+      for (const p of associatedPages) {
+        mappedPageIds.add(p.page_id);
+      }
+      modules.push({
+        id,
+        name: schema.name,
+        description: schema.description || `Dataset management for ${schema.name}`,
+        icon: schema.icon || "📁",
+        enabled: !disabled.has(id),
+        dataset_id: schema.schema_id,
+        page_ids: associatedPages.map((p) => p.page_id),
+      });
+    }
+
+    // 4. Standalone custom pages not mapped to any registered schema
+    for (const page of pages) {
+      if (!mappedPageIds.has(page.page_id)) {
+        const id = `page_${page.page_id}`;
+        modules.push({
+          id,
+          name: page.name,
+          description: page.description || `Custom view (${page.view_type})`,
+          icon: page.icon || "📄",
+          enabled: !disabled.has(id),
+          page_ids: [page.page_id],
+        });
+      }
+    }
+
+    return modules;
   }
 
   collection<T = RecordModel>(name: string) {

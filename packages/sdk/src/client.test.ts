@@ -646,6 +646,9 @@ describe("schema management", () => {
       if (url.endsWith("/v1/schemas") && init?.method === "POST") {
         return json({ ...mockSchema, created: "2026-10-20T12:00:00Z" });
       }
+      if (url.endsWith("/v1/schemas/inventory") && init?.method === "PATCH") {
+        return json({ ...mockSchema, name: "Updated Inventory", updated: "2026-10-20T13:00:00Z" });
+      }
       if (url.endsWith("/v1/schemas/inventory") && init?.method === "DELETE") {
         return json({ status: "deleted" });
       }
@@ -673,6 +676,14 @@ describe("schema management", () => {
     const created = await client.createSchema(mockSchema);
     expect(created.schema_id).toBe("inventory");
     expect(created.created).toBeDefined();
+
+    // Update schema
+    const updated = await client.updateSchema("inventory", {
+      ...mockSchema,
+      name: "Updated Inventory",
+    });
+    expect(updated.name).toBe("Updated Inventory");
+    expect(calls.some((c) => c.url.endsWith("/v1/schemas/inventory") && c.method === "PATCH")).toBe(true);
 
     // Delete schema
     await client.deleteSchema("inventory");
@@ -814,5 +825,122 @@ describe("schema management", () => {
     expect(users).toHaveLength(2);
     expect(users[0]?.role).toBe("owner");
     expect(users[1]?.role).toBe("member");
+  });
+
+  it("manages workspace modules and enforces owner/admin permission for configuration", async () => {
+    let authRole = "owner";
+    const customFetch = (async (input: RequestInfo | URL) => {
+      const url = String(input);
+      if (url.endsWith("/v1/config")) return json(config);
+      if (url.includes("/v1/schemas")) {
+        return json([
+          {
+            schema_id: "customers",
+            name: "Customer Accounts",
+            description: "Directory of client accounts",
+            icon: "👥",
+            fields: [{ name: "name", type: "text" }],
+          },
+          {
+            schema_id: "jobs",
+            name: "Work Orders",
+            icon: "📋",
+            fields: [{ name: "title", type: "text" }],
+          },
+        ]);
+      }
+      if (url.includes("/collections/app_pages/records")) {
+        return json({
+          items: [
+            {
+              id: "page_rec_1",
+              page_id: "customer_list",
+              name: "Customer List View",
+              view_type: "table",
+              collection: "customers",
+              config: {},
+            },
+            {
+              id: "page_rec_2",
+              page_id: "custom_kpis",
+              name: "Standalone KPI Dashboard",
+              view_type: "dashboard",
+              collection: "analytics",
+              config: {},
+            },
+          ],
+        });
+      }
+      if (url.includes("auth-with-password")) {
+        const token = `e30.${btoa(JSON.stringify({ exp: Math.floor(Date.now() / 1000) + 3600 }))}.sig`;
+        return json({
+          token,
+          record: {
+            id: authRole === "owner" ? "owner_1" : "member_1",
+            collectionName: "users",
+            role: authRole,
+          },
+        });
+      }
+      return json({});
+    }) as typeof fetch;
+
+    const storage = createMemoryStorage();
+    const client = await ProductClient.connect({
+      backendUrl: "https://acme.app.example.com/",
+      clientVersion: "0.1.0",
+      platform: { storage, fetch: customFetch },
+    });
+
+    // 1. Unauthenticated or member cannot configure modules
+    await expect(client.setModuleEnabled("customers", false)).rejects.toThrow(
+      "Only workspace owners and admins can configure workspace modules",
+    );
+
+    // 2. Sign in as owner
+    await client.login("owner@example.com", "Password123!");
+    expect(client.isOwner).toBe(true);
+
+    // 3. Discover modules
+    const modules = await client.getModules();
+    expect(modules.length).toBeGreaterThanOrEqual(4);
+
+    const dashboardMod = modules.find((m) => m.id === "dashboard");
+    expect(dashboardMod).toBeDefined();
+    expect(dashboardMod?.enabled).toBe(true);
+
+    const featureMod = modules.find((m) => m.feature_flag === "orders");
+    expect(featureMod).toBeDefined();
+    expect(featureMod?.name).toContain("Orders");
+
+    const customerMod = modules.find((m) => m.id === "customers");
+    expect(customerMod).toBeDefined();
+    expect(customerMod?.dataset_id).toBe("customers");
+    expect(customerMod?.page_ids).toEqual(["customer_list"]);
+
+    const standaloneMod = modules.find((m) => m.id === "page_custom_kpis");
+    expect(standaloneMod).toBeDefined();
+    expect(standaloneMod?.name).toBe("Standalone KPI Dashboard");
+
+    // 4. Disable customers module
+    await client.setModuleEnabled("customers", false);
+    expect(await client.isModuleEnabled("customers")).toBe(false);
+
+    // 5. Verify getModules reflects disabled status
+    const updatedModules = await client.getModules();
+    const updatedCustomerMod = updatedModules.find((m) => m.id === "customers");
+    expect(updatedCustomerMod?.enabled).toBe(false);
+
+    // 6. Re-enable customers module
+    await client.setModuleEnabled("customers", true);
+    expect(await client.isModuleEnabled("customers")).toBe(true);
+
+    // 7. Sign in as member and verify blocked
+    authRole = "member";
+    await client.login("member@example.com", "Password123!");
+    expect(client.currentUserRole).toBe("member");
+    await expect(client.setModuleEnabled("customers", false)).rejects.toThrow(
+      "Only workspace owners and admins can configure workspace modules",
+    );
   });
 });

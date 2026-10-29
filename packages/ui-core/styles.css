@@ -268,6 +268,48 @@ button:disabled {
     grid-row: auto;
     min-height: 8rem;
   }
+
+  /* Schema header, search box & toolbar on mobile */
+  .lattice-schema-header {
+    flex-direction: column;
+    align-items: stretch;
+    gap: 0.875rem;
+    padding: 1rem;
+  }
+
+  .lattice-schema-toolbar {
+    flex-direction: column;
+    width: 100%;
+    gap: 0.5rem;
+  }
+
+  .lattice-search-box {
+    width: 100%;
+  }
+
+  .lattice-search-input {
+    width: 100%;
+    min-height: 40px;
+    font-size: 1rem; /* Prevents auto-zoom on iOS */
+    padding: 0.5rem 0.75rem;
+  }
+
+  .lattice-table-wrapper {
+    overflow-x: auto;
+    -webkit-overflow-scrolling: touch;
+  }
+
+  .lattice-modal-dialog {
+    width: 95vw !important;
+    max-width: 95vw !important;
+    max-height: 90vh !important;
+    margin: 1rem auto;
+  }
+
+  .lattice-form-row {
+    flex-direction: column;
+    gap: 0.75rem;
+  }
 }
 
 /* -------------------------------------------------------------
@@ -1157,4 +1199,25 @@ button:disabled {
 .yp-success {
   color: #16a34a;
   font-weight: 600;
+}
+
+/* Workspace Modules Modal */
+.lattice-status-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35rem;
+  padding: 0.2rem 0.5rem;
+  border-radius: 9999px;
+  font-size: 0.75rem;
+  font-weight: 600;
+}
+
+.lattice-status-badge--active {
+  background: rgba(22, 163, 74, 0.1);
+  color: #16a34a;
+}
+
+.lattice-status-badge--disabled {
+  background: rgba(156, 163, 175, 0.15);
+  color: #6b7280;
 }

@@ -37,6 +37,7 @@ import {
   WorkspaceSetupForm,
   AcceptInviteForm,
   WorkspaceMembersModal,
+  WorkspaceModulesModal,
   type DataClient,
 } from "./index";
 import type { SchemaDefinition, PageDefinition } from "@lattice/types";
@@ -668,6 +669,246 @@ describe("schema navigation and validation", () => {
     expect(html).toContain("Assignee Field (Optional)");
     expect(html).toContain("None (No assigned record scoping)");
     expect(html).toContain("Designating an assignee field enables");
+  });
+
+  it("renders CreateSchemaModal with relation target selection from available schemas", () => {
+    const html = renderToString(
+      React.createElement(CreateSchemaModal, {
+        isOpen: true,
+        onClose: () => {},
+        onCreate: async () => {},
+        schemas: [
+          sampleSchema,
+          {
+            schema_id: "customers",
+            name: "Customer Directory",
+            fields: [{ name: "name", type: "text" }],
+          },
+        ],
+        initialFields: [
+          { name: "title", label: "Title", type: "text" },
+          { name: "client", label: "Client", type: "relation", target: "customers" },
+        ],
+      }),
+    );
+
+    expect(html).toContain("Create New Dynamic Schema");
+    expect(html).toContain("Target Collection");
+    expect(html).toContain("Available Collections");
+    expect(html).toContain("users (Workspace Users / Team)");
+    expect(html).toContain("customers (Customer Directory)");
+  });
+
+  it("renders SchemaNavigation conditionally showing or hiding Dashboard tab", () => {
+    // 1. With showDashboard: true (default)
+    const withDash = renderToString(
+      React.createElement(SchemaNavigation, {
+        schemas: [sampleSchema],
+        activeTab: "dashboard",
+        onSelectTab: () => {},
+        showDashboard: true,
+      }),
+    );
+    expect(withDash).toContain("Dashboard Overview");
+
+    // 2. With showDashboard: false (when dashboard module is disabled)
+    const withoutDash = renderToString(
+      React.createElement(SchemaNavigation, {
+        schemas: [sampleSchema],
+        activeTab: sampleSchema.schema_id,
+        onSelectTab: () => {},
+        showDashboard: false,
+      }),
+    );
+    expect(withoutDash).not.toContain("Dashboard Overview");
+    expect(withoutDash).toContain(sampleSchema.name);
+  });
+
+  it("renders WorkspaceModulesModal with module list, type chips, and status badges", () => {
+    const mockClient = {
+      config: { tenant_id: "tenant_dev", features: ["billing"] },
+      isOwnerOrAdmin: true,
+      currentUserRole: "owner",
+      getModules: async () => [
+        {
+          id: "dashboard",
+          name: "Dashboard & Analytics",
+          icon: "📊",
+          enabled: true,
+        },
+        {
+          id: "customers",
+          name: "Customers Directory",
+          icon: "👥",
+          dataset_id: "customers",
+          page_ids: ["cust_table"],
+          enabled: true,
+        },
+        {
+          id: "feature_billing",
+          name: "Feature: Billing",
+          icon: "⚡",
+          feature_flag: "billing",
+          enabled: false,
+        },
+      ],
+      getDisabledModules: async () => ["feature_billing"],
+      setModuleEnabled: async () => {},
+    } as unknown as Parameters<typeof WorkspaceModulesModal>[0]["client"];
+
+    const html = renderToString(
+      React.createElement(WorkspaceModulesModal, {
+        isOpen: true,
+        onClose: () => {},
+        client: mockClient,
+      }),
+    );
+
+    expect(html).toContain("Workspace Modules &amp; Capabilities");
+    expect(html).toContain("Total Modules");
+    expect(html).toContain("Search modules by name, dataset, or tag…");
+    expect(html).toContain("Datasets");
+    expect(html).toContain("Features");
+    expect(html).toContain("Close");
+  });
+
+  it("renders SchemaView sorting correctly when created field is absent", () => {
+    const mockClient = {
+      hasDatasetPermission: () => true,
+      filter: () => "",
+      collection: () => ({
+        getList: async () => ({ items: [], totalPages: 1, totalItems: 0 }),
+        subscribe: () => Promise.resolve(() => {}),
+        unsubscribe: () => Promise.resolve(),
+      }),
+      isOwnerOrAdmin: true,
+    } as unknown as Parameters<typeof SchemaView>[0]["client"];
+
+    // Schema without 'created' field
+    const schemaWithoutCreated: SchemaDefinition = {
+      schema_id: "customers",
+      name: "Customers",
+      fields: [
+        { name: "customer_name", label: "Customer Name", type: "text", required: true },
+        { name: "tier", label: "Tier", type: "select", options: ["standard", "vip"] },
+      ],
+    };
+
+    const html = renderToString(
+      React.createElement(SchemaView, {
+        client: mockClient,
+        schema: schemaWithoutCreated,
+      }),
+    );
+
+    expect(html).toContain("Customers");
+    expect(html).toContain("records…");
+    expect(html).toContain("+ Add Field");
+    expect(html).toContain("+ Add Record");
+  });
+
+  it("renders SchemaRecordModal displaying auto-assignment banner for assigned members", () => {
+    const mockMemberClient = {
+      isOwnerOrAdmin: false,
+      currentUserRole: "member",
+      getDatasetScope: (id: string) => (id === "jobs" ? "assigned" : "all"),
+      currentUserId: "member_123",
+      authStore: {
+        record: {
+          id: "member_123",
+          name: "Alice Member",
+          email: "alice@example.com",
+          role: "member",
+          permissions: {
+            jobs: { read: true, create: true, update: true, delete: false, scope: "assigned" },
+          },
+        },
+      },
+    } as unknown as Parameters<typeof SchemaRecordModal>[0]["client"];
+
+    const jobsSchema: SchemaDefinition = {
+      schema_id: "jobs",
+      name: "Jobs",
+      assignee_field: "assigned_user",
+      fields: [
+        { name: "title", label: "Job Title", type: "text", required: true },
+        { name: "assigned_user", label: "Assigned Member", type: "relation", target: "users", required: true },
+      ],
+    };
+
+    const html = renderToString(
+      React.createElement(SchemaRecordModal, {
+        client: mockMemberClient,
+        schema: jobsSchema,
+        isOpen: true,
+        onClose: () => {},
+        onSave: async () => {},
+      }),
+    );
+
+    expect(html).toContain("Add New Jobs");
+    expect(html).toContain("Job Title");
+    expect(html).toContain("Assigned to you:");
+    expect(html).toContain("Alice Member");
+    expect(html).toContain("automatically be assigned to your account");
+  });
+
+  it("renders RelationPicker with target schema display fields support", () => {
+    const mockClient = {
+      filter: (tmpl: string) => tmpl,
+      collection: () => ({
+        getList: async () => ({
+          items: [
+            { id: "cust_1", name: "Acme Corp", email: "contact@acme.com" },
+            { id: "cust_2", name: "Beta LLC", email: "contact@beta.com" },
+          ],
+          totalPages: 1,
+          totalItems: 2,
+        }),
+      }),
+      getSchema: async () => ({
+        schema_id: "customers",
+        name: "Customers",
+        fields: [
+          { name: "name", label: "Company Name", type: "text" },
+          { name: "email", label: "Email", type: "email" },
+        ],
+      }),
+    } as unknown as Parameters<typeof SchemaRecordModal>[0]["client"];
+
+    const customersSchema: SchemaDefinition = {
+      schema_id: "customers",
+      name: "Customers",
+      fields: [
+        { name: "name", label: "Company Name", type: "text", required: true },
+        { name: "email", label: "Email", type: "email" },
+      ],
+    };
+
+    const jobsSchema: SchemaDefinition = {
+      schema_id: "jobs",
+      name: "Jobs",
+      fields: [
+        { name: "title", label: "Job Title", type: "text", required: true },
+        { name: "customer", label: "Customer", type: "relation", target: "customers" },
+      ],
+    };
+
+    const html = renderToString(
+      React.createElement(SchemaRecordModal, {
+        client: mockClient,
+        schema: jobsSchema,
+        schemas: [customersSchema, jobsSchema],
+        isOpen: true,
+        onClose: () => {},
+        onSave: async () => {},
+      }),
+    );
+
+    expect(html).toContain("Search customers…");
+    expect(html).toContain("Dataset");
+    expect(html).toContain("Enter ID manually");
+    expect(html).toContain("Customer");
   });
 });
 

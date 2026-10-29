@@ -7,6 +7,7 @@ export interface SchemaNavigationProps {
   onSelectTab: (tabId: string) => void;
   canCreateSchema?: boolean;
   onCreateSchemaClick?: () => void;
+  showDashboard?: boolean;
 }
 
 export function SchemaNavigation({
@@ -16,6 +17,7 @@ export function SchemaNavigation({
   onSelectTab,
   canCreateSchema = false,
   onCreateSchemaClick,
+  showDashboard = true,
 }: SchemaNavigationProps) {
   function getPageIcon(page: PageDefinition): string {
     if (page.icon) return page.icon;
@@ -35,16 +37,18 @@ export function SchemaNavigation({
   return (
     <nav className="lattice-nav" aria-label="Application Navigation">
       <div className="lattice-nav-tabs" role="tablist">
-        <button
-          type="button"
-          role="tab"
-          aria-selected={activeTab === "dashboard"}
-          className={`lattice-tab ${activeTab === "dashboard" ? "lattice-tab--active" : ""}`}
-          onClick={() => onSelectTab("dashboard")}
-        >
-          <span className="lattice-tab-icon">📊</span>
-          <span className="lattice-tab-label">Dashboard Overview</span>
-        </button>
+        {showDashboard && (
+          <button
+            type="button"
+            role="tab"
+            aria-selected={activeTab === "dashboard"}
+            className={`lattice-tab ${activeTab === "dashboard" ? "lattice-tab--active" : ""}`}
+            onClick={() => onSelectTab("dashboard")}
+          >
+            <span className="lattice-tab-icon">📊</span>
+            <span className="lattice-tab-label">Dashboard Overview</span>
+          </button>
+        )}
 
         {pages.map((page) => (
           <button

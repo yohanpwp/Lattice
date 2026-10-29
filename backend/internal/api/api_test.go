@@ -743,3 +743,577 @@ func TestWorkspaceAPIRoutes(t *testing.T) {
 		t.Fatalf("admin promoting to owner status = %d, want 403", adminPromoteOwnerRec.Code)
 	}
 }
+
+func TestSchemaAdministrationAuthorization(t *testing.T) {
+	app := newTestApp(t)
+	usersCol, _ := app.FindCollectionByNameOrId("users")
+
+	r := router.NewRouter[*core.RequestEvent](func(w http.ResponseWriter, req *http.Request) (*core.RequestEvent, router.EventCleanupFunc) {
+		event := &core.RequestEvent{App: app, Event: router.Event{Response: w, Request: req}}
+		token := req.Header.Get("Authorization")
+		if token != "" {
+			rec := core.NewRecord(usersCol)
+			switch token {
+			case "Bearer owner_token":
+				rec.Set("role", "owner")
+				rec.Set("disabled", false)
+			case "Bearer admin_token":
+				rec.Set("role", "admin")
+				rec.Set("disabled", false)
+			case "Bearer member_token":
+				rec.Set("role", "member")
+				rec.Set("disabled", false)
+			case "Bearer disabled_token":
+				rec.Set("role", "owner")
+				rec.Set("disabled", true)
+			}
+			event.Auth = rec
+		}
+		return event, func() {}
+	})
+
+	cfg := &tenant.Config{
+		Version: 1, TenantID: "tenant_dev", BackendURL: "https://acme.app.example.com",
+		RealtimeURL: "https://acme.app.example.com/api/realtime", AppKey: "pk_dev_000000",
+		SchemaVersion: "opaque_schema_id", MinClientVersion: "0.1.0",
+		Features: []string{}, Collections: []string{},
+	}
+	Register(&core.ServeEvent{App: app, Router: r}, cfg, features.Empty())
+	mux, err := r.BuildMux()
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	makeSchemaPayload := func(id, name string) string {
+		return fmt.Sprintf(`{
+			"schema_id": "%s",
+			"name": "%s",
+			"fields": [
+				{"name": "title", "label": "Title", "type": "text", "required": true}
+			]
+		}`, id, name)
+	}
+
+	// 1. Unauthenticated requests to POST, DELETE, GET schemas
+	unauthPost := httptest.NewRequest(http.MethodPost, "/v1/schemas", strings.NewReader(makeSchemaPayload("unauth_schema", "Unauth")))
+	unauthPost.Header.Set("Content-Type", "application/json")
+	unauthPostRec := httptest.NewRecorder()
+	mux.ServeHTTP(unauthPostRec, unauthPost)
+	if unauthPostRec.Code != http.StatusUnauthorized {
+		t.Fatalf("unauth POST /v1/schemas status = %d, want 401", unauthPostRec.Code)
+	}
+
+	unauthDel := httptest.NewRequest(http.MethodDelete, "/v1/schemas/some_schema", nil)
+	unauthDelRec := httptest.NewRecorder()
+	mux.ServeHTTP(unauthDelRec, unauthDel)
+	if unauthDelRec.Code != http.StatusUnauthorized {
+		t.Fatalf("unauth DELETE /v1/schemas/some_schema status = %d, want 401", unauthDelRec.Code)
+	}
+
+	unauthGet := httptest.NewRequest(http.MethodGet, "/v1/schemas", nil)
+	unauthGetRec := httptest.NewRecorder()
+	mux.ServeHTTP(unauthGetRec, unauthGet)
+	if unauthGetRec.Code != http.StatusUnauthorized {
+		t.Fatalf("unauth GET /v1/schemas status = %d, want 401", unauthGetRec.Code)
+	}
+
+	// 2. Disabled account requests to POST, DELETE, GET schemas
+	disPost := httptest.NewRequest(http.MethodPost, "/v1/schemas", strings.NewReader(makeSchemaPayload("dis_schema", "Disabled")))
+	disPost.Header.Set("Authorization", "Bearer disabled_token")
+	disPost.Header.Set("Content-Type", "application/json")
+	disPostRec := httptest.NewRecorder()
+	mux.ServeHTTP(disPostRec, disPost)
+	if disPostRec.Code != http.StatusUnauthorized {
+		t.Fatalf("disabled POST /v1/schemas status = %d, want 401", disPostRec.Code)
+	}
+
+	disDel := httptest.NewRequest(http.MethodDelete, "/v1/schemas/some_schema", nil)
+	disDel.Header.Set("Authorization", "Bearer disabled_token")
+	disDelRec := httptest.NewRecorder()
+	mux.ServeHTTP(disDelRec, disDel)
+	if disDelRec.Code != http.StatusUnauthorized {
+		t.Fatalf("disabled DELETE /v1/schemas/some_schema status = %d, want 401", disDelRec.Code)
+	}
+
+	disGet := httptest.NewRequest(http.MethodGet, "/v1/schemas", nil)
+	disGet.Header.Set("Authorization", "Bearer disabled_token")
+	disGetRec := httptest.NewRecorder()
+	mux.ServeHTTP(disGetRec, disGet)
+	if disGetRec.Code != http.StatusUnauthorized {
+		t.Fatalf("disabled GET /v1/schemas status = %d, want 401", disGetRec.Code)
+	}
+
+	// 3. Member role cannot create or delete schemas (403 Forbidden), but CAN view/list schemas
+	memberPost := httptest.NewRequest(http.MethodPost, "/v1/schemas", strings.NewReader(makeSchemaPayload("member_schema", "Member Schema")))
+	memberPost.Header.Set("Authorization", "Bearer member_token")
+	memberPost.Header.Set("Content-Type", "application/json")
+	memberPostRec := httptest.NewRecorder()
+	mux.ServeHTTP(memberPostRec, memberPost)
+	if memberPostRec.Code != http.StatusForbidden {
+		t.Fatalf("member POST /v1/schemas status = %d, want 403", memberPostRec.Code)
+	}
+
+	memberDel := httptest.NewRequest(http.MethodDelete, "/v1/schemas/some_schema", nil)
+	memberDel.Header.Set("Authorization", "Bearer member_token")
+	memberDelRec := httptest.NewRecorder()
+	mux.ServeHTTP(memberDelRec, memberDel)
+	if memberDelRec.Code != http.StatusForbidden {
+		t.Fatalf("member DELETE /v1/schemas/some_schema status = %d, want 403", memberDelRec.Code)
+	}
+
+	memberGet := httptest.NewRequest(http.MethodGet, "/v1/schemas", nil)
+	memberGet.Header.Set("Authorization", "Bearer member_token")
+	memberGetRec := httptest.NewRecorder()
+	mux.ServeHTTP(memberGetRec, memberGet)
+	if memberGetRec.Code != http.StatusOK {
+		t.Fatalf("member GET /v1/schemas status = %d, want 200", memberGetRec.Code)
+	}
+
+	// 4. Admin role CAN create, view, and delete schemas
+	adminPost := httptest.NewRequest(http.MethodPost, "/v1/schemas", strings.NewReader(makeSchemaPayload("admin_created_schema", "Admin Schema")))
+	adminPost.Header.Set("Authorization", "Bearer admin_token")
+	adminPost.Header.Set("Content-Type", "application/json")
+	adminPostRec := httptest.NewRecorder()
+	mux.ServeHTTP(adminPostRec, adminPost)
+	if adminPostRec.Code != http.StatusOK {
+		t.Fatalf("admin POST /v1/schemas status = %d, want 200, body: %s", adminPostRec.Code, adminPostRec.Body.String())
+	}
+
+	// Verify schema exists
+	adminGet := httptest.NewRequest(http.MethodGet, "/v1/schemas/admin_created_schema", nil)
+	adminGet.Header.Set("Authorization", "Bearer admin_token")
+	adminGetRec := httptest.NewRecorder()
+	mux.ServeHTTP(adminGetRec, adminGet)
+	if adminGetRec.Code != http.StatusOK {
+		t.Fatalf("admin GET /v1/schemas/admin_created_schema status = %d, want 200", adminGetRec.Code)
+	}
+
+	// Member can read the admin-created schema
+	memberGetSpecific := httptest.NewRequest(http.MethodGet, "/v1/schemas/admin_created_schema", nil)
+	memberGetSpecific.Header.Set("Authorization", "Bearer member_token")
+	memberGetSpecificRec := httptest.NewRecorder()
+	mux.ServeHTTP(memberGetSpecificRec, memberGetSpecific)
+	if memberGetSpecificRec.Code != http.StatusOK {
+		t.Fatalf("member GET /v1/schemas/admin_created_schema status = %d, want 200", memberGetSpecificRec.Code)
+	}
+
+	// Admin deletes the schema
+	adminDel := httptest.NewRequest(http.MethodDelete, "/v1/schemas/admin_created_schema", nil)
+	adminDel.Header.Set("Authorization", "Bearer admin_token")
+	adminDelRec := httptest.NewRecorder()
+	mux.ServeHTTP(adminDelRec, adminDel)
+	if adminDelRec.Code != http.StatusOK {
+		t.Fatalf("admin DELETE /v1/schemas/admin_created_schema status = %d, want 200", adminDelRec.Code)
+	}
+
+	// 5. Owner role CAN create, view, and delete schemas
+	ownerPost := httptest.NewRequest(http.MethodPost, "/v1/schemas", strings.NewReader(makeSchemaPayload("owner_created_schema", "Owner Schema")))
+	ownerPost.Header.Set("Authorization", "Bearer owner_token")
+	ownerPost.Header.Set("Content-Type", "application/json")
+	ownerPostRec := httptest.NewRecorder()
+	mux.ServeHTTP(ownerPostRec, ownerPost)
+	if ownerPostRec.Code != http.StatusOK {
+		t.Fatalf("owner POST /v1/schemas status = %d, want 200, body: %s", ownerPostRec.Code, ownerPostRec.Body.String())
+	}
+
+	ownerDel := httptest.NewRequest(http.MethodDelete, "/v1/schemas/owner_created_schema", nil)
+	ownerDel.Header.Set("Authorization", "Bearer owner_token")
+	ownerDelRec := httptest.NewRecorder()
+	mux.ServeHTTP(ownerDelRec, ownerDel)
+	if ownerDelRec.Code != http.StatusOK {
+		t.Fatalf("owner DELETE /v1/schemas/owner_created_schema status = %d, want 200", ownerDelRec.Code)
+	}
+}
+
+func TestMemberUpdate_ConcurrentDemotionOfOwners(t *testing.T) {
+	app := newTestApp(t)
+	usersCol, err := app.FindCollectionByNameOrId("users")
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	owner1 := core.NewRecord(usersCol)
+	owner1.Set("email", "owner1@example.com")
+	owner1.Set("role", authz.RoleOwner)
+	owner1.Set("disabled", false)
+	owner1.SetPassword("Password123!")
+	if err := app.Save(owner1); err != nil {
+		t.Fatal(err)
+	}
+
+	owner2 := core.NewRecord(usersCol)
+	owner2.Set("email", "owner2@example.com")
+	owner2.Set("role", authz.RoleOwner)
+	owner2.Set("disabled", false)
+	owner2.SetPassword("Password123!")
+	if err := app.Save(owner2); err != nil {
+		t.Fatal(err)
+	}
+
+	r := router.NewRouter[*core.RequestEvent](func(w http.ResponseWriter, req *http.Request) (*core.RequestEvent, router.EventCleanupFunc) {
+		event := &core.RequestEvent{App: app, Event: router.Event{Response: w, Request: req}}
+		token := req.Header.Get("Authorization")
+		if token == "Bearer owner_token" {
+			rec := core.NewRecord(usersCol)
+			rec.Set("role", authz.RoleOwner)
+			rec.Set("disabled", false)
+			event.Auth = rec
+		}
+		return event, func() {}
+	})
+
+	cfg := &tenant.Config{
+		Version: 1, TenantID: "tenant_dev", BackendURL: "https://acme.app.example.com",
+		RealtimeURL: "https://acme.app.example.com/api/realtime", AppKey: "pk_dev_000000",
+		SchemaVersion: "opaque_schema_id", MinClientVersion: "0.1.0",
+		Features: []string{}, Collections: []string{},
+	}
+	Register(&core.ServeEvent{App: app, Router: r}, cfg, features.Empty())
+	mux, err := r.BuildMux()
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	startBarrier := make(chan struct{})
+	type result struct {
+		id   string
+		code int
+		body string
+	}
+	resChan := make(chan result, 2)
+
+	go func() {
+		<-startBarrier
+		req := httptest.NewRequest(http.MethodPatch, "/v1/workspace/users/"+owner1.Id, strings.NewReader(`{"role":"member"}`))
+		req.Header.Set("Authorization", "Bearer owner_token")
+		req.Header.Set("Content-Type", "application/json")
+		rec := httptest.NewRecorder()
+		mux.ServeHTTP(rec, req)
+		resChan <- result{id: owner1.Id, code: rec.Code, body: rec.Body.String()}
+	}()
+
+	go func() {
+		<-startBarrier
+		req := httptest.NewRequest(http.MethodPatch, "/v1/workspace/users/"+owner2.Id, strings.NewReader(`{"role":"member"}`))
+		req.Header.Set("Authorization", "Bearer owner_token")
+		req.Header.Set("Content-Type", "application/json")
+		rec := httptest.NewRecorder()
+		mux.ServeHTTP(rec, req)
+		resChan <- result{id: owner2.Id, code: rec.Code, body: rec.Body.String()}
+	}()
+
+	close(startBarrier)
+	r1 := <-resChan
+	r2 := <-resChan
+
+	// Exactly one request must succeed (200) and the other must be rejected (403)
+	successCount := 0
+	forbiddenCount := 0
+	for _, res := range []result{r1, r2} {
+		if res.code == http.StatusOK {
+			successCount++
+		} else if res.code == http.StatusForbidden {
+			forbiddenCount++
+			if !strings.Contains(res.body, "Cannot demote or disable the last active workspace owner") {
+				t.Fatalf("unexpected forbidden message: %s", res.body)
+			}
+		} else {
+			t.Fatalf("unexpected status code: %d, body: %s", res.code, res.body)
+		}
+	}
+
+	if successCount != 1 || forbiddenCount != 1 {
+		t.Fatalf("expected 1 success (200) and 1 forbidden (403), got %d success and %d forbidden", successCount, forbiddenCount)
+	}
+
+	// Verify database state: exactly 1 active owner remains
+	activeOwners, err := app.FindRecordsByFilter("users", "role = {:role} && disabled != true", "", 10, 0, map[string]any{
+		"role": authz.RoleOwner,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(activeOwners) != 1 {
+		t.Fatalf("expected exactly 1 active owner remaining, found %d", len(activeOwners))
+	}
+}
+
+func TestMemberUpdate_TargetPromotedConcurrently(t *testing.T) {
+	app := newTestApp(t)
+	usersCol, err := app.FindCollectionByNameOrId("users")
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	targetMember := core.NewRecord(usersCol)
+	targetMember.Set("email", "target@example.com")
+	targetMember.Set("role", authz.RoleMember)
+	targetMember.Set("disabled", false)
+	targetMember.SetPassword("Password123!")
+	if err := app.Save(targetMember); err != nil {
+		t.Fatal(err)
+	}
+
+	r := router.NewRouter[*core.RequestEvent](func(w http.ResponseWriter, req *http.Request) (*core.RequestEvent, router.EventCleanupFunc) {
+		event := &core.RequestEvent{App: app, Event: router.Event{Response: w, Request: req}}
+		token := req.Header.Get("Authorization")
+		if token == "Bearer admin_token" {
+			rec := core.NewRecord(usersCol)
+			rec.Set("role", authz.RoleAdmin)
+			rec.Set("disabled", false)
+			event.Auth = rec
+		} else if token == "Bearer owner_token" {
+			rec := core.NewRecord(usersCol)
+			rec.Set("role", authz.RoleOwner)
+			rec.Set("disabled", false)
+			event.Auth = rec
+		}
+		return event, func() {}
+	})
+
+	cfg := &tenant.Config{
+		Version: 1, TenantID: "tenant_dev", BackendURL: "https://acme.app.example.com",
+		RealtimeURL: "https://acme.app.example.com/api/realtime", AppKey: "pk_dev_000000",
+		SchemaVersion: "opaque_schema_id", MinClientVersion: "0.1.0",
+		Features: []string{}, Collections: []string{},
+	}
+	Register(&core.ServeEvent{App: app, Router: r}, cfg, features.Empty())
+	mux, err := r.BuildMux()
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	// 1. Owner promotes target to admin
+	ownerPromoteReq := httptest.NewRequest(http.MethodPatch, "/v1/workspace/users/"+targetMember.Id, strings.NewReader(`{"role":"admin"}`))
+	ownerPromoteReq.Header.Set("Authorization", "Bearer owner_token")
+	ownerPromoteReq.Header.Set("Content-Type", "application/json")
+	ownerPromoteRec := httptest.NewRecorder()
+	mux.ServeHTTP(ownerPromoteRec, ownerPromoteReq)
+	if ownerPromoteRec.Code != http.StatusOK {
+		t.Fatalf("owner promotion status = %d, want 200", ownerPromoteRec.Code)
+	}
+
+	// 2. Admin attempts to modify the target member (e.g. disable them)
+	// Because target has been promoted to admin, freshTarget reload in the transaction must catch this and return 403 Forbidden
+	adminDisableReq := httptest.NewRequest(http.MethodPatch, "/v1/workspace/users/"+targetMember.Id, strings.NewReader(`{"disabled":true}`))
+	adminDisableReq.Header.Set("Authorization", "Bearer admin_token")
+	adminDisableReq.Header.Set("Content-Type", "application/json")
+	adminDisableRec := httptest.NewRecorder()
+	mux.ServeHTTP(adminDisableRec, adminDisableReq)
+	if adminDisableRec.Code != http.StatusForbidden {
+		t.Fatalf("admin modifying promoted admin status = %d, want 403. body: %s", adminDisableRec.Code, adminDisableRec.Body.String())
+	}
+	if !strings.Contains(adminDisableRec.Body.String(), "Admins cannot modify owner or admin accounts") {
+		t.Fatalf("unexpected error message: %s", adminDisableRec.Body.String())
+	}
+
+	// Verify target is still active and was NOT disabled
+	freshTarget, err := app.FindRecordById("users", targetMember.Id)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if freshTarget.GetBool("disabled") {
+		t.Fatal("target member was unexpectedly disabled by admin")
+	}
+	if freshTarget.GetString("role") != authz.RoleAdmin {
+		t.Fatalf("target role = %s, want admin", freshTarget.GetString("role"))
+	}
+}
+
+func TestMemberUpdate_ActingUserDemotedOrDisabledBeforeTransaction(t *testing.T) {
+	app := newTestApp(t)
+	usersCol, err := app.FindCollectionByNameOrId("users")
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	// Acting owner account in DB
+	actingOwner := core.NewRecord(usersCol)
+	actingOwner.Set("email", "acting_owner@example.com")
+	actingOwner.Set("role", authz.RoleOwner)
+	actingOwner.Set("disabled", false)
+	actingOwner.SetPassword("Password123!")
+	if err := app.Save(actingOwner); err != nil {
+		t.Fatal(err)
+	}
+
+	// Another active owner so actingOwner is not the only owner
+	otherOwner := core.NewRecord(usersCol)
+	otherOwner.Set("email", "other_owner@example.com")
+	otherOwner.Set("role", authz.RoleOwner)
+	otherOwner.Set("disabled", false)
+	otherOwner.SetPassword("Password123!")
+	if err := app.Save(otherOwner); err != nil {
+		t.Fatal(err)
+	}
+
+	// Target user
+	targetUser := core.NewRecord(usersCol)
+	targetUser.Set("email", "target_user@example.com")
+	targetUser.Set("role", authz.RoleMember)
+	targetUser.Set("disabled", false)
+	targetUser.SetPassword("Password123!")
+	if err := app.Save(targetUser); err != nil {
+		t.Fatal(err)
+	}
+
+	// Stale auth copy: role is owner, disabled is false
+	staleOwnerAuth := core.NewRecord(usersCol)
+	staleOwnerAuth.Id = actingOwner.Id
+	staleOwnerAuth.Set("role", authz.RoleOwner)
+	staleOwnerAuth.Set("disabled", false)
+
+	r := router.NewRouter[*core.RequestEvent](func(w http.ResponseWriter, req *http.Request) (*core.RequestEvent, router.EventCleanupFunc) {
+		event := &core.RequestEvent{App: app, Event: router.Event{Response: w, Request: req}}
+		token := req.Header.Get("Authorization")
+		if token == "Bearer stale_owner_token" {
+			// Simulates e.Auth populated outside the transaction before the actor was demoted
+			event.Auth = staleOwnerAuth
+		}
+		return event, func() {}
+	})
+
+	cfg := &tenant.Config{
+		Version: 1, TenantID: "tenant_dev", BackendURL: "https://acme.app.example.com",
+		RealtimeURL: "https://acme.app.example.com/api/realtime", AppKey: "pk_dev_000000",
+		SchemaVersion: "opaque_schema_id", MinClientVersion: "0.1.0",
+		Features: []string{}, Collections: []string{},
+	}
+	Register(&core.ServeEvent{App: app, Router: r}, cfg, features.Empty())
+	mux, err := r.BuildMux()
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	// Case 1: Acting owner was demoted to member before the transaction runs
+	actingOwner.Set("role", authz.RoleMember)
+	if err := app.Save(actingOwner); err != nil {
+		t.Fatal(err)
+	}
+
+	req := httptest.NewRequest(http.MethodPatch, "/v1/workspace/users/"+targetUser.Id, strings.NewReader(`{"disabled":true}`))
+	req.Header.Set("Authorization", "Bearer stale_owner_token")
+	req.Header.Set("Content-Type", "application/json")
+	rec := httptest.NewRecorder()
+	mux.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusForbidden {
+		t.Fatalf("expected 403 Forbidden for demoted acting user, got %d (body: %s)", rec.Code, rec.Body.String())
+	}
+	if !strings.Contains(rec.Body.String(), "Only workspace owners and admins can update team members") {
+		t.Fatalf("unexpected error message: %s", rec.Body.String())
+	}
+
+	// Case 2: Acting owner was disabled before the transaction runs
+	actingOwner.Set("role", authz.RoleOwner)
+	actingOwner.Set("disabled", true)
+	if err := app.Save(actingOwner); err != nil {
+		t.Fatal(err)
+	}
+
+	req2 := httptest.NewRequest(http.MethodPatch, "/v1/workspace/users/"+targetUser.Id, strings.NewReader(`{"disabled":true}`))
+	req2.Header.Set("Authorization", "Bearer stale_owner_token")
+	req2.Header.Set("Content-Type", "application/json")
+	rec2 := httptest.NewRecorder()
+	mux.ServeHTTP(rec2, req2)
+
+	if rec2.Code != http.StatusForbidden {
+		t.Fatalf("expected 403 Forbidden for disabled acting user, got %d (body: %s)", rec2.Code, rec2.Body.String())
+	}
+
+	// Case 3: Acting owner was demoted to admin, and tries to appoint an owner
+	actingOwner.Set("role", authz.RoleAdmin)
+	actingOwner.Set("disabled", false)
+	if err := app.Save(actingOwner); err != nil {
+		t.Fatal(err)
+	}
+
+	appointReq := httptest.NewRequest(http.MethodPatch, "/v1/workspace/users/"+targetUser.Id, strings.NewReader(`{"role":"owner"}`))
+	appointReq.Header.Set("Authorization", "Bearer stale_owner_token")
+	appointReq.Header.Set("Content-Type", "application/json")
+	appointRec := httptest.NewRecorder()
+	mux.ServeHTTP(appointRec, appointReq)
+
+	if appointRec.Code != http.StatusForbidden {
+		t.Fatalf("expected 403 Forbidden for demoted admin appointing owner, got %d (body: %s)", appointRec.Code, appointRec.Body.String())
+	}
+	if !strings.Contains(appointRec.Body.String(), "Only workspace owners can appoint admins or owners") {
+		t.Fatalf("unexpected error message: %s", appointRec.Body.String())
+	}
+
+	// Verify target was never modified
+	freshTarget, err := app.FindRecordById("users", targetUser.Id)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if freshTarget.GetString("role") != authz.RoleMember || freshTarget.GetBool("disabled") {
+		t.Fatal("target user was modified despite unauthorized acting user")
+	}
+}
+
+func TestMemberUpdate_LastOwnerCheckQueryErrorFailsClosed(t *testing.T) {
+	app := newTestApp(t)
+	usersCol, err := app.FindCollectionByNameOrId("users")
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	soleOwner := core.NewRecord(usersCol)
+	soleOwner.Set("email", "sole_owner@example.com")
+	soleOwner.Set("role", authz.RoleOwner)
+	soleOwner.Set("disabled", false)
+	soleOwner.SetPassword("Password123!")
+	if err := app.Save(soleOwner); err != nil {
+		t.Fatal(err)
+	}
+
+	// 1. Calling IsLastOwner with nil app fails closed with an error
+	isLast, err := authz.IsLastOwner(nil, soleOwner.Id)
+	if err == nil {
+		t.Fatal("expected error from IsLastOwner on nil app, got nil")
+	}
+	if isLast {
+		t.Fatal("expected isLast to be false when error occurs")
+	}
+
+	// 2. Calling IsLastOwner with empty owners table fails closed with an error
+	emptyApp := newTestApp(t)
+	isLast, err = authz.IsLastOwner(emptyApp, "any_id")
+	if err == nil {
+		t.Fatal("expected error from IsLastOwner on empty app, got nil")
+	}
+	if isLast {
+		t.Fatal("expected isLast to be false when error occurs")
+	}
+
+	// 3. Test through HTTP API: demoting sole owner is rejected with 403 Forbidden
+	r := router.NewRouter[*core.RequestEvent](func(w http.ResponseWriter, req *http.Request) (*core.RequestEvent, router.EventCleanupFunc) {
+		event := &core.RequestEvent{App: app, Event: router.Event{Response: w, Request: req}}
+		if req.Header.Get("Authorization") == "Bearer sole_owner" {
+			event.Auth = soleOwner
+		}
+		return event, func() {}
+	})
+	cfg := &tenant.Config{
+		Version: 1, TenantID: "tenant_dev", BackendURL: "https://acme.app.example.com",
+		RealtimeURL: "https://acme.app.example.com/api/realtime", AppKey: "pk_dev_000000",
+		SchemaVersion: "opaque_schema_id", MinClientVersion: "0.1.0",
+		Features: []string{}, Collections: []string{},
+	}
+	Register(&core.ServeEvent{App: app, Router: r}, cfg, features.Empty())
+	mux, err := r.BuildMux()
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	demoteReq := httptest.NewRequest(http.MethodPatch, "/v1/workspace/users/"+soleOwner.Id, strings.NewReader(`{"role":"member"}`))
+	demoteReq.Header.Set("Authorization", "Bearer sole_owner")
+	demoteReq.Header.Set("Content-Type", "application/json")
+	demoteRec := httptest.NewRecorder()
+	mux.ServeHTTP(demoteRec, demoteReq)
+
+	if demoteRec.Code != http.StatusForbidden {
+		t.Fatalf("expected 403 Forbidden when demoting sole owner, got %d: %s", demoteRec.Code, demoteRec.Body.String())
+	}
+}
+

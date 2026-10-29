@@ -1,10 +1,20 @@
-import { useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import type { FieldDefinition, SchemaDefinition } from "@lattice/types";
 
 export interface CreateSchemaModalProps {
   isOpen: boolean;
   onClose: () => void;
   onCreate: (schema: SchemaDefinition) => Promise<void>;
+  schemas?: SchemaDefinition[];
+  availableCollections?: string[];
+  initialFields?: Array<{
+    name: string;
+    label?: string;
+    type: FieldDefinition["type"];
+    required?: boolean;
+    options?: string;
+    target?: string;
+  }>;
 }
 
 interface DraftField {
@@ -28,17 +38,87 @@ const FIELD_TYPES: Array<FieldDefinition["type"]> = [
   "json",
 ];
 
-export function CreateSchemaModal({ isOpen, onClose, onCreate }: CreateSchemaModalProps) {
+export function CreateSchemaModal({
+  isOpen,
+  onClose,
+  onCreate,
+  schemas = [],
+  availableCollections = [],
+  initialFields,
+}: CreateSchemaModalProps) {
   const [schemaId, setSchemaId] = useState("");
   const [name, setName] = useState("");
   const [description, setDescription] = useState("");
   const [icon, setIcon] = useState("📋");
   const [assigneeField, setAssigneeField] = useState("");
-  const [fields, setFields] = useState<DraftField[]>([
-    { name: "title", label: "Title", type: "text", required: true, options: "" },
-  ]);
+  const [fields, setFields] = useState<DraftField[]>(() => {
+    if (initialFields && initialFields.length > 0) {
+      return initialFields.map((f) => ({
+        name: f.name,
+        label: f.label || "",
+        type: f.type,
+        required: f.required ?? false,
+        options: f.options || "",
+        target: f.target,
+      }));
+    }
+    return [{ name: "title", label: "Title", type: "text", required: true, options: "" }];
+  });
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
+
+  const resetDraft = useCallback(() => {
+    setSchemaId("");
+    setName("");
+    setDescription("");
+    setIcon("📋");
+    setAssigneeField("");
+    if (initialFields && initialFields.length > 0) {
+      setFields(
+        initialFields.map((f) => ({
+          name: f.name,
+          label: f.label || "",
+          type: f.type,
+          required: f.required ?? false,
+          options: f.options || "",
+          target: f.target,
+        })),
+      );
+    } else {
+      setFields([{ name: "title", label: "Title", type: "text", required: true, options: "" }]);
+    }
+    setError(null);
+  }, [initialFields]);
+
+  useEffect(() => {
+    if (isOpen) {
+      resetDraft();
+    }
+  }, [isOpen, resetDraft]);
+
+  const handleClose = useCallback(() => {
+    resetDraft();
+    onClose();
+  }, [resetDraft, onClose]);
+
+  const predefinedTargets = useMemo(() => {
+    const list = [{ id: "users", label: "users (Workspace Users / Team)" }];
+    if (schemas) {
+      for (const s of schemas) {
+        if (s.schema_id !== "users" && !list.some((item) => item.id === s.schema_id)) {
+          list.push({ id: s.schema_id, label: `${s.schema_id} (${s.name})` });
+        }
+      }
+    }
+    if (availableCollections) {
+      for (const col of availableCollections) {
+        if (col !== "users" && !list.some((item) => item.id === col)) {
+          list.push({ id: col, label: col });
+        }
+      }
+    }
+    return list;
+  }, [schemas, availableCollections]);
 
   if (!isOpen) return null;
 
@@ -141,6 +221,7 @@ export function CreateSchemaModal({ isOpen, onClose, onCreate }: CreateSchemaMod
       };
 
       await onCreate(newSchema);
+      resetDraft();
       onClose();
     } catch (err: unknown) {
       setError(err instanceof Error ? err.message : "Failed to create schema");
@@ -154,7 +235,7 @@ export function CreateSchemaModal({ isOpen, onClose, onCreate }: CreateSchemaMod
       <div className="lattice-modal-dialog lattice-modal-lg">
         <header className="lattice-modal-header">
           <h2>Create New Dynamic Schema</h2>
-          <button type="button" className="lattice-modal-close" onClick={onClose} aria-label="Close">
+          <button type="button" className="lattice-modal-close" onClick={handleClose} aria-label="Close">
             ✕
           </button>
         </header>
@@ -296,14 +377,43 @@ export function CreateSchemaModal({ isOpen, onClose, onCreate }: CreateSchemaMod
                   {f.type === "relation" && (
                     <div className="lattice-field-col" style={{ flex: 1.5 }}>
                       <label className="lattice-sublabel">Target Collection</label>
-                      <input
-                        type="text"
+                      <select
                         className="lattice-input"
-                        placeholder="e.g. users, customers"
-                        value={f.target || ""}
-                        onChange={(e) => updateField(idx, "target", e.target.value)}
-                        required
-                      />
+                        aria-label={`Target collection for ${f.name || "relation"}`}
+                        value={
+                          predefinedTargets.some((t) => t.id === f.target)
+                            ? f.target || "users"
+                            : "__custom__"
+                        }
+                        onChange={(e) => {
+                          const val = e.target.value;
+                          if (val === "__custom__") {
+                            updateField(idx, "target", "");
+                          } else {
+                            updateField(idx, "target", val);
+                          }
+                        }}
+                      >
+                        <optgroup label="Available Collections">
+                          {predefinedTargets.map((t) => (
+                            <option key={t.id} value={t.id}>
+                              {t.label}
+                            </option>
+                          ))}
+                        </optgroup>
+                        <option value="__custom__">Other collection…</option>
+                      </select>
+                      {!predefinedTargets.some((t) => t.id === f.target) && (
+                        <input
+                          type="text"
+                          className="lattice-input"
+                          style={{ marginTop: "0.25rem" }}
+                          placeholder="e.g. users, customers"
+                          value={f.target || ""}
+                          onChange={(e) => updateField(idx, "target", e.target.value)}
+                          required
+                        />
+                      )}
                     </div>
                   )}
 
@@ -368,7 +478,7 @@ export function CreateSchemaModal({ isOpen, onClose, onCreate }: CreateSchemaMod
           </div>
 
           <footer className="lattice-modal-footer">
-            <button type="button" className="lattice-btn-secondary" onClick={onClose} disabled={saving}>
+            <button type="button" className="lattice-btn-secondary" onClick={handleClose} disabled={saving}>
               Cancel
             </button>
             <button type="submit" className="lattice-btn-primary" disabled={saving}>

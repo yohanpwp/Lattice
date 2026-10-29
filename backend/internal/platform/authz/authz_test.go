@@ -144,7 +144,11 @@ func TestAuthorityHierarchyAndPrivilegeProtection(t *testing.T) {
 	}
 
 	// 1. Last owner protection check
-	if !authz.IsLastOwner(app, owner.Id) {
+	isLast, err := authz.IsLastOwner(app, owner.Id)
+	if err != nil {
+		t.Fatalf("unexpected error checking last owner: %v", err)
+	}
+	if !isLast {
 		t.Fatal("expected owner to be detected as last owner")
 	}
 
@@ -159,7 +163,11 @@ func TestAuthorityHierarchyAndPrivilegeProtection(t *testing.T) {
 	}
 
 	// Now neither is the last owner
-	if authz.IsLastOwner(app, owner.Id) {
+	isLast, err = authz.IsLastOwner(app, owner.Id)
+	if err != nil {
+		t.Fatalf("unexpected error checking last owner: %v", err)
+	}
+	if isLast {
 		t.Fatal("expected owner not to be last owner when owner2 exists")
 	}
 
@@ -213,6 +221,17 @@ func TestInvitationLifecycle(t *testing.T) {
 	}
 
 	// 3. Admin can invite Member with dataset permissions
+	schemaSvc := schemas.NewService(app)
+	_, _ = schemaSvc.CreateSchema(context.Background(), schemas.SchemaDefinition{
+		SchemaID:      "jobs",
+		Name:          "Jobs",
+		AssigneeField: "assigned_user",
+		Fields: []schemas.FieldDefinition{
+			{Name: "title", Type: "text", Required: true},
+			{Name: "assigned_user", Type: "relation", Target: "users"},
+		},
+	})
+
 	perms := map[string]any{
 		"jobs": map[string]any{
 			"read":   true,
@@ -1208,5 +1227,527 @@ func TestLiveSessionRealtimeEventRevocationAndExistingCollections(t *testing.T) 
 	}
 	if waitForMessage(200 * time.Millisecond) {
 		t.Fatal("security violation: subscriber received realtime event after account was disabled!")
+	}
+}
+
+func TestPageAndSchemaAdministrationAuthorization(t *testing.T) {
+	app, err := tests.NewTestApp(t.TempDir())
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer app.Cleanup()
+
+	authz.RegisterAuthnHooks(app)
+
+	usersCol, err := app.FindCollectionByNameOrId("users")
+	if err != nil {
+		t.Fatal(err)
+	}
+	appPagesCol, err := app.FindCollectionByNameOrId("app_pages")
+	if err != nil {
+		t.Fatal(err)
+	}
+	schemaDefsCol, err := app.FindCollectionByNameOrId("schema_definitions")
+	if err != nil {
+		t.Fatal(err)
+	}
+	dashboardsCol, err := app.FindCollectionByNameOrId("dashboards")
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	// 1. Create accounts for each role
+	owner := core.NewRecord(usersCol)
+	owner.Set("email", "page_owner@example.com")
+	owner.Set("role", authz.RoleOwner)
+	owner.Set("disabled", false)
+	owner.SetPassword("Password123!")
+	if err := app.Save(owner); err != nil {
+		t.Fatal(err)
+	}
+
+	admin := core.NewRecord(usersCol)
+	admin.Set("email", "page_admin@example.com")
+	admin.Set("role", authz.RoleAdmin)
+	admin.Set("disabled", false)
+	admin.SetPassword("Password123!")
+	if err := app.Save(admin); err != nil {
+		t.Fatal(err)
+	}
+
+	member := core.NewRecord(usersCol)
+	member.Set("email", "page_member@example.com")
+	member.Set("role", authz.RoleMember)
+	member.Set("disabled", false)
+	member.SetPassword("Password123!")
+	if err := app.Save(member); err != nil {
+		t.Fatal(err)
+	}
+
+	disabledOwner := core.NewRecord(usersCol)
+	disabledOwner.Set("email", "page_dis_owner@example.com")
+	disabledOwner.Set("role", authz.RoleOwner)
+	disabledOwner.Set("disabled", true)
+	disabledOwner.SetPassword("Password123!")
+	if err := app.Save(disabledOwner); err != nil {
+		t.Fatal(err)
+	}
+
+	disabledMember := core.NewRecord(usersCol)
+	disabledMember.Set("email", "page_dis_member@example.com")
+	disabledMember.Set("role", authz.RoleMember)
+	disabledMember.Set("disabled", true)
+	disabledMember.SetPassword("Password123!")
+	if err := app.Save(disabledMember); err != nil {
+		t.Fatal(err)
+	}
+
+	reqOwner := &core.RequestInfo{Auth: owner}
+	reqAdmin := &core.RequestInfo{Auth: admin}
+	reqMember := &core.RequestInfo{Auth: member}
+	reqDisOwner := &core.RequestInfo{Auth: disabledOwner}
+	reqDisMember := &core.RequestInfo{Auth: disabledMember}
+	reqUnauth := &core.RequestInfo{Auth: nil}
+
+	// 2. Create sample page record
+	pageRec := core.NewRecord(appPagesCol)
+	pageRec.Set("page_id", "admin-orders-table")
+	pageRec.Set("name", "Admin Orders")
+	pageRec.Set("view_type", "table")
+	pageRec.Set("collection", "orders")
+	pageRec.Set("config", map[string]any{"columns": []string{"id", "title"}})
+	if err := app.Save(pageRec); err != nil {
+		t.Fatalf("failed to seed pageRec: %v", err)
+	}
+
+	// ==========================================
+	// Part A: Collection Rule Checks on app_pages
+	// ==========================================
+	// ListRule
+	checkRule := func(name string, rule *string, req *core.RequestInfo, record *core.Record) bool {
+		ok, _ := app.CanAccessRecord(record, req, rule)
+		return ok
+	}
+
+	// Owner & Admin: allowed for all operations
+	for _, req := range []*core.RequestInfo{reqOwner, reqAdmin} {
+		if !checkRule("List", appPagesCol.ListRule, req, pageRec) {
+			t.Errorf("expected owner/admin to pass ListRule on app_pages")
+		}
+		if !checkRule("View", appPagesCol.ViewRule, req, pageRec) {
+			t.Errorf("expected owner/admin to pass ViewRule on app_pages")
+		}
+		if !checkRule("Create", appPagesCol.CreateRule, req, pageRec) {
+			t.Errorf("expected owner/admin to pass CreateRule on app_pages")
+		}
+		if !checkRule("Update", appPagesCol.UpdateRule, req, pageRec) {
+			t.Errorf("expected owner/admin to pass UpdateRule on app_pages")
+		}
+		if !checkRule("Delete", appPagesCol.DeleteRule, req, pageRec) {
+			t.Errorf("expected owner/admin to pass DeleteRule on app_pages")
+		}
+	}
+
+	// Member: allowed to List and View, strictly DENIED from Create, Update, Delete
+	if !checkRule("List", appPagesCol.ListRule, reqMember, pageRec) {
+		t.Errorf("expected member to pass ListRule on app_pages")
+	}
+	if !checkRule("View", appPagesCol.ViewRule, reqMember, pageRec) {
+		t.Errorf("expected member to pass ViewRule on app_pages")
+	}
+	if checkRule("Create", appPagesCol.CreateRule, reqMember, pageRec) {
+		t.Errorf("security violation: member passed CreateRule on app_pages")
+	}
+	if checkRule("Update", appPagesCol.UpdateRule, reqMember, pageRec) {
+		t.Errorf("security violation: member passed UpdateRule on app_pages")
+	}
+	if checkRule("Delete", appPagesCol.DeleteRule, reqMember, pageRec) {
+		t.Errorf("security violation: member passed DeleteRule on app_pages")
+	}
+
+	// Disabled accounts: strictly DENIED from all operations
+	for _, req := range []*core.RequestInfo{reqDisOwner, reqDisMember} {
+		if checkRule("List", appPagesCol.ListRule, req, pageRec) {
+			t.Errorf("security violation: disabled user passed ListRule on app_pages")
+		}
+		if checkRule("View", appPagesCol.ViewRule, req, pageRec) {
+			t.Errorf("security violation: disabled user passed ViewRule on app_pages")
+		}
+		if checkRule("Create", appPagesCol.CreateRule, req, pageRec) {
+			t.Errorf("security violation: disabled user passed CreateRule on app_pages")
+		}
+		if checkRule("Update", appPagesCol.UpdateRule, req, pageRec) {
+			t.Errorf("security violation: disabled user passed UpdateRule on app_pages")
+		}
+		if checkRule("Delete", appPagesCol.DeleteRule, req, pageRec) {
+			t.Errorf("security violation: disabled user passed DeleteRule on app_pages")
+		}
+	}
+
+	// Unauthenticated: strictly DENIED from all operations
+	if checkRule("List", appPagesCol.ListRule, reqUnauth, pageRec) {
+		t.Errorf("security violation: unauthenticated user passed ListRule on app_pages")
+	}
+	if checkRule("View", appPagesCol.ViewRule, reqUnauth, pageRec) {
+		t.Errorf("security violation: unauthenticated user passed ViewRule on app_pages")
+	}
+	if checkRule("Create", appPagesCol.CreateRule, reqUnauth, pageRec) {
+		t.Errorf("security violation: unauthenticated user passed CreateRule on app_pages")
+	}
+	if checkRule("Update", appPagesCol.UpdateRule, reqUnauth, pageRec) {
+		t.Errorf("security violation: unauthenticated user passed UpdateRule on app_pages")
+	}
+	if checkRule("Delete", appPagesCol.DeleteRule, reqUnauth, pageRec) {
+		t.Errorf("security violation: unauthenticated user passed DeleteRule on app_pages")
+	}
+
+	// ==========================================
+	// Part B: Hook-Level Enforcement on app_pages
+	// ==========================================
+	triggerCreatePage := func(auth *core.Record) error {
+		dummy := core.NewRecord(appPagesCol)
+		event := &core.RecordRequestEvent{
+			RequestEvent: &core.RequestEvent{App: app, Auth: auth},
+			Record:       dummy,
+		}
+		event.Collection = appPagesCol
+		return app.OnRecordCreateRequest("app_pages").Trigger(event, func(e *core.RecordRequestEvent) error {
+			return nil
+		})
+	}
+
+	triggerUpdatePage := func(auth *core.Record) error {
+		event := &core.RecordRequestEvent{
+			RequestEvent: &core.RequestEvent{App: app, Auth: auth},
+			Record:       pageRec,
+		}
+		event.Collection = appPagesCol
+		return app.OnRecordUpdateRequest("app_pages").Trigger(event, func(e *core.RecordRequestEvent) error {
+			return nil
+		})
+	}
+
+	triggerDeletePage := func(auth *core.Record) error {
+		event := &core.RecordRequestEvent{
+			RequestEvent: &core.RequestEvent{App: app, Auth: auth},
+			Record:       pageRec,
+		}
+		event.Collection = appPagesCol
+		return app.OnRecordDeleteRequest("app_pages").Trigger(event, func(e *core.RecordRequestEvent) error {
+			return nil
+		})
+	}
+
+	// Allowed: Owner and Admin
+	for _, user := range []*core.Record{owner, admin} {
+		if err := triggerCreatePage(user); err != nil {
+			t.Errorf("expected create page to succeed for %s, got: %v", user.GetString("role"), err)
+		}
+		if err := triggerUpdatePage(user); err != nil {
+			t.Errorf("expected update page to succeed for %s, got: %v", user.GetString("role"), err)
+		}
+		if err := triggerDeletePage(user); err != nil {
+			t.Errorf("expected delete page to succeed for %s, got: %v", user.GetString("role"), err)
+		}
+	}
+
+	// Denied: Member (403 Forbidden)
+	if err := triggerCreatePage(member); err == nil {
+		t.Errorf("security violation: member was allowed to create page via hook")
+	}
+	if err := triggerUpdatePage(member); err == nil {
+		t.Errorf("security violation: member was allowed to update page via hook")
+	}
+	if err := triggerDeletePage(member); err == nil {
+		t.Errorf("security violation: member was allowed to delete page via hook")
+	}
+
+	// Denied: Disabled user (401 Unauthorized)
+	if err := triggerCreatePage(disabledMember); err == nil {
+		t.Errorf("security violation: disabled member was allowed to create page via hook")
+	}
+	if err := triggerUpdatePage(disabledMember); err == nil {
+		t.Errorf("security violation: disabled member was allowed to update page via hook")
+	}
+	if err := triggerDeletePage(disabledMember); err == nil {
+		t.Errorf("security violation: disabled member was allowed to delete page via hook")
+	}
+
+	// Denied: Unauthenticated (401 Unauthorized)
+	if err := triggerCreatePage(nil); err == nil {
+		t.Errorf("security violation: unauthenticated was allowed to create page via hook")
+	}
+	if err := triggerUpdatePage(nil); err == nil {
+		t.Errorf("security violation: unauthenticated was allowed to update page via hook")
+	}
+	if err := triggerDeletePage(nil); err == nil {
+		t.Errorf("security violation: unauthenticated was allowed to delete page via hook")
+	}
+
+	// ==========================================
+	// Part C: Hook-Level Enforcement on schema_definitions
+	// ==========================================
+	schemaRec := core.NewRecord(schemaDefsCol)
+	schemaRec.Set("schema_id", "test_schema")
+	schemaRec.Set("name", "Test Schema")
+	schemaRec.Set("fields", []any{})
+
+	triggerCreateSchemaDef := func(auth *core.Record, superuser bool) error {
+		event := &core.RecordRequestEvent{
+			RequestEvent: &core.RequestEvent{App: app, Auth: auth},
+			Record:       schemaRec,
+		}
+		event.Collection = schemaDefsCol
+		if superuser {
+			superuserCol, _ := app.FindCollectionByNameOrId("_superusers")
+			suRec := core.NewRecord(superuserCol)
+			event.RequestEvent.Auth = suRec
+		}
+		return app.OnRecordCreateRequest("schema_definitions").Trigger(event, func(e *core.RecordRequestEvent) error {
+			return nil
+		})
+	}
+
+	triggerUpdateSchemaDef := func(auth *core.Record, superuser bool) error {
+		event := &core.RecordRequestEvent{
+			RequestEvent: &core.RequestEvent{App: app, Auth: auth},
+			Record:       schemaRec,
+		}
+		event.Collection = schemaDefsCol
+		if superuser {
+			superuserCol, _ := app.FindCollectionByNameOrId("_superusers")
+			suRec := core.NewRecord(superuserCol)
+			event.RequestEvent.Auth = suRec
+		}
+		return app.OnRecordUpdateRequest("schema_definitions").Trigger(event, func(e *core.RecordRequestEvent) error {
+			return nil
+		})
+	}
+
+	triggerDeleteSchemaDef := func(auth *core.Record, superuser bool) error {
+		event := &core.RecordRequestEvent{
+			RequestEvent: &core.RequestEvent{App: app, Auth: auth},
+			Record:       schemaRec,
+		}
+		event.Collection = schemaDefsCol
+		if superuser {
+			superuserCol, _ := app.FindCollectionByNameOrId("_superusers")
+			suRec := core.NewRecord(superuserCol)
+			event.RequestEvent.Auth = suRec
+		}
+		return app.OnRecordDeleteRequest("schema_definitions").Trigger(event, func(e *core.RecordRequestEvent) error {
+			return nil
+		})
+	}
+
+	// Owner, Admin, Member, Disabled: ALL denied direct mutation of schema_definitions
+	for _, user := range []*core.Record{owner, admin, member, disabledOwner} {
+		if err := triggerCreateSchemaDef(user, false); err == nil {
+			t.Errorf("security violation: direct creation of schema_definitions was allowed for %s", user.GetString("role"))
+		}
+		if err := triggerUpdateSchemaDef(user, false); err == nil {
+			t.Errorf("security violation: direct update of schema_definitions was allowed for %s", user.GetString("role"))
+		}
+		if err := triggerDeleteSchemaDef(user, false); err == nil {
+			t.Errorf("security violation: direct delete of schema_definitions was allowed for %s", user.GetString("role"))
+		}
+	}
+
+	// Superuser bypass: allowed
+	if err := triggerCreateSchemaDef(nil, true); err != nil {
+		t.Errorf("expected superuser to be allowed on schema_definitions create hook, got: %v", err)
+	}
+	if err := triggerUpdateSchemaDef(nil, true); err != nil {
+		t.Errorf("expected superuser to be allowed on schema_definitions update hook, got: %v", err)
+	}
+	if err := triggerDeleteSchemaDef(nil, true); err != nil {
+		t.Errorf("expected superuser to be allowed on schema_definitions delete hook, got: %v", err)
+	}
+
+	// ==========================================
+	// Part D: Hook-Level Enforcement on dashboards
+	// ==========================================
+	dashRec := core.NewRecord(dashboardsCol)
+	dashRec.Set("name", "Test Dashboard")
+	dashRec.Set("layout", []any{})
+
+	triggerCreateDash := func(auth *core.Record) error {
+		event := &core.RecordRequestEvent{
+			RequestEvent: &core.RequestEvent{App: app, Auth: auth},
+			Record:       dashRec,
+		}
+		event.Collection = dashboardsCol
+		return app.OnRecordCreateRequest("dashboards").Trigger(event, func(e *core.RecordRequestEvent) error {
+			return nil
+		})
+	}
+
+	// Owner and admin allowed
+	if err := triggerCreateDash(owner); err != nil {
+		t.Errorf("expected owner to be allowed to create dashboard, got: %v", err)
+	}
+	if err := triggerCreateDash(admin); err != nil {
+		t.Errorf("expected admin to be allowed to create dashboard, got: %v", err)
+	}
+	// Member denied (403)
+	if err := triggerCreateDash(member); err == nil {
+		t.Errorf("security violation: member was allowed to create dashboard")
+	}
+	// Disabled denied (401)
+	if err := triggerCreateDash(disabledOwner); err == nil {
+		t.Errorf("security violation: disabled owner was allowed to create dashboard")
+	}
+}
+
+func TestValidateAssignedScopePermissions_MalformedPermissions(t *testing.T) {
+	app := newTestApp(t)
+
+	badInputs := []any{
+		"not-json-string",
+		12345,
+		true,
+		[]string{"scope", "assigned"},
+		[]any{map[string]any{"scope": "assigned"}},
+		map[string]any{"jobs": "assigned"},
+		map[string]any{"jobs": 123},
+		map[string]any{"jobs": []string{"assigned"}},
+	}
+
+	for _, bad := range badInputs {
+		err := authz.ValidateAssignedScopePermissions(app, bad)
+		if err == nil {
+			t.Errorf("expected error for malformed permissions input %v, got nil", bad)
+		}
+	}
+
+	if err := authz.ValidateAssignedScopePermissions(app, nil); err != nil {
+		t.Errorf("expected nil permissions to pass, got: %v", err)
+	}
+	if err := authz.ValidateAssignedScopePermissions(app, map[string]any{}); err != nil {
+		t.Errorf("expected empty permissions map to pass, got: %v", err)
+	}
+}
+
+func TestValidateAssignedScopePermissions_FullContractValidation(t *testing.T) {
+	app := newTestApp(t)
+
+	// 1. String in boolean field 'read'
+	badRead := map[string]any{
+		"jobs": map[string]any{"read": "true", "scope": "all"},
+	}
+	if err := authz.ValidateAssignedScopePermissions(app, badRead); err == nil {
+		t.Error("expected error for string in 'read', got nil")
+	}
+
+	// 2. Unsupported scope value
+	badScope := map[string]any{
+		"jobs": map[string]any{"read": true, "scope": "manager"},
+	}
+	if err := authz.ValidateAssignedScopePermissions(app, badScope); err == nil {
+		t.Error("expected error for unsupported scope 'manager', got nil")
+	}
+
+	// 3. Unknown property on permission entry
+	unknownProp := map[string]any{
+		"jobs": map[string]any{"read": true, "scope": "all", "unknown_field": "val"},
+	}
+	if err := authz.ValidateAssignedScopePermissions(app, unknownProp); err == nil {
+		t.Error("expected error for unknown property 'unknown_field', got nil")
+	}
+
+	// 4. Valid permission contract
+	valid := map[string]any{
+		"jobs": map[string]any{"read": true, "create": true, "update": false, "delete": false, "scope": "all"},
+	}
+	if err := authz.ValidateAssignedScopePermissions(app, valid); err != nil {
+		t.Errorf("expected valid permission entry to pass, got: %v", err)
+	}
+}
+
+func TestAcceptInvitation_RevokedDuringRace(t *testing.T) {
+	app := newTestApp(t)
+	usersCol, _ := app.FindCollectionByNameOrId("users")
+
+	owner := core.NewRecord(usersCol)
+	owner.Set("email", "owner_race@example.com")
+	owner.Set("role", authz.RoleOwner)
+	owner.SetPassword("Password123!")
+	_ = app.Save(owner)
+
+	inv, err := authz.CreateInvitation(app, owner, "invitee_race@example.com", authz.RoleMember, nil)
+	if err != nil {
+		t.Fatalf("failed to create invitation: %v", err)
+	}
+	token := inv.GetString("token")
+
+	// Revoke the invitation inside a transaction (simulating a concurrent revocation)
+	_ = app.RunInTransaction(func(txApp core.App) error {
+		freshInv, _ := txApp.FindRecordById("invitations", inv.Id)
+		freshInv.Set("revoked", true)
+		return txApp.Save(freshInv)
+	})
+
+	// Attempt to accept with the token -> must fail with ErrInvalidInvitation because it rechecks inside the transaction
+	_, err = authz.AcceptInvitation(app, token, "Invitee Race", "Password12345!")
+	if err == nil {
+		t.Fatal("expected error accepting revoked invitation, got nil")
+	}
+
+	// Verify no user was created
+	foundUser, _ := app.FindFirstRecordByFilter("users", "email = {:email}", map[string]any{"email": "invitee_race@example.com"})
+	if foundUser != nil {
+		t.Fatal("expected no user account to be created for revoked invitation")
+	}
+}
+
+func TestIsLastOwner_FailsClosedOnError(t *testing.T) {
+	// 1. Unbootstrapped or nil app returns error
+	isLast, err := authz.IsLastOwner(nil, "some_id")
+	if err == nil {
+		t.Fatal("expected error when app is nil, got nil")
+	}
+	if isLast {
+		t.Fatal("expected isLast to be false on error")
+	}
+
+	// 2. Empty owners table fails closed (count cannot be verified)
+	emptyApp := newTestApp(t)
+	isLast, err = authz.IsLastOwner(emptyApp, "nonexistent_owner")
+	if err == nil {
+		t.Fatal("expected error when no active owners exist, got nil")
+	}
+	if isLast {
+		t.Fatal("expected isLast=false when no active owners exist")
+	}
+
+	// 3. Closed test app returns query error
+	app := newTestApp(t)
+	usersCol, err := app.FindCollectionByNameOrId("users")
+	if err != nil {
+		t.Fatal(err)
+	}
+	owner := core.NewRecord(usersCol)
+	owner.Set("email", "owner_closed@example.com")
+	owner.Set("role", authz.RoleOwner)
+	owner.Set("disabled", false)
+	owner.SetPassword("Password123456!")
+	if err := app.Save(owner); err != nil {
+		t.Fatal(err)
+	}
+
+	// Verify valid app works
+	isLast, err = authz.IsLastOwner(app, owner.Id)
+	if err != nil || !isLast {
+		t.Fatalf("expected isLast=true, err=nil, got isLast=%v, err=%v", isLast, err)
+	}
+
+	// Close / cleanup DB to induce query error
+	app.Cleanup()
+	isLast, err = authz.IsLastOwner(app, owner.Id)
+	if err == nil {
+		t.Fatal("expected query error after DB cleanup, got nil")
+	}
+	if isLast {
+		t.Fatal("expected isLast=false when query fails")
 	}
 }

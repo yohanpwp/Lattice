@@ -42,6 +42,27 @@ export function TableView({ client, page, schema, initialRecords }: TableViewPro
   const [editingRecord, setEditingRecord] = useState<Record<string, unknown> | null>(null);
   const [recordToDelete, setRecordToDelete] = useState<Record<string, unknown> | null>(null);
 
+  // Determine which columns to display
+  const allDisplayFields = schema.fields.filter((f) => !f.system && f.name !== "id");
+  const displayFields =
+    Array.isArray(config.columns) && config.columns.length > 0
+      ? config.columns
+          .map((colName) => allDisplayFields.find((f) => f.name === colName))
+          .filter((f): f is FieldDefinition => Boolean(f))
+      : allDisplayFields;
+  const searchableFields = displayFields.filter((f) =>
+    ["text", "email", "url", "select"].includes(f.type),
+  );
+
+  const [debouncedSearchQuery, setDebouncedSearchQuery] = useState(searchQuery);
+
+  useEffect(() => {
+    const timer = setTimeout(() => {
+      setDebouncedSearchQuery(searchQuery);
+    }, 200);
+    return () => clearTimeout(timer);
+  }, [searchQuery]);
+
   const canCreate = schema.can_create !== false && config.allowCreate !== false;
   const canUpdate = schema.can_update !== false && config.allowEdit !== false;
   const canDelete = schema.can_delete !== false && config.allowDelete !== false;
@@ -56,8 +77,20 @@ export function TableView({ client, page, schema, initialRecords }: TableViewPro
         sort: sortParam,
         requestKey: null,
       };
-      if (config.defaultFilter) {
+
+      const trimmed = debouncedSearchQuery.trim();
+      let searchFilter = "";
+      if (trimmed && searchableFields.length > 0) {
+        const clauses = searchableFields.map((f) => `${f.name} ~ {:q}`).join(" || ");
+        searchFilter = client.filter(clauses, { q: trimmed });
+      }
+
+      if (config.defaultFilter && searchFilter) {
+        options.filter = `(${config.defaultFilter}) && (${searchFilter})`;
+      } else if (config.defaultFilter) {
         options.filter = config.defaultFilter;
+      } else if (searchFilter) {
+        options.filter = searchFilter;
       }
 
       const res = await client.collection(schemaId).getList(pageNumber, perPage, options);
@@ -69,7 +102,7 @@ export function TableView({ client, page, schema, initialRecords }: TableViewPro
     } finally {
       setLoading(false);
     }
-  }, [client, schemaId, pageNumber, perPage, sortField, sortDirection, config.defaultFilter]);
+  }, [client, schemaId, pageNumber, perPage, sortField, sortDirection, config.defaultFilter, debouncedSearchQuery, searchableFields]);
 
   const loadRecordsRef = useRef(loadRecords);
   loadRecordsRef.current = loadRecords;
@@ -97,24 +130,7 @@ export function TableView({ client, page, schema, initialRecords }: TableViewPro
     };
   }, [client, schemaId]);
 
-  // Determine which columns to display
-  const allDisplayFields = schema.fields.filter((f) => !f.system && f.name !== "id");
-  const displayFields =
-    Array.isArray(config.columns) && config.columns.length > 0
-      ? config.columns
-          .map((colName) => allDisplayFields.find((f) => f.name === colName))
-          .filter((f): f is FieldDefinition => Boolean(f))
-      : allDisplayFields;
-
-  const filteredRecords = records.filter((rec) => {
-    if (!searchQuery.trim()) return true;
-    const query = searchQuery.toLowerCase();
-    return displayFields.some((f) => {
-      const val = rec[f.name];
-      if (val === null || val === undefined) return false;
-      return String(val).toLowerCase().includes(query);
-    });
-  });
+  const filteredRecords = records;
 
   function handleSort(field: string) {
     if (sortField === field) {
@@ -171,7 +187,10 @@ export function TableView({ client, page, schema, initialRecords }: TableViewPro
               type="search"
               placeholder={`Search in ${page.name}…`}
               value={searchQuery}
-              onChange={(e) => setSearchQuery(e.target.value)}
+              onChange={(e) => {
+                setSearchQuery(e.target.value);
+                setPageNumber(1);
+              }}
               className="lattice-input lattice-search-input"
             />
           </div>
