@@ -880,3 +880,275 @@ export const workspaceInvitationSchema = {
     }
   }
 } as const;
+
+export const moduleContractSchema = {
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$id": "https://lattice.dev/schemas/module-contract.json",
+  "title": "ModuleContract",
+  "description": "Specification contract for a managed workspace module.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "module_id",
+    "name",
+    "version",
+    "supported_platforms",
+    "required_datasets"
+  ],
+  "properties": {
+    "module_id": {
+      "type": "string",
+      "pattern": "^[a-z][a-z0-9_]{1,40}$",
+      "description": "Unique identifier for this module (e.g. customer_job_tracking)."
+    },
+    "name": {
+      "type": "string",
+      "minLength": 1,
+      "description": "Human-readable name of the module."
+    },
+    "version": {
+      "type": "string",
+      "pattern": "^[0-9]+\\.[0-9]+\\.[0-9]+$",
+      "description": "Semver version of this module specification."
+    },
+    "description": {
+      "type": "string",
+      "description": "Description of what this module does."
+    },
+    "icon": {
+      "type": "string",
+      "description": "Emoji or icon identifier."
+    },
+    "supported_platforms": {
+      "type": "array",
+      "items": {
+        "type": "string",
+        "enum": [
+          "web",
+          "mobile",
+          "desktop"
+        ]
+      },
+      "minItems": 1
+    },
+    "required_datasets": {
+      "type": "array",
+      "items": {
+        "$ref": "#/$defs/RequiredDataset"
+      },
+      "minItems": 1
+    },
+    "screens": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      },
+      "description": "Screen views provided by this module."
+    },
+    "actions": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      },
+      "description": "Actions provided by this module."
+    },
+    "permissions": {
+      "type": "object",
+      "additionalProperties": {
+        "type": "object",
+        "properties": {
+          "read": {
+            "type": "boolean"
+          },
+          "create": {
+            "type": "boolean"
+          },
+          "update": {
+            "type": "boolean"
+          },
+          "delete": {
+            "type": "boolean"
+          },
+          "scope": {
+            "type": "string",
+            "enum": [
+              "all",
+              "assigned"
+            ]
+          }
+        }
+      },
+      "description": "Recommended member permissions for mapped datasets."
+    },
+    "disabling": {
+      "type": "string",
+      "description": "Explanation of disabling effect (retains records, hides screens)."
+    }
+  },
+  "$defs": {
+    "RequiredDataset": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "dataset_role",
+        "name",
+        "required_fields"
+      ],
+      "properties": {
+        "dataset_role": {
+          "type": "string",
+          "pattern": "^[a-z][a-z0-9_]{1,40}$",
+          "description": "Abstract role name for the dataset (e.g. customers, jobs)."
+        },
+        "name": {
+          "type": "string",
+          "description": "Suggested display name when creating the dataset."
+        },
+        "description": {
+          "type": "string"
+        },
+        "assignee_field_role": {
+          "type": "string",
+          "description": "Optional field role acting as the assignee relation."
+        },
+        "required_fields": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/RequiredField"
+          },
+          "minItems": 1
+        }
+      }
+    },
+    "RequiredField": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "field_role",
+        "name",
+        "type",
+        "required"
+      ],
+      "properties": {
+        "field_role": {
+          "type": "string",
+          "pattern": "^[a-z][a-z0-9_]{0,40}$",
+          "description": "Abstract field role name (e.g. name, title, customer, status, assignee)."
+        },
+        "name": {
+          "type": "string",
+          "description": "Suggested field column name."
+        },
+        "label": {
+          "type": "string",
+          "description": "Suggested field label."
+        },
+        "type": {
+          "type": "string",
+          "enum": [
+            "text",
+            "number",
+            "bool",
+            "email",
+            "url",
+            "date",
+            "select",
+            "relation",
+            "json",
+            "file"
+          ]
+        },
+        "required": {
+          "type": "boolean"
+        },
+        "target_dataset_role": {
+          "type": "string",
+          "description": "Target dataset role for relation fields (e.g. customers or users)."
+        },
+        "options": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          },
+          "description": "Required options for select fields."
+        }
+      }
+    }
+  }
+} as const;
+
+export const workspaceModuleInstallationSchema = {
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$id": "https://lattice.dev/schemas/workspace-module-installation.json",
+  "title": "WorkspaceModuleInstallation",
+  "description": "Installation record and field mappings for a managed workspace module.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "module_id",
+    "version",
+    "enabled",
+    "mapping"
+  ],
+  "properties": {
+    "id": {
+      "type": "string"
+    },
+    "module_id": {
+      "type": "string",
+      "pattern": "^[a-z][a-z0-9_]{1,40}$"
+    },
+    "version": {
+      "type": "string",
+      "pattern": "^[0-9]+\\.[0-9]+\\.[0-9]+$"
+    },
+    "enabled": {
+      "type": "boolean"
+    },
+    "installed_at": {
+      "type": "string"
+    },
+    "updated_at": {
+      "type": "string"
+    },
+    "mapping": {
+      "type": "object",
+      "additionalProperties": true,
+      "required": [
+        "customer_dataset",
+        "customer_name_field",
+        "job_dataset",
+        "job_title_field",
+        "job_customer_field",
+        "job_status_field",
+        "job_assignee_field"
+      ],
+      "properties": {
+        "customer_dataset": {
+          "type": "string"
+        },
+        "customer_name_field": {
+          "type": "string"
+        },
+        "customer_phone_field": {
+          "type": "string"
+        },
+        "job_dataset": {
+          "type": "string"
+        },
+        "job_title_field": {
+          "type": "string"
+        },
+        "job_customer_field": {
+          "type": "string"
+        },
+        "job_status_field": {
+          "type": "string"
+        },
+        "job_assignee_field": {
+          "type": "string"
+        }
+      }
+    }
+  }
+} as const;

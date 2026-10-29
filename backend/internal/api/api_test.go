@@ -1317,3 +1317,225 @@ func TestMemberUpdate_LastOwnerCheckQueryErrorFailsClosed(t *testing.T) {
 	}
 }
 
+func TestWorkspaceModules_EndToEndAndAssignedIsolation(t *testing.T) {
+	app := newTestApp(t)
+	usersCol, err := app.FindCollectionByNameOrId("users")
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	// 1. Create Owner and 2 Members
+	owner := core.NewRecord(usersCol)
+	owner.Set("email", "owner@example.com")
+	owner.Set("role", authz.RoleOwner)
+	owner.Set("disabled", false)
+	owner.SetPassword("Password123!")
+	if err := app.Save(owner); err != nil {
+		t.Fatal(err)
+	}
+
+	member1 := core.NewRecord(usersCol)
+	member1.Set("email", "member1@example.com")
+	member1.Set("role", authz.RoleMember)
+	member1.Set("disabled", false)
+	member1.SetPassword("Password123!")
+	if err := app.Save(member1); err != nil {
+		t.Fatal(err)
+	}
+
+	member2 := core.NewRecord(usersCol)
+	member2.Set("email", "member2@example.com")
+	member2.Set("role", authz.RoleMember)
+	member2.Set("disabled", false)
+	member2.SetPassword("Password123!")
+	if err := app.Save(member2); err != nil {
+		t.Fatal(err)
+	}
+
+	r := router.NewRouter[*core.RequestEvent](func(w http.ResponseWriter, req *http.Request) (*core.RequestEvent, router.EventCleanupFunc) {
+		event := &core.RequestEvent{App: app, Event: router.Event{Response: w, Request: req}}
+		switch req.Header.Get("Authorization") {
+		case "Bearer owner":
+			event.Auth = owner
+		case "Bearer member1":
+			event.Auth = member1
+		case "Bearer member2":
+			event.Auth = member2
+		}
+		return event, func() {}
+	})
+	cfg := &tenant.Config{
+		Version: 1, TenantID: "tenant_dev", BackendURL: "https://acme.app.example.com",
+		RealtimeURL: "https://acme.app.example.com/api/realtime", AppKey: "pk_dev_000000",
+		SchemaVersion: "opaque_schema_id", MinClientVersion: "0.1.0",
+		Features: []string{}, Collections: []string{},
+	}
+	Register(&core.ServeEvent{App: app, Router: r}, cfg, features.Empty())
+	mux, err := r.BuildMux()
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	// 2. Member tries setup -> rejected with 403
+	memberSetupReq := httptest.NewRequest(http.MethodPost, "/v1/workspace/modules/customer_job_tracking/setup", strings.NewReader(`{"use_suggested":true}`))
+	memberSetupReq.Header.Set("Authorization", "Bearer member1")
+	memberSetupReq.Header.Set("Content-Type", "application/json")
+	memberSetupRec := httptest.NewRecorder()
+	mux.ServeHTTP(memberSetupRec, memberSetupReq)
+	if memberSetupRec.Code != http.StatusForbidden {
+		t.Fatalf("expected 403 Forbidden for member setup, got %d: %s", memberSetupRec.Code, memberSetupRec.Body.String())
+	}
+
+	// 3. Owner runs setup with suggested datasets -> 200 OK
+	ownerSetupReq := httptest.NewRequest(http.MethodPost, "/v1/workspace/modules/customer_job_tracking/setup", strings.NewReader(`{"use_suggested":true}`))
+	ownerSetupReq.Header.Set("Authorization", "Bearer owner")
+	ownerSetupReq.Header.Set("Content-Type", "application/json")
+	ownerSetupRec := httptest.NewRecorder()
+	mux.ServeHTTP(ownerSetupRec, ownerSetupReq)
+	if ownerSetupRec.Code != http.StatusOK {
+		t.Fatalf("expected 200 OK for owner setup, got %d: %s", ownerSetupRec.Code, ownerSetupRec.Body.String())
+	}
+
+	// Verify collections exist
+	custCol, err := app.FindCollectionByNameOrId("customers")
+	if err != nil || custCol == nil {
+		t.Fatal("customers collection missing after setup")
+	}
+	jobCol, err := app.FindCollectionByNameOrId("jobs")
+	if err != nil || jobCol == nil {
+		t.Fatal("jobs collection missing after setup")
+	}
+
+	// 4. Repeated setup retry is idempotent
+	retryReq := httptest.NewRequest(http.MethodPost, "/v1/workspace/modules/customer_job_tracking/setup", strings.NewReader(`{"use_suggested":true}`))
+	retryReq.Header.Set("Authorization", "Bearer owner")
+	retryReq.Header.Set("Content-Type", "application/json")
+	retryRec := httptest.NewRecorder()
+	mux.ServeHTTP(retryRec, retryReq)
+	if retryRec.Code != http.StatusOK {
+		t.Fatalf("expected 200 OK for idempotent retry setup, got %d: %s", retryRec.Code, retryRec.Body.String())
+	}
+
+	// 5. Incompatible custom mapping is rejected with 400
+	badMapReq := httptest.NewRequest(http.MethodPost, "/v1/workspace/modules/customer_job_tracking/setup", strings.NewReader(`{"use_suggested":false,"mapping":{"customer_dataset":"nonexistent"}}`))
+	badMapReq.Header.Set("Authorization", "Bearer owner")
+	badMapReq.Header.Set("Content-Type", "application/json")
+	badMapRec := httptest.NewRecorder()
+	mux.ServeHTTP(badMapRec, badMapReq)
+	if badMapRec.Code != http.StatusBadRequest {
+		t.Fatalf("expected 400 Bad Request for invalid mapping, got %d: %s", badMapRec.Code, badMapRec.Body.String())
+	}
+
+	// 6. Grant assigned-scope permissions to member1 and member2
+	memberPerms := map[string]any{
+		"customers": map[string]any{"read": true, "scope": "all"},
+		"jobs":      map[string]any{"read": true, "create": true, "update": true, "delete": false, "scope": "assigned"},
+	}
+	member1.Set("permissions", memberPerms)
+	if err := app.Save(member1); err != nil {
+		t.Fatal(err)
+	}
+	member2.Set("permissions", memberPerms)
+	if err := app.Save(member2); err != nil {
+		t.Fatal(err)
+	}
+
+	// 7. Create a customer
+	customer := core.NewRecord(custCol)
+	customer.Set("name", "Acme Industries")
+	customer.Set("phone", "555-0100")
+	if err := app.Save(customer); err != nil {
+		t.Fatal(err)
+	}
+
+	// 8. Member 1 creates a job assigned to Member 1
+	job1 := core.NewRecord(jobCol)
+	job1.Set("title", "Fix Boiler")
+	job1.Set("customer", customer.Id)
+	job1.Set("status", "Open")
+	job1.Set("assignee", member1.Id)
+	if err := app.Save(job1); err != nil {
+		t.Fatal(err)
+	}
+
+	// Member 2 creates a job assigned to Member 2
+	job2 := core.NewRecord(jobCol)
+	job2.Set("title", "Service HVAC")
+	job2.Set("customer", customer.Id)
+	job2.Set("status", "Open")
+	job2.Set("assignee", member2.Id)
+	if err := app.Save(job2); err != nil {
+		t.Fatal(err)
+	}
+
+	// 9. Verify Assigned-Only Isolation
+	canAccess := func(rec *core.Record, user *core.Record, rule *string) bool {
+		ok, _ := app.CanAccessRecord(rec, &core.RequestInfo{Auth: user}, rule)
+		return ok
+	}
+
+	// Member 1 can read job1
+	if !canAccess(job1, member1, jobCol.ViewRule) {
+		t.Fatal("member1 should be able to view their assigned job1")
+	}
+
+	// Member 1 CANNOT read job2
+	if canAccess(job2, member1, jobCol.ViewRule) {
+		t.Fatal("member1 must NOT be able to view member2's assigned job2")
+	}
+
+	// Member 2 can read job2 but NOT job1
+	if !canAccess(job2, member2, jobCol.ViewRule) {
+		t.Fatal("member2 should be able to view their assigned job2")
+	}
+	if canAccess(job1, member2, jobCol.ViewRule) {
+		t.Fatal("member2 must NOT be able to view member1's assigned job1")
+	}
+
+	// Both can read customer
+	if !canAccess(customer, member1, custCol.ViewRule) {
+		t.Fatal("member1 should be able to view customer")
+	}
+	if !canAccess(customer, member2, custCol.ViewRule) {
+		t.Fatal("member2 should be able to view customer")
+	}
+
+	// Owner can read both jobs
+	if !canAccess(job1, owner, jobCol.ViewRule) || !canAccess(job2, owner, jobCol.ViewRule) {
+		t.Fatal("owner should be able to view all jobs")
+	}
+
+	// 10. Disable and re-enable module via PUT
+	disableReq := httptest.NewRequest(http.MethodPut, "/v1/workspace/modules/customer_job_tracking", strings.NewReader(`{"enabled":false}`))
+	disableReq.Header.Set("Authorization", "Bearer owner")
+	disableReq.Header.Set("Content-Type", "application/json")
+	disableRec := httptest.NewRecorder()
+	mux.ServeHTTP(disableRec, disableReq)
+	if disableRec.Code != http.StatusOK {
+		t.Fatalf("expected 200 OK for disable, got %d: %s", disableRec.Code, disableRec.Body.String())
+	}
+
+	// List modules: should show installed: true, enabled: false
+	listReq := httptest.NewRequest(http.MethodGet, "/v1/workspace/modules", nil)
+	listReq.Header.Set("Authorization", "Bearer owner")
+	listRec := httptest.NewRecorder()
+	mux.ServeHTTP(listRec, listReq)
+	if listRec.Code != http.StatusOK {
+		t.Fatalf("expected 200 OK for list modules, got %d", listRec.Code)
+	}
+	if !strings.Contains(listRec.Body.String(), `"enabled":false`) {
+		t.Fatalf("expected module to be disabled in list output: %s", listRec.Body.String())
+	}
+
+	// Re-enable
+	enableReq := httptest.NewRequest(http.MethodPut, "/v1/workspace/modules/customer_job_tracking", strings.NewReader(`{"enabled":true}`))
+	enableReq.Header.Set("Authorization", "Bearer owner")
+	enableReq.Header.Set("Content-Type", "application/json")
+	enableRec := httptest.NewRecorder()
+	mux.ServeHTTP(enableRec, enableReq)
+	if enableRec.Code != http.StatusOK {
+		t.Fatalf("expected 200 OK for enable, got %d: %s", enableRec.Code, enableRec.Body.String())
+	}
+}
+
+

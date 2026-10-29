@@ -14,6 +14,7 @@ import (
 
 	"github.com/Lattice/backend/internal/platform/authz"
 	"github.com/Lattice/backend/internal/platform/features"
+	"github.com/Lattice/backend/internal/platform/modules"
 	"github.com/Lattice/backend/internal/platform/schemas"
 	"github.com/Lattice/backend/internal/platform/tenant"
 	"github.com/Lattice/backend/internal/plugins/payments"
@@ -783,5 +784,175 @@ func Register(se *core.ServeEvent, cfg *tenant.Config, flags *features.Flags) {
 			"role":        e.Auth.GetString("role"),
 			"permissions": authz.GetUserPermissions(e.Auth),
 		})
+	}).Bind(apis.RequireAuth())
+
+	// List catalog modules with installation status
+	se.Router.GET("/v1/workspace/modules", func(e *core.RequestEvent) error {
+		if e.Auth != nil && e.Auth.GetBool("disabled") {
+			return e.JSON(http.StatusUnauthorized, map[string]string{"error": "unauthorized", "message": "Your account has been disabled."})
+		}
+
+		var modulesList []map[string]any
+		for _, cat := range modules.ListCatalogModules() {
+			inst, _ := modules.GetInstalledModule(se.App, cat.ModuleID)
+			entry := map[string]any{
+				"module_id":           cat.ModuleID,
+				"name":                cat.Name,
+				"version":             cat.Version,
+				"description":         cat.Description,
+				"icon":                cat.Icon,
+				"supported_platforms": cat.SupportedPlatforms,
+				"required_datasets":   cat.RequiredDatasets,
+				"screens":             cat.Screens,
+				"actions":             cat.Actions,
+				"permissions":         cat.Permissions,
+				"disabling":           cat.Disabling,
+				"installed":           inst != nil,
+				"enabled":             inst != nil && inst.Enabled,
+			}
+			if inst != nil {
+				entry["mapping"] = inst.Mapping
+				entry["installed_at"] = inst.InstalledAt
+				entry["updated_at"] = inst.UpdatedAt
+			}
+			modulesList = append(modulesList, entry)
+		}
+		if modulesList == nil {
+			modulesList = []map[string]any{}
+		}
+
+		return e.JSON(http.StatusOK, modulesList)
+	}).Bind(apis.RequireAuth())
+
+	// Get specific module catalog info and installation status
+	se.Router.GET("/v1/workspace/modules/{id}", func(e *core.RequestEvent) error {
+		if e.Auth != nil && e.Auth.GetBool("disabled") {
+			return e.JSON(http.StatusUnauthorized, map[string]string{"error": "unauthorized", "message": "Your account has been disabled."})
+		}
+
+		id := e.Request.PathValue("id")
+		cat, ok := modules.GetCatalogModule(id)
+		if !ok || cat == nil {
+			return e.JSON(http.StatusNotFound, map[string]string{"error": "not_found", "message": fmt.Sprintf("Module %q not found in catalog", id)})
+		}
+
+		inst, _ := modules.GetInstalledModule(se.App, id)
+		res := map[string]any{
+			"module_id":           cat.ModuleID,
+			"name":                cat.Name,
+			"version":             cat.Version,
+			"description":         cat.Description,
+			"icon":                cat.Icon,
+			"supported_platforms": cat.SupportedPlatforms,
+			"required_datasets":   cat.RequiredDatasets,
+			"screens":             cat.Screens,
+			"actions":             cat.Actions,
+			"permissions":         cat.Permissions,
+			"disabling":           cat.Disabling,
+			"installed":           inst != nil,
+			"enabled":             inst != nil && inst.Enabled,
+		}
+		if inst != nil {
+			res["mapping"] = inst.Mapping
+			res["installed_at"] = inst.InstalledAt
+			res["updated_at"] = inst.UpdatedAt
+		}
+
+		return e.JSON(http.StatusOK, res)
+	}).Bind(apis.RequireAuth())
+
+	// Update module enabled state or field mapping (requires owner or admin)
+	se.Router.PUT("/v1/workspace/modules/{id}", func(e *core.RequestEvent) error {
+		if !authz.IsOwnerOrAdmin(e.Auth) && !e.HasSuperuserAuth() {
+			return e.JSON(http.StatusForbidden, map[string]string{"error": "forbidden", "message": "Only workspace owners and admins can configure modules"})
+		}
+
+		id := e.Request.PathValue("id")
+		_, ok := modules.GetCatalogModule(id)
+		if !ok {
+			return e.JSON(http.StatusNotFound, map[string]string{"error": "not_found", "message": fmt.Sprintf("Module %q not found in catalog", id)})
+		}
+
+		inst, err := modules.GetInstalledModule(se.App, id)
+		if err != nil || inst == nil {
+			return e.JSON(http.StatusBadRequest, map[string]string{"error": "not_installed", "message": "Module is not yet installed. Please run setup first."})
+		}
+
+		var body struct {
+			Enabled *bool                  `json:"enabled"`
+			Mapping *modules.ModuleMapping `json:"mapping"`
+		}
+		if err := e.BindBody(&body); err != nil {
+			return e.JSON(http.StatusBadRequest, map[string]string{"error": "invalid_request", "message": err.Error()})
+		}
+
+		if body.Enabled != nil {
+			inst.Enabled = *body.Enabled
+		}
+
+		if body.Mapping != nil {
+			if err := modules.ValidateModuleMapping(se.App, *body.Mapping); err != nil {
+				return e.JSON(http.StatusBadRequest, map[string]string{"error": "invalid_mapping", "message": err.Error()})
+			}
+			inst.Mapping = *body.Mapping
+			_ = modules.EnsureJobDatasetAssigneeProtection(e.Request.Context(), se.App, body.Mapping.JobDataset, body.Mapping.JobAssigneeField)
+		}
+
+		saved, err := modules.SaveModuleInstallation(se.App, inst)
+		if err != nil {
+			return e.JSON(http.StatusInternalServerError, map[string]string{"error": "save_failed", "message": err.Error()})
+		}
+
+		return e.JSON(http.StatusOK, saved)
+	}).Bind(apis.RequireAuth())
+
+	// Run module setup (create suggested datasets or map existing) (requires owner or admin)
+	se.Router.POST("/v1/workspace/modules/{id}/setup", func(e *core.RequestEvent) error {
+		if !authz.IsOwnerOrAdmin(e.Auth) && !e.HasSuperuserAuth() {
+			return e.JSON(http.StatusForbidden, map[string]string{"error": "forbidden", "message": "Only workspace owners and admins can setup modules"})
+		}
+
+		id := e.Request.PathValue("id")
+		cat, ok := modules.GetCatalogModule(id)
+		if !ok || cat == nil {
+			return e.JSON(http.StatusNotFound, map[string]string{"error": "not_found", "message": fmt.Sprintf("Module %q not found in catalog", id)})
+		}
+
+		var req modules.ModuleSetupRequest
+		if err := e.BindBody(&req); err != nil {
+			return e.JSON(http.StatusBadRequest, map[string]string{"error": "invalid_request", "message": err.Error()})
+		}
+
+		var mapping modules.ModuleMapping
+		if req.UseSuggested {
+			m, err := modules.ProvisionSuggestedDatasets(e.Request.Context(), se.App)
+			if err != nil {
+				return e.JSON(http.StatusBadRequest, map[string]string{"error": "provision_failed", "message": err.Error()})
+			}
+			mapping = m
+		} else {
+			if req.Mapping == nil {
+				return e.JSON(http.StatusBadRequest, map[string]string{"error": "invalid_request", "message": "mapping is required when use_suggested is false"})
+			}
+			if err := modules.ValidateModuleMapping(se.App, *req.Mapping); err != nil {
+				return e.JSON(http.StatusBadRequest, map[string]string{"error": "invalid_mapping", "message": err.Error()})
+			}
+			_ = modules.EnsureJobDatasetAssigneeProtection(e.Request.Context(), se.App, req.Mapping.JobDataset, req.Mapping.JobAssigneeField)
+			mapping = *req.Mapping
+		}
+
+		inst := &modules.WorkspaceModuleInstallation{
+			ModuleID: id,
+			Version:  cat.Version,
+			Enabled:  true,
+			Mapping:  mapping,
+		}
+
+		saved, err := modules.SaveModuleInstallation(se.App, inst)
+		if err != nil {
+			return e.JSON(http.StatusInternalServerError, map[string]string{"error": "save_failed", "message": err.Error()})
+		}
+
+		return e.JSON(http.StatusOK, saved)
 	}).Bind(apis.RequireAuth())
 }

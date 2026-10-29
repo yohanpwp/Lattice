@@ -16,6 +16,8 @@ import {
   type WorkspaceInvitation,
   type DatasetPermission,
   type WorkspaceModule,
+  type WorkspaceModuleInstallation,
+  type ModuleContract,
 } from "@lattice/types";
 import { AuthPersistenceError, createAuthStore, type PersistentAuthStore } from "./authStore";
 import { fetchAppConfig } from "./config";
@@ -377,6 +379,10 @@ export class ProductClient {
     return this.pb.authStore.record?.id || null;
   }
 
+  get currentUserEmail(): string | null {
+    return this.pb.authStore.record?.email || null;
+  }
+
   get isOwner(): boolean {
     return this.currentUserRole === "owner";
   }
@@ -411,6 +417,75 @@ export class ProductClient {
   }
 
   /**
+   * Retrieves list of managed modules with installation and catalog status from server.
+   */
+  async getWorkspaceModules(): Promise<Array<ModuleContract & { installed: boolean; enabled: boolean; mapping?: any; installed_at?: string; updated_at?: string }>> {
+    try {
+      const res = await this.pb.send<any[]>("/v1/workspace/modules", { method: "GET" });
+      return Array.isArray(res) ? res : [];
+    } catch {
+      return [];
+    }
+  }
+
+  /**
+   * Retrieves specific module definition and installation status from server.
+   */
+  async getWorkspaceModule(id: string): Promise<(ModuleContract & { installed: boolean; enabled: boolean; mapping?: any; installed_at?: string; updated_at?: string }) | null> {
+    try {
+      return await this.pb.send<any>(`/v1/workspace/modules/${encodeURIComponent(id)}`, { method: "GET" });
+    } catch {
+      return null;
+    }
+  }
+
+  /**
+   * Executes setup for a workspace module (creating suggested datasets or mapping existing ones).
+   * Requires owner or admin authority.
+   */
+  async setupWorkspaceModule(
+    id: string,
+    payload: { use_suggested: boolean; mapping?: any }
+  ): Promise<WorkspaceModuleInstallation> {
+    const res = await this.pb.send<WorkspaceModuleInstallation>(`/v1/workspace/modules/${encodeURIComponent(id)}/setup`, {
+      method: "POST",
+      body: payload,
+    });
+    // Sync state locally as well
+    const disabled = await this.getDisabledModules();
+    const set = new Set(disabled);
+    set.delete(id);
+    const key = `lattice:disabled_modules:${encodeURIComponent(this.config.backend_url)}:${encodeURIComponent(this.config.tenant_id)}`;
+    await this.platform.storage.setItem(key, JSON.stringify(Array.from(set)));
+    return res;
+  }
+
+  /**
+   * Subscribes to realtime updates for workspace module installations.
+   */
+  subscribeWorkspaceModules(callback: (event: any) => void): () => void {
+    let unsubscribed = false;
+    if (typeof (globalThis as any).EventSource !== "undefined") {
+      this.pb
+        .collection("workspace_modules")
+        .subscribe("*", (e) => {
+          if (!unsubscribed) {
+            callback(e);
+          }
+        })
+        .catch((err) => {
+          console.warn("Realtime subscription to workspace_modules failed:", err);
+        });
+    }
+    return () => {
+      unsubscribed = true;
+      if (typeof (globalThis as any).EventSource !== "undefined") {
+        this.pb.collection("workspace_modules").unsubscribe("*").catch(() => {});
+      }
+    };
+  }
+
+  /**
    * Retrieves list of disabled module IDs for this tenant workspace.
    */
   async getDisabledModules(): Promise<string[]> {
@@ -429,6 +504,12 @@ export class ProductClient {
    * Checks whether a module is currently enabled.
    */
   async isModuleEnabled(moduleId: string): Promise<boolean> {
+    if (this.isAuthenticated) {
+      const serverMod = await this.getWorkspaceModule(moduleId);
+      if (serverMod && typeof serverMod.enabled === "boolean") {
+        return serverMod.enabled;
+      }
+    }
     const disabled = await this.getDisabledModules();
     return !disabled.includes(moduleId);
   }
@@ -440,6 +521,14 @@ export class ProductClient {
   async setModuleEnabled(moduleId: string, enabled: boolean): Promise<void> {
     if (!this.isOwnerOrAdmin) {
       throw new Error("Only workspace owners and admins can configure workspace modules");
+    }
+    try {
+      await this.pb.send<WorkspaceModuleInstallation>(`/v1/workspace/modules/${encodeURIComponent(moduleId)}`, {
+        method: "PUT",
+        body: { enabled },
+      });
+    } catch {
+      // Fallback if not yet installed or server offline
     }
     const current = await this.getDisabledModules();
     const set = new Set(current);
@@ -484,9 +573,10 @@ export class ProductClient {
     }
 
     // 3. Schema datasets and their mapped custom pages
-    const [schemas, pages] = await Promise.all([
+    const [schemas, pages, managedModules] = await Promise.all([
       this.getSchemas().catch(() => [] as SchemaDefinition[]),
       this.getPages().catch(() => [] as PageDefinition[]),
+      this.getWorkspaceModules().catch(() => []),
     ]);
 
     const mappedPageIds = new Set<string>();
@@ -521,6 +611,18 @@ export class ProductClient {
           page_ids: [page.page_id],
         });
       }
+    }
+
+    // 5. Managed workspace modules from server catalog
+    for (const mm of managedModules) {
+      modules.push({
+        id: mm.module_id,
+        name: mm.name,
+        description: mm.description || "Managed workspace module",
+        icon: mm.icon || "📦",
+        enabled: Boolean(mm.enabled),
+        dataset_id: mm.mapping?.job_dataset,
+      });
     }
 
     return modules;

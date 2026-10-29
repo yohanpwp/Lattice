@@ -7,6 +7,8 @@ export * from "./WorkspaceSetupForm";
 export * from "./AcceptInviteForm";
 export * from "./WorkspaceMembersModal";
 export * from "./WorkspaceModulesModal";
+export * from "./CustomerJobTrackingSetupModal";
+export * from "./CustomerJobTrackingView";
 export * from "./widgets";
 export * from "./dashboardLoader";
 export * from "./layout";

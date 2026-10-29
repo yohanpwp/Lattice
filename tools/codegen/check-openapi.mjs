@@ -22,6 +22,9 @@ const expectedOperations = new Map([
   ["/v1/workspace/invitations/accept", ["post"]],
   ["/v1/workspace/invitations/{id}/reissue", ["post"]],
   ["/v1/workspace/permissions", ["get"]],
+  ["/v1/workspace/modules", ["get"]],
+  ["/v1/workspace/modules/{id}", ["get", "put"]],
+  ["/v1/workspace/modules/{id}/setup", ["post"]],
 ]);
 
 function validateImplementedRoutes(document) {
@@ -77,6 +80,18 @@ function validateImplementedRoutes(document) {
   }
   if (!document.paths["/v1/workspace/permissions"].get.security?.some((scheme) => scheme.pocketbaseToken)) {
     throw new Error("GET /v1/workspace/permissions must require the PocketBase auth token");
+  }
+  if (!document.paths["/v1/workspace/modules"].get.security?.some((scheme) => scheme.pocketbaseToken)) {
+    throw new Error("GET /v1/workspace/modules must require the PocketBase auth token");
+  }
+  if (!document.paths["/v1/workspace/modules/{id}"].get.security?.some((scheme) => scheme.pocketbaseToken)) {
+    throw new Error("GET /v1/workspace/modules/{id} must require the PocketBase auth token");
+  }
+  if (!document.paths["/v1/workspace/modules/{id}"].put.security?.some((scheme) => scheme.pocketbaseToken)) {
+    throw new Error("PUT /v1/workspace/modules/{id} must require the PocketBase auth token");
+  }
+  if (!document.paths["/v1/workspace/modules/{id}/setup"].post.security?.some((scheme) => scheme.pocketbaseToken)) {
+    throw new Error("POST /v1/workspace/modules/{id}/setup must require the PocketBase auth token");
   }
   if (!document.components?.securitySchemes?.pocketbaseToken) {
     throw new Error("OpenAPI must define the pocketbaseToken security scheme");

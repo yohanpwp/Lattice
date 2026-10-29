@@ -3668,17 +3668,1030 @@ function validate23(data, { instancePath = "", parentData, parentDataProperty, r
   validate23.errors = vErrors;
   return errors === 0;
 }
+var validateModuleContract = validate24;
+var schema29 = { "$schema": "http://json-schema.org/draft-07/schema#", "$id": "https://lattice.dev/schemas/module-contract.json", "title": "ModuleContract", "description": "Specification contract for a managed workspace module.", "type": "object", "additionalProperties": false, "required": ["module_id", "name", "version", "supported_platforms", "required_datasets"], "properties": { "module_id": { "type": "string", "pattern": "^[a-z][a-z0-9_]{1,40}$", "description": "Unique identifier for this module (e.g. customer_job_tracking)." }, "name": { "type": "string", "minLength": 1, "description": "Human-readable name of the module." }, "version": { "type": "string", "pattern": "^[0-9]+\\.[0-9]+\\.[0-9]+$", "description": "Semver version of this module specification." }, "description": { "type": "string", "description": "Description of what this module does." }, "icon": { "type": "string", "description": "Emoji or icon identifier." }, "supported_platforms": { "type": "array", "items": { "type": "string", "enum": ["web", "mobile", "desktop"] }, "minItems": 1 }, "required_datasets": { "type": "array", "items": { "$ref": "#/$defs/RequiredDataset" }, "minItems": 1 }, "screens": { "type": "array", "items": { "type": "string" }, "description": "Screen views provided by this module." }, "actions": { "type": "array", "items": { "type": "string" }, "description": "Actions provided by this module." }, "permissions": { "type": "object", "additionalProperties": { "type": "object", "properties": { "read": { "type": "boolean" }, "create": { "type": "boolean" }, "update": { "type": "boolean" }, "delete": { "type": "boolean" }, "scope": { "type": "string", "enum": ["all", "assigned"] } } }, "description": "Recommended member permissions for mapped datasets." }, "disabling": { "type": "string", "description": "Explanation of disabling effect (retains records, hides screens)." } }, "$defs": { "RequiredDataset": { "type": "object", "additionalProperties": false, "required": ["dataset_role", "name", "required_fields"], "properties": { "dataset_role": { "type": "string", "pattern": "^[a-z][a-z0-9_]{1,40}$", "description": "Abstract role name for the dataset (e.g. customers, jobs)." }, "name": { "type": "string", "description": "Suggested display name when creating the dataset." }, "description": { "type": "string" }, "assignee_field_role": { "type": "string", "description": "Optional field role acting as the assignee relation." }, "required_fields": { "type": "array", "items": { "$ref": "#/$defs/RequiredField" }, "minItems": 1 } } }, "RequiredField": { "type": "object", "additionalProperties": false, "required": ["field_role", "name", "type", "required"], "properties": { "field_role": { "type": "string", "pattern": "^[a-z][a-z0-9_]{0,40}$", "description": "Abstract field role name (e.g. name, title, customer, status, assignee)." }, "name": { "type": "string", "description": "Suggested field column name." }, "label": { "type": "string", "description": "Suggested field label." }, "type": { "type": "string", "enum": ["text", "number", "bool", "email", "url", "date", "select", "relation", "json", "file"] }, "required": { "type": "boolean" }, "target_dataset_role": { "type": "string", "description": "Target dataset role for relation fields (e.g. customers or users)." }, "options": { "type": "array", "items": { "type": "string" }, "description": "Required options for select fields." } } } } };
+var pattern21 = new RegExp("^[0-9]+\\.[0-9]+\\.[0-9]+$", "u");
+var schema31 = { "type": "object", "additionalProperties": false, "required": ["field_role", "name", "type", "required"], "properties": { "field_role": { "type": "string", "pattern": "^[a-z][a-z0-9_]{0,40}$", "description": "Abstract field role name (e.g. name, title, customer, status, assignee)." }, "name": { "type": "string", "description": "Suggested field column name." }, "label": { "type": "string", "description": "Suggested field label." }, "type": { "type": "string", "enum": ["text", "number", "bool", "email", "url", "date", "select", "relation", "json", "file"] }, "required": { "type": "boolean" }, "target_dataset_role": { "type": "string", "description": "Target dataset role for relation fields (e.g. customers or users)." }, "options": { "type": "array", "items": { "type": "string" }, "description": "Required options for select fields." } } };
+function validate25(data, { instancePath = "", parentData, parentDataProperty, rootData = data } = {}) {
+  let vErrors = null;
+  let errors = 0;
+  if (data && typeof data == "object" && !Array.isArray(data)) {
+    if (data.dataset_role === void 0) {
+      const err0 = { instancePath, schemaPath: "#/required", keyword: "required", params: { missingProperty: "dataset_role" }, message: "must have required property 'dataset_role'" };
+      if (vErrors === null) {
+        vErrors = [err0];
+      } else {
+        vErrors.push(err0);
+      }
+      errors++;
+    }
+    if (data.name === void 0) {
+      const err1 = { instancePath, schemaPath: "#/required", keyword: "required", params: { missingProperty: "name" }, message: "must have required property 'name'" };
+      if (vErrors === null) {
+        vErrors = [err1];
+      } else {
+        vErrors.push(err1);
+      }
+      errors++;
+    }
+    if (data.required_fields === void 0) {
+      const err2 = { instancePath, schemaPath: "#/required", keyword: "required", params: { missingProperty: "required_fields" }, message: "must have required property 'required_fields'" };
+      if (vErrors === null) {
+        vErrors = [err2];
+      } else {
+        vErrors.push(err2);
+      }
+      errors++;
+    }
+    for (const key0 in data) {
+      if (!(key0 === "dataset_role" || key0 === "name" || key0 === "description" || key0 === "assignee_field_role" || key0 === "required_fields")) {
+        const err3 = { instancePath, schemaPath: "#/additionalProperties", keyword: "additionalProperties", params: { additionalProperty: key0 }, message: "must NOT have additional properties" };
+        if (vErrors === null) {
+          vErrors = [err3];
+        } else {
+          vErrors.push(err3);
+        }
+        errors++;
+      }
+    }
+    if (data.dataset_role !== void 0) {
+      let data0 = data.dataset_role;
+      if (typeof data0 === "string") {
+        if (!pattern15.test(data0)) {
+          const err4 = { instancePath: instancePath + "/dataset_role", schemaPath: "#/properties/dataset_role/pattern", keyword: "pattern", params: { pattern: "^[a-z][a-z0-9_]{1,40}$" }, message: 'must match pattern "^[a-z][a-z0-9_]{1,40}$"' };
+          if (vErrors === null) {
+            vErrors = [err4];
+          } else {
+            vErrors.push(err4);
+          }
+          errors++;
+        }
+      } else {
+        const err5 = { instancePath: instancePath + "/dataset_role", schemaPath: "#/properties/dataset_role/type", keyword: "type", params: { type: "string" }, message: "must be string" };
+        if (vErrors === null) {
+          vErrors = [err5];
+        } else {
+          vErrors.push(err5);
+        }
+        errors++;
+      }
+    }
+    if (data.name !== void 0) {
+      if (typeof data.name !== "string") {
+        const err6 = { instancePath: instancePath + "/name", schemaPath: "#/properties/name/type", keyword: "type", params: { type: "string" }, message: "must be string" };
+        if (vErrors === null) {
+          vErrors = [err6];
+        } else {
+          vErrors.push(err6);
+        }
+        errors++;
+      }
+    }
+    if (data.description !== void 0) {
+      if (typeof data.description !== "string") {
+        const err7 = { instancePath: instancePath + "/description", schemaPath: "#/properties/description/type", keyword: "type", params: { type: "string" }, message: "must be string" };
+        if (vErrors === null) {
+          vErrors = [err7];
+        } else {
+          vErrors.push(err7);
+        }
+        errors++;
+      }
+    }
+    if (data.assignee_field_role !== void 0) {
+      if (typeof data.assignee_field_role !== "string") {
+        const err8 = { instancePath: instancePath + "/assignee_field_role", schemaPath: "#/properties/assignee_field_role/type", keyword: "type", params: { type: "string" }, message: "must be string" };
+        if (vErrors === null) {
+          vErrors = [err8];
+        } else {
+          vErrors.push(err8);
+        }
+        errors++;
+      }
+    }
+    if (data.required_fields !== void 0) {
+      let data4 = data.required_fields;
+      if (Array.isArray(data4)) {
+        if (data4.length < 1) {
+          const err9 = { instancePath: instancePath + "/required_fields", schemaPath: "#/properties/required_fields/minItems", keyword: "minItems", params: { limit: 1 }, message: "must NOT have fewer than 1 items" };
+          if (vErrors === null) {
+            vErrors = [err9];
+          } else {
+            vErrors.push(err9);
+          }
+          errors++;
+        }
+        const len0 = data4.length;
+        for (let i0 = 0; i0 < len0; i0++) {
+          let data5 = data4[i0];
+          if (data5 && typeof data5 == "object" && !Array.isArray(data5)) {
+            if (data5.field_role === void 0) {
+              const err10 = { instancePath: instancePath + "/required_fields/" + i0, schemaPath: "#/$defs/RequiredField/required", keyword: "required", params: { missingProperty: "field_role" }, message: "must have required property 'field_role'" };
+              if (vErrors === null) {
+                vErrors = [err10];
+              } else {
+                vErrors.push(err10);
+              }
+              errors++;
+            }
+            if (data5.name === void 0) {
+              const err11 = { instancePath: instancePath + "/required_fields/" + i0, schemaPath: "#/$defs/RequiredField/required", keyword: "required", params: { missingProperty: "name" }, message: "must have required property 'name'" };
+              if (vErrors === null) {
+                vErrors = [err11];
+              } else {
+                vErrors.push(err11);
+              }
+              errors++;
+            }
+            if (data5.type === void 0) {
+              const err12 = { instancePath: instancePath + "/required_fields/" + i0, schemaPath: "#/$defs/RequiredField/required", keyword: "required", params: { missingProperty: "type" }, message: "must have required property 'type'" };
+              if (vErrors === null) {
+                vErrors = [err12];
+              } else {
+                vErrors.push(err12);
+              }
+              errors++;
+            }
+            if (data5.required === void 0) {
+              const err13 = { instancePath: instancePath + "/required_fields/" + i0, schemaPath: "#/$defs/RequiredField/required", keyword: "required", params: { missingProperty: "required" }, message: "must have required property 'required'" };
+              if (vErrors === null) {
+                vErrors = [err13];
+              } else {
+                vErrors.push(err13);
+              }
+              errors++;
+            }
+            for (const key1 in data5) {
+              if (!(key1 === "field_role" || key1 === "name" || key1 === "label" || key1 === "type" || key1 === "required" || key1 === "target_dataset_role" || key1 === "options")) {
+                const err14 = { instancePath: instancePath + "/required_fields/" + i0, schemaPath: "#/$defs/RequiredField/additionalProperties", keyword: "additionalProperties", params: { additionalProperty: key1 }, message: "must NOT have additional properties" };
+                if (vErrors === null) {
+                  vErrors = [err14];
+                } else {
+                  vErrors.push(err14);
+                }
+                errors++;
+              }
+            }
+            if (data5.field_role !== void 0) {
+              let data6 = data5.field_role;
+              if (typeof data6 === "string") {
+                if (!pattern16.test(data6)) {
+                  const err15 = { instancePath: instancePath + "/required_fields/" + i0 + "/field_role", schemaPath: "#/$defs/RequiredField/properties/field_role/pattern", keyword: "pattern", params: { pattern: "^[a-z][a-z0-9_]{0,40}$" }, message: 'must match pattern "^[a-z][a-z0-9_]{0,40}$"' };
+                  if (vErrors === null) {
+                    vErrors = [err15];
+                  } else {
+                    vErrors.push(err15);
+                  }
+                  errors++;
+                }
+              } else {
+                const err16 = { instancePath: instancePath + "/required_fields/" + i0 + "/field_role", schemaPath: "#/$defs/RequiredField/properties/field_role/type", keyword: "type", params: { type: "string" }, message: "must be string" };
+                if (vErrors === null) {
+                  vErrors = [err16];
+                } else {
+                  vErrors.push(err16);
+                }
+                errors++;
+              }
+            }
+            if (data5.name !== void 0) {
+              if (typeof data5.name !== "string") {
+                const err17 = { instancePath: instancePath + "/required_fields/" + i0 + "/name", schemaPath: "#/$defs/RequiredField/properties/name/type", keyword: "type", params: { type: "string" }, message: "must be string" };
+                if (vErrors === null) {
+                  vErrors = [err17];
+                } else {
+                  vErrors.push(err17);
+                }
+                errors++;
+              }
+            }
+            if (data5.label !== void 0) {
+              if (typeof data5.label !== "string") {
+                const err18 = { instancePath: instancePath + "/required_fields/" + i0 + "/label", schemaPath: "#/$defs/RequiredField/properties/label/type", keyword: "type", params: { type: "string" }, message: "must be string" };
+                if (vErrors === null) {
+                  vErrors = [err18];
+                } else {
+                  vErrors.push(err18);
+                }
+                errors++;
+              }
+            }
+            if (data5.type !== void 0) {
+              let data9 = data5.type;
+              if (typeof data9 !== "string") {
+                const err19 = { instancePath: instancePath + "/required_fields/" + i0 + "/type", schemaPath: "#/$defs/RequiredField/properties/type/type", keyword: "type", params: { type: "string" }, message: "must be string" };
+                if (vErrors === null) {
+                  vErrors = [err19];
+                } else {
+                  vErrors.push(err19);
+                }
+                errors++;
+              }
+              if (!(data9 === "text" || data9 === "number" || data9 === "bool" || data9 === "email" || data9 === "url" || data9 === "date" || data9 === "select" || data9 === "relation" || data9 === "json" || data9 === "file")) {
+                const err20 = { instancePath: instancePath + "/required_fields/" + i0 + "/type", schemaPath: "#/$defs/RequiredField/properties/type/enum", keyword: "enum", params: { allowedValues: schema31.properties.type.enum }, message: "must be equal to one of the allowed values" };
+                if (vErrors === null) {
+                  vErrors = [err20];
+                } else {
+                  vErrors.push(err20);
+                }
+                errors++;
+              }
+            }
+            if (data5.required !== void 0) {
+              if (typeof data5.required !== "boolean") {
+                const err21 = { instancePath: instancePath + "/required_fields/" + i0 + "/required", schemaPath: "#/$defs/RequiredField/properties/required/type", keyword: "type", params: { type: "boolean" }, message: "must be boolean" };
+                if (vErrors === null) {
+                  vErrors = [err21];
+                } else {
+                  vErrors.push(err21);
+                }
+                errors++;
+              }
+            }
+            if (data5.target_dataset_role !== void 0) {
+              if (typeof data5.target_dataset_role !== "string") {
+                const err22 = { instancePath: instancePath + "/required_fields/" + i0 + "/target_dataset_role", schemaPath: "#/$defs/RequiredField/properties/target_dataset_role/type", keyword: "type", params: { type: "string" }, message: "must be string" };
+                if (vErrors === null) {
+                  vErrors = [err22];
+                } else {
+                  vErrors.push(err22);
+                }
+                errors++;
+              }
+            }
+            if (data5.options !== void 0) {
+              let data12 = data5.options;
+              if (Array.isArray(data12)) {
+                const len1 = data12.length;
+                for (let i1 = 0; i1 < len1; i1++) {
+                  if (typeof data12[i1] !== "string") {
+                    const err23 = { instancePath: instancePath + "/required_fields/" + i0 + "/options/" + i1, schemaPath: "#/$defs/RequiredField/properties/options/items/type", keyword: "type", params: { type: "string" }, message: "must be string" };
+                    if (vErrors === null) {
+                      vErrors = [err23];
+                    } else {
+                      vErrors.push(err23);
+                    }
+                    errors++;
+                  }
+                }
+              } else {
+                const err24 = { instancePath: instancePath + "/required_fields/" + i0 + "/options", schemaPath: "#/$defs/RequiredField/properties/options/type", keyword: "type", params: { type: "array" }, message: "must be array" };
+                if (vErrors === null) {
+                  vErrors = [err24];
+                } else {
+                  vErrors.push(err24);
+                }
+                errors++;
+              }
+            }
+          } else {
+            const err25 = { instancePath: instancePath + "/required_fields/" + i0, schemaPath: "#/$defs/RequiredField/type", keyword: "type", params: { type: "object" }, message: "must be object" };
+            if (vErrors === null) {
+              vErrors = [err25];
+            } else {
+              vErrors.push(err25);
+            }
+            errors++;
+          }
+        }
+      } else {
+        const err26 = { instancePath: instancePath + "/required_fields", schemaPath: "#/properties/required_fields/type", keyword: "type", params: { type: "array" }, message: "must be array" };
+        if (vErrors === null) {
+          vErrors = [err26];
+        } else {
+          vErrors.push(err26);
+        }
+        errors++;
+      }
+    }
+  } else {
+    const err27 = { instancePath, schemaPath: "#/type", keyword: "type", params: { type: "object" }, message: "must be object" };
+    if (vErrors === null) {
+      vErrors = [err27];
+    } else {
+      vErrors.push(err27);
+    }
+    errors++;
+  }
+  validate25.errors = vErrors;
+  return errors === 0;
+}
+function validate24(data, { instancePath = "", parentData, parentDataProperty, rootData = data } = {}) {
+  ;
+  let vErrors = null;
+  let errors = 0;
+  if (data && typeof data == "object" && !Array.isArray(data)) {
+    if (data.module_id === void 0) {
+      const err0 = { instancePath, schemaPath: "#/required", keyword: "required", params: { missingProperty: "module_id" }, message: "must have required property 'module_id'" };
+      if (vErrors === null) {
+        vErrors = [err0];
+      } else {
+        vErrors.push(err0);
+      }
+      errors++;
+    }
+    if (data.name === void 0) {
+      const err1 = { instancePath, schemaPath: "#/required", keyword: "required", params: { missingProperty: "name" }, message: "must have required property 'name'" };
+      if (vErrors === null) {
+        vErrors = [err1];
+      } else {
+        vErrors.push(err1);
+      }
+      errors++;
+    }
+    if (data.version === void 0) {
+      const err2 = { instancePath, schemaPath: "#/required", keyword: "required", params: { missingProperty: "version" }, message: "must have required property 'version'" };
+      if (vErrors === null) {
+        vErrors = [err2];
+      } else {
+        vErrors.push(err2);
+      }
+      errors++;
+    }
+    if (data.supported_platforms === void 0) {
+      const err3 = { instancePath, schemaPath: "#/required", keyword: "required", params: { missingProperty: "supported_platforms" }, message: "must have required property 'supported_platforms'" };
+      if (vErrors === null) {
+        vErrors = [err3];
+      } else {
+        vErrors.push(err3);
+      }
+      errors++;
+    }
+    if (data.required_datasets === void 0) {
+      const err4 = { instancePath, schemaPath: "#/required", keyword: "required", params: { missingProperty: "required_datasets" }, message: "must have required property 'required_datasets'" };
+      if (vErrors === null) {
+        vErrors = [err4];
+      } else {
+        vErrors.push(err4);
+      }
+      errors++;
+    }
+    for (const key0 in data) {
+      if (!func2.call(schema29.properties, key0)) {
+        const err5 = { instancePath, schemaPath: "#/additionalProperties", keyword: "additionalProperties", params: { additionalProperty: key0 }, message: "must NOT have additional properties" };
+        if (vErrors === null) {
+          vErrors = [err5];
+        } else {
+          vErrors.push(err5);
+        }
+        errors++;
+      }
+    }
+    if (data.module_id !== void 0) {
+      let data0 = data.module_id;
+      if (typeof data0 === "string") {
+        if (!pattern15.test(data0)) {
+          const err6 = { instancePath: instancePath + "/module_id", schemaPath: "#/properties/module_id/pattern", keyword: "pattern", params: { pattern: "^[a-z][a-z0-9_]{1,40}$" }, message: 'must match pattern "^[a-z][a-z0-9_]{1,40}$"' };
+          if (vErrors === null) {
+            vErrors = [err6];
+          } else {
+            vErrors.push(err6);
+          }
+          errors++;
+        }
+      } else {
+        const err7 = { instancePath: instancePath + "/module_id", schemaPath: "#/properties/module_id/type", keyword: "type", params: { type: "string" }, message: "must be string" };
+        if (vErrors === null) {
+          vErrors = [err7];
+        } else {
+          vErrors.push(err7);
+        }
+        errors++;
+      }
+    }
+    if (data.name !== void 0) {
+      let data1 = data.name;
+      if (typeof data1 === "string") {
+        if (func3(data1) < 1) {
+          const err8 = { instancePath: instancePath + "/name", schemaPath: "#/properties/name/minLength", keyword: "minLength", params: { limit: 1 }, message: "must NOT have fewer than 1 characters" };
+          if (vErrors === null) {
+            vErrors = [err8];
+          } else {
+            vErrors.push(err8);
+          }
+          errors++;
+        }
+      } else {
+        const err9 = { instancePath: instancePath + "/name", schemaPath: "#/properties/name/type", keyword: "type", params: { type: "string" }, message: "must be string" };
+        if (vErrors === null) {
+          vErrors = [err9];
+        } else {
+          vErrors.push(err9);
+        }
+        errors++;
+      }
+    }
+    if (data.version !== void 0) {
+      let data2 = data.version;
+      if (typeof data2 === "string") {
+        if (!pattern21.test(data2)) {
+          const err10 = { instancePath: instancePath + "/version", schemaPath: "#/properties/version/pattern", keyword: "pattern", params: { pattern: "^[0-9]+\\.[0-9]+\\.[0-9]+$" }, message: 'must match pattern "^[0-9]+\\.[0-9]+\\.[0-9]+$"' };
+          if (vErrors === null) {
+            vErrors = [err10];
+          } else {
+            vErrors.push(err10);
+          }
+          errors++;
+        }
+      } else {
+        const err11 = { instancePath: instancePath + "/version", schemaPath: "#/properties/version/type", keyword: "type", params: { type: "string" }, message: "must be string" };
+        if (vErrors === null) {
+          vErrors = [err11];
+        } else {
+          vErrors.push(err11);
+        }
+        errors++;
+      }
+    }
+    if (data.description !== void 0) {
+      if (typeof data.description !== "string") {
+        const err12 = { instancePath: instancePath + "/description", schemaPath: "#/properties/description/type", keyword: "type", params: { type: "string" }, message: "must be string" };
+        if (vErrors === null) {
+          vErrors = [err12];
+        } else {
+          vErrors.push(err12);
+        }
+        errors++;
+      }
+    }
+    if (data.icon !== void 0) {
+      if (typeof data.icon !== "string") {
+        const err13 = { instancePath: instancePath + "/icon", schemaPath: "#/properties/icon/type", keyword: "type", params: { type: "string" }, message: "must be string" };
+        if (vErrors === null) {
+          vErrors = [err13];
+        } else {
+          vErrors.push(err13);
+        }
+        errors++;
+      }
+    }
+    if (data.supported_platforms !== void 0) {
+      let data5 = data.supported_platforms;
+      if (Array.isArray(data5)) {
+        if (data5.length < 1) {
+          const err14 = { instancePath: instancePath + "/supported_platforms", schemaPath: "#/properties/supported_platforms/minItems", keyword: "minItems", params: { limit: 1 }, message: "must NOT have fewer than 1 items" };
+          if (vErrors === null) {
+            vErrors = [err14];
+          } else {
+            vErrors.push(err14);
+          }
+          errors++;
+        }
+        const len0 = data5.length;
+        for (let i0 = 0; i0 < len0; i0++) {
+          let data6 = data5[i0];
+          if (typeof data6 !== "string") {
+            const err15 = { instancePath: instancePath + "/supported_platforms/" + i0, schemaPath: "#/properties/supported_platforms/items/type", keyword: "type", params: { type: "string" }, message: "must be string" };
+            if (vErrors === null) {
+              vErrors = [err15];
+            } else {
+              vErrors.push(err15);
+            }
+            errors++;
+          }
+          if (!(data6 === "web" || data6 === "mobile" || data6 === "desktop")) {
+            const err16 = { instancePath: instancePath + "/supported_platforms/" + i0, schemaPath: "#/properties/supported_platforms/items/enum", keyword: "enum", params: { allowedValues: schema29.properties.supported_platforms.items.enum }, message: "must be equal to one of the allowed values" };
+            if (vErrors === null) {
+              vErrors = [err16];
+            } else {
+              vErrors.push(err16);
+            }
+            errors++;
+          }
+        }
+      } else {
+        const err17 = { instancePath: instancePath + "/supported_platforms", schemaPath: "#/properties/supported_platforms/type", keyword: "type", params: { type: "array" }, message: "must be array" };
+        if (vErrors === null) {
+          vErrors = [err17];
+        } else {
+          vErrors.push(err17);
+        }
+        errors++;
+      }
+    }
+    if (data.required_datasets !== void 0) {
+      let data7 = data.required_datasets;
+      if (Array.isArray(data7)) {
+        if (data7.length < 1) {
+          const err18 = { instancePath: instancePath + "/required_datasets", schemaPath: "#/properties/required_datasets/minItems", keyword: "minItems", params: { limit: 1 }, message: "must NOT have fewer than 1 items" };
+          if (vErrors === null) {
+            vErrors = [err18];
+          } else {
+            vErrors.push(err18);
+          }
+          errors++;
+        }
+        const len1 = data7.length;
+        for (let i1 = 0; i1 < len1; i1++) {
+          if (!validate25(data7[i1], { instancePath: instancePath + "/required_datasets/" + i1, parentData: data7, parentDataProperty: i1, rootData })) {
+            vErrors = vErrors === null ? validate25.errors : vErrors.concat(validate25.errors);
+            errors = vErrors.length;
+          }
+        }
+      } else {
+        const err19 = { instancePath: instancePath + "/required_datasets", schemaPath: "#/properties/required_datasets/type", keyword: "type", params: { type: "array" }, message: "must be array" };
+        if (vErrors === null) {
+          vErrors = [err19];
+        } else {
+          vErrors.push(err19);
+        }
+        errors++;
+      }
+    }
+    if (data.screens !== void 0) {
+      let data9 = data.screens;
+      if (Array.isArray(data9)) {
+        const len2 = data9.length;
+        for (let i2 = 0; i2 < len2; i2++) {
+          if (typeof data9[i2] !== "string") {
+            const err20 = { instancePath: instancePath + "/screens/" + i2, schemaPath: "#/properties/screens/items/type", keyword: "type", params: { type: "string" }, message: "must be string" };
+            if (vErrors === null) {
+              vErrors = [err20];
+            } else {
+              vErrors.push(err20);
+            }
+            errors++;
+          }
+        }
+      } else {
+        const err21 = { instancePath: instancePath + "/screens", schemaPath: "#/properties/screens/type", keyword: "type", params: { type: "array" }, message: "must be array" };
+        if (vErrors === null) {
+          vErrors = [err21];
+        } else {
+          vErrors.push(err21);
+        }
+        errors++;
+      }
+    }
+    if (data.actions !== void 0) {
+      let data11 = data.actions;
+      if (Array.isArray(data11)) {
+        const len3 = data11.length;
+        for (let i3 = 0; i3 < len3; i3++) {
+          if (typeof data11[i3] !== "string") {
+            const err22 = { instancePath: instancePath + "/actions/" + i3, schemaPath: "#/properties/actions/items/type", keyword: "type", params: { type: "string" }, message: "must be string" };
+            if (vErrors === null) {
+              vErrors = [err22];
+            } else {
+              vErrors.push(err22);
+            }
+            errors++;
+          }
+        }
+      } else {
+        const err23 = { instancePath: instancePath + "/actions", schemaPath: "#/properties/actions/type", keyword: "type", params: { type: "array" }, message: "must be array" };
+        if (vErrors === null) {
+          vErrors = [err23];
+        } else {
+          vErrors.push(err23);
+        }
+        errors++;
+      }
+    }
+    if (data.permissions !== void 0) {
+      let data13 = data.permissions;
+      if (data13 && typeof data13 == "object" && !Array.isArray(data13)) {
+        for (const key1 in data13) {
+          let data14 = data13[key1];
+          if (data14 && typeof data14 == "object" && !Array.isArray(data14)) {
+            if (data14.read !== void 0) {
+              if (typeof data14.read !== "boolean") {
+                const err24 = { instancePath: instancePath + "/permissions/" + key1.replace(/~/g, "~0").replace(/\//g, "~1") + "/read", schemaPath: "#/properties/permissions/additionalProperties/properties/read/type", keyword: "type", params: { type: "boolean" }, message: "must be boolean" };
+                if (vErrors === null) {
+                  vErrors = [err24];
+                } else {
+                  vErrors.push(err24);
+                }
+                errors++;
+              }
+            }
+            if (data14.create !== void 0) {
+              if (typeof data14.create !== "boolean") {
+                const err25 = { instancePath: instancePath + "/permissions/" + key1.replace(/~/g, "~0").replace(/\//g, "~1") + "/create", schemaPath: "#/properties/permissions/additionalProperties/properties/create/type", keyword: "type", params: { type: "boolean" }, message: "must be boolean" };
+                if (vErrors === null) {
+                  vErrors = [err25];
+                } else {
+                  vErrors.push(err25);
+                }
+                errors++;
+              }
+            }
+            if (data14.update !== void 0) {
+              if (typeof data14.update !== "boolean") {
+                const err26 = { instancePath: instancePath + "/permissions/" + key1.replace(/~/g, "~0").replace(/\//g, "~1") + "/update", schemaPath: "#/properties/permissions/additionalProperties/properties/update/type", keyword: "type", params: { type: "boolean" }, message: "must be boolean" };
+                if (vErrors === null) {
+                  vErrors = [err26];
+                } else {
+                  vErrors.push(err26);
+                }
+                errors++;
+              }
+            }
+            if (data14.delete !== void 0) {
+              if (typeof data14.delete !== "boolean") {
+                const err27 = { instancePath: instancePath + "/permissions/" + key1.replace(/~/g, "~0").replace(/\//g, "~1") + "/delete", schemaPath: "#/properties/permissions/additionalProperties/properties/delete/type", keyword: "type", params: { type: "boolean" }, message: "must be boolean" };
+                if (vErrors === null) {
+                  vErrors = [err27];
+                } else {
+                  vErrors.push(err27);
+                }
+                errors++;
+              }
+            }
+            if (data14.scope !== void 0) {
+              let data19 = data14.scope;
+              if (typeof data19 !== "string") {
+                const err28 = { instancePath: instancePath + "/permissions/" + key1.replace(/~/g, "~0").replace(/\//g, "~1") + "/scope", schemaPath: "#/properties/permissions/additionalProperties/properties/scope/type", keyword: "type", params: { type: "string" }, message: "must be string" };
+                if (vErrors === null) {
+                  vErrors = [err28];
+                } else {
+                  vErrors.push(err28);
+                }
+                errors++;
+              }
+              if (!(data19 === "all" || data19 === "assigned")) {
+                const err29 = { instancePath: instancePath + "/permissions/" + key1.replace(/~/g, "~0").replace(/\//g, "~1") + "/scope", schemaPath: "#/properties/permissions/additionalProperties/properties/scope/enum", keyword: "enum", params: { allowedValues: schema29.properties.permissions.additionalProperties.properties.scope.enum }, message: "must be equal to one of the allowed values" };
+                if (vErrors === null) {
+                  vErrors = [err29];
+                } else {
+                  vErrors.push(err29);
+                }
+                errors++;
+              }
+            }
+          } else {
+            const err30 = { instancePath: instancePath + "/permissions/" + key1.replace(/~/g, "~0").replace(/\//g, "~1"), schemaPath: "#/properties/permissions/additionalProperties/type", keyword: "type", params: { type: "object" }, message: "must be object" };
+            if (vErrors === null) {
+              vErrors = [err30];
+            } else {
+              vErrors.push(err30);
+            }
+            errors++;
+          }
+        }
+      } else {
+        const err31 = { instancePath: instancePath + "/permissions", schemaPath: "#/properties/permissions/type", keyword: "type", params: { type: "object" }, message: "must be object" };
+        if (vErrors === null) {
+          vErrors = [err31];
+        } else {
+          vErrors.push(err31);
+        }
+        errors++;
+      }
+    }
+    if (data.disabling !== void 0) {
+      if (typeof data.disabling !== "string") {
+        const err32 = { instancePath: instancePath + "/disabling", schemaPath: "#/properties/disabling/type", keyword: "type", params: { type: "string" }, message: "must be string" };
+        if (vErrors === null) {
+          vErrors = [err32];
+        } else {
+          vErrors.push(err32);
+        }
+        errors++;
+      }
+    }
+  } else {
+    const err33 = { instancePath, schemaPath: "#/type", keyword: "type", params: { type: "object" }, message: "must be object" };
+    if (vErrors === null) {
+      vErrors = [err33];
+    } else {
+      vErrors.push(err33);
+    }
+    errors++;
+  }
+  validate24.errors = vErrors;
+  return errors === 0;
+}
+var validateWorkspaceModuleInstallation = validate27;
+function validate27(data, { instancePath = "", parentData, parentDataProperty, rootData = data } = {}) {
+  ;
+  let vErrors = null;
+  let errors = 0;
+  if (data && typeof data == "object" && !Array.isArray(data)) {
+    if (data.module_id === void 0) {
+      const err0 = { instancePath, schemaPath: "#/required", keyword: "required", params: { missingProperty: "module_id" }, message: "must have required property 'module_id'" };
+      if (vErrors === null) {
+        vErrors = [err0];
+      } else {
+        vErrors.push(err0);
+      }
+      errors++;
+    }
+    if (data.version === void 0) {
+      const err1 = { instancePath, schemaPath: "#/required", keyword: "required", params: { missingProperty: "version" }, message: "must have required property 'version'" };
+      if (vErrors === null) {
+        vErrors = [err1];
+      } else {
+        vErrors.push(err1);
+      }
+      errors++;
+    }
+    if (data.enabled === void 0) {
+      const err2 = { instancePath, schemaPath: "#/required", keyword: "required", params: { missingProperty: "enabled" }, message: "must have required property 'enabled'" };
+      if (vErrors === null) {
+        vErrors = [err2];
+      } else {
+        vErrors.push(err2);
+      }
+      errors++;
+    }
+    if (data.mapping === void 0) {
+      const err3 = { instancePath, schemaPath: "#/required", keyword: "required", params: { missingProperty: "mapping" }, message: "must have required property 'mapping'" };
+      if (vErrors === null) {
+        vErrors = [err3];
+      } else {
+        vErrors.push(err3);
+      }
+      errors++;
+    }
+    for (const key0 in data) {
+      if (!(key0 === "id" || key0 === "module_id" || key0 === "version" || key0 === "enabled" || key0 === "installed_at" || key0 === "updated_at" || key0 === "mapping")) {
+        const err4 = { instancePath, schemaPath: "#/additionalProperties", keyword: "additionalProperties", params: { additionalProperty: key0 }, message: "must NOT have additional properties" };
+        if (vErrors === null) {
+          vErrors = [err4];
+        } else {
+          vErrors.push(err4);
+        }
+        errors++;
+      }
+    }
+    if (data.id !== void 0) {
+      if (typeof data.id !== "string") {
+        const err5 = { instancePath: instancePath + "/id", schemaPath: "#/properties/id/type", keyword: "type", params: { type: "string" }, message: "must be string" };
+        if (vErrors === null) {
+          vErrors = [err5];
+        } else {
+          vErrors.push(err5);
+        }
+        errors++;
+      }
+    }
+    if (data.module_id !== void 0) {
+      let data1 = data.module_id;
+      if (typeof data1 === "string") {
+        if (!pattern15.test(data1)) {
+          const err6 = { instancePath: instancePath + "/module_id", schemaPath: "#/properties/module_id/pattern", keyword: "pattern", params: { pattern: "^[a-z][a-z0-9_]{1,40}$" }, message: 'must match pattern "^[a-z][a-z0-9_]{1,40}$"' };
+          if (vErrors === null) {
+            vErrors = [err6];
+          } else {
+            vErrors.push(err6);
+          }
+          errors++;
+        }
+      } else {
+        const err7 = { instancePath: instancePath + "/module_id", schemaPath: "#/properties/module_id/type", keyword: "type", params: { type: "string" }, message: "must be string" };
+        if (vErrors === null) {
+          vErrors = [err7];
+        } else {
+          vErrors.push(err7);
+        }
+        errors++;
+      }
+    }
+    if (data.version !== void 0) {
+      let data2 = data.version;
+      if (typeof data2 === "string") {
+        if (!pattern21.test(data2)) {
+          const err8 = { instancePath: instancePath + "/version", schemaPath: "#/properties/version/pattern", keyword: "pattern", params: { pattern: "^[0-9]+\\.[0-9]+\\.[0-9]+$" }, message: 'must match pattern "^[0-9]+\\.[0-9]+\\.[0-9]+$"' };
+          if (vErrors === null) {
+            vErrors = [err8];
+          } else {
+            vErrors.push(err8);
+          }
+          errors++;
+        }
+      } else {
+        const err9 = { instancePath: instancePath + "/version", schemaPath: "#/properties/version/type", keyword: "type", params: { type: "string" }, message: "must be string" };
+        if (vErrors === null) {
+          vErrors = [err9];
+        } else {
+          vErrors.push(err9);
+        }
+        errors++;
+      }
+    }
+    if (data.enabled !== void 0) {
+      if (typeof data.enabled !== "boolean") {
+        const err10 = { instancePath: instancePath + "/enabled", schemaPath: "#/properties/enabled/type", keyword: "type", params: { type: "boolean" }, message: "must be boolean" };
+        if (vErrors === null) {
+          vErrors = [err10];
+        } else {
+          vErrors.push(err10);
+        }
+        errors++;
+      }
+    }
+    if (data.installed_at !== void 0) {
+      if (typeof data.installed_at !== "string") {
+        const err11 = { instancePath: instancePath + "/installed_at", schemaPath: "#/properties/installed_at/type", keyword: "type", params: { type: "string" }, message: "must be string" };
+        if (vErrors === null) {
+          vErrors = [err11];
+        } else {
+          vErrors.push(err11);
+        }
+        errors++;
+      }
+    }
+    if (data.updated_at !== void 0) {
+      if (typeof data.updated_at !== "string") {
+        const err12 = { instancePath: instancePath + "/updated_at", schemaPath: "#/properties/updated_at/type", keyword: "type", params: { type: "string" }, message: "must be string" };
+        if (vErrors === null) {
+          vErrors = [err12];
+        } else {
+          vErrors.push(err12);
+        }
+        errors++;
+      }
+    }
+    if (data.mapping !== void 0) {
+      let data6 = data.mapping;
+      if (data6 && typeof data6 == "object" && !Array.isArray(data6)) {
+        if (data6.customer_dataset === void 0) {
+          const err13 = { instancePath: instancePath + "/mapping", schemaPath: "#/properties/mapping/required", keyword: "required", params: { missingProperty: "customer_dataset" }, message: "must have required property 'customer_dataset'" };
+          if (vErrors === null) {
+            vErrors = [err13];
+          } else {
+            vErrors.push(err13);
+          }
+          errors++;
+        }
+        if (data6.customer_name_field === void 0) {
+          const err14 = { instancePath: instancePath + "/mapping", schemaPath: "#/properties/mapping/required", keyword: "required", params: { missingProperty: "customer_name_field" }, message: "must have required property 'customer_name_field'" };
+          if (vErrors === null) {
+            vErrors = [err14];
+          } else {
+            vErrors.push(err14);
+          }
+          errors++;
+        }
+        if (data6.job_dataset === void 0) {
+          const err15 = { instancePath: instancePath + "/mapping", schemaPath: "#/properties/mapping/required", keyword: "required", params: { missingProperty: "job_dataset" }, message: "must have required property 'job_dataset'" };
+          if (vErrors === null) {
+            vErrors = [err15];
+          } else {
+            vErrors.push(err15);
+          }
+          errors++;
+        }
+        if (data6.job_title_field === void 0) {
+          const err16 = { instancePath: instancePath + "/mapping", schemaPath: "#/properties/mapping/required", keyword: "required", params: { missingProperty: "job_title_field" }, message: "must have required property 'job_title_field'" };
+          if (vErrors === null) {
+            vErrors = [err16];
+          } else {
+            vErrors.push(err16);
+          }
+          errors++;
+        }
+        if (data6.job_customer_field === void 0) {
+          const err17 = { instancePath: instancePath + "/mapping", schemaPath: "#/properties/mapping/required", keyword: "required", params: { missingProperty: "job_customer_field" }, message: "must have required property 'job_customer_field'" };
+          if (vErrors === null) {
+            vErrors = [err17];
+          } else {
+            vErrors.push(err17);
+          }
+          errors++;
+        }
+        if (data6.job_status_field === void 0) {
+          const err18 = { instancePath: instancePath + "/mapping", schemaPath: "#/properties/mapping/required", keyword: "required", params: { missingProperty: "job_status_field" }, message: "must have required property 'job_status_field'" };
+          if (vErrors === null) {
+            vErrors = [err18];
+          } else {
+            vErrors.push(err18);
+          }
+          errors++;
+        }
+        if (data6.job_assignee_field === void 0) {
+          const err19 = { instancePath: instancePath + "/mapping", schemaPath: "#/properties/mapping/required", keyword: "required", params: { missingProperty: "job_assignee_field" }, message: "must have required property 'job_assignee_field'" };
+          if (vErrors === null) {
+            vErrors = [err19];
+          } else {
+            vErrors.push(err19);
+          }
+          errors++;
+        }
+        if (data6.customer_dataset !== void 0) {
+          if (typeof data6.customer_dataset !== "string") {
+            const err20 = { instancePath: instancePath + "/mapping/customer_dataset", schemaPath: "#/properties/mapping/properties/customer_dataset/type", keyword: "type", params: { type: "string" }, message: "must be string" };
+            if (vErrors === null) {
+              vErrors = [err20];
+            } else {
+              vErrors.push(err20);
+            }
+            errors++;
+          }
+        }
+        if (data6.customer_name_field !== void 0) {
+          if (typeof data6.customer_name_field !== "string") {
+            const err21 = { instancePath: instancePath + "/mapping/customer_name_field", schemaPath: "#/properties/mapping/properties/customer_name_field/type", keyword: "type", params: { type: "string" }, message: "must be string" };
+            if (vErrors === null) {
+              vErrors = [err21];
+            } else {
+              vErrors.push(err21);
+            }
+            errors++;
+          }
+        }
+        if (data6.customer_phone_field !== void 0) {
+          if (typeof data6.customer_phone_field !== "string") {
+            const err22 = { instancePath: instancePath + "/mapping/customer_phone_field", schemaPath: "#/properties/mapping/properties/customer_phone_field/type", keyword: "type", params: { type: "string" }, message: "must be string" };
+            if (vErrors === null) {
+              vErrors = [err22];
+            } else {
+              vErrors.push(err22);
+            }
+            errors++;
+          }
+        }
+        if (data6.job_dataset !== void 0) {
+          if (typeof data6.job_dataset !== "string") {
+            const err23 = { instancePath: instancePath + "/mapping/job_dataset", schemaPath: "#/properties/mapping/properties/job_dataset/type", keyword: "type", params: { type: "string" }, message: "must be string" };
+            if (vErrors === null) {
+              vErrors = [err23];
+            } else {
+              vErrors.push(err23);
+            }
+            errors++;
+          }
+        }
+        if (data6.job_title_field !== void 0) {
+          if (typeof data6.job_title_field !== "string") {
+            const err24 = { instancePath: instancePath + "/mapping/job_title_field", schemaPath: "#/properties/mapping/properties/job_title_field/type", keyword: "type", params: { type: "string" }, message: "must be string" };
+            if (vErrors === null) {
+              vErrors = [err24];
+            } else {
+              vErrors.push(err24);
+            }
+            errors++;
+          }
+        }
+        if (data6.job_customer_field !== void 0) {
+          if (typeof data6.job_customer_field !== "string") {
+            const err25 = { instancePath: instancePath + "/mapping/job_customer_field", schemaPath: "#/properties/mapping/properties/job_customer_field/type", keyword: "type", params: { type: "string" }, message: "must be string" };
+            if (vErrors === null) {
+              vErrors = [err25];
+            } else {
+              vErrors.push(err25);
+            }
+            errors++;
+          }
+        }
+        if (data6.job_status_field !== void 0) {
+          if (typeof data6.job_status_field !== "string") {
+            const err26 = { instancePath: instancePath + "/mapping/job_status_field", schemaPath: "#/properties/mapping/properties/job_status_field/type", keyword: "type", params: { type: "string" }, message: "must be string" };
+            if (vErrors === null) {
+              vErrors = [err26];
+            } else {
+              vErrors.push(err26);
+            }
+            errors++;
+          }
+        }
+        if (data6.job_assignee_field !== void 0) {
+          if (typeof data6.job_assignee_field !== "string") {
+            const err27 = { instancePath: instancePath + "/mapping/job_assignee_field", schemaPath: "#/properties/mapping/properties/job_assignee_field/type", keyword: "type", params: { type: "string" }, message: "must be string" };
+            if (vErrors === null) {
+              vErrors = [err27];
+            } else {
+              vErrors.push(err27);
+            }
+            errors++;
+          }
+        }
+      } else {
+        const err28 = { instancePath: instancePath + "/mapping", schemaPath: "#/properties/mapping/type", keyword: "type", params: { type: "object" }, message: "must be object" };
+        if (vErrors === null) {
+          vErrors = [err28];
+        } else {
+          vErrors.push(err28);
+        }
+        errors++;
+      }
+    }
+  } else {
+    const err29 = { instancePath, schemaPath: "#/type", keyword: "type", params: { type: "object" }, message: "must be object" };
+    if (vErrors === null) {
+      vErrors = [err29];
+    } else {
+      vErrors.push(err29);
+    }
+    errors++;
+  }
+  validate27.errors = vErrors;
+  return errors === 0;
+}
 export {
   validateAppConfig,
   validateCheckoutRequest,
   validateDashboardLayout,
   validateEventEnvelope,
   validateFeatures,
+  validateModuleContract,
   validatePageDefinition,
   validatePayment,
   validatePluginManifest,
   validateSchemaDefinition,
   validateWorkspaceInvitation,
+  validateWorkspaceModuleInstallation,
   validateWorkspaceSetupRequest,
   validateWorkspaceUser
 };

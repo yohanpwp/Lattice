@@ -38,6 +38,8 @@ import {
   AcceptInviteForm,
   WorkspaceMembersModal,
   WorkspaceModulesModal,
+  CustomerJobTrackingSetupModal,
+  CustomerJobTrackingView,
   type DataClient,
 } from "./index";
 import type { SchemaDefinition, PageDefinition } from "@lattice/types";
@@ -909,6 +911,103 @@ describe("schema navigation and validation", () => {
     expect(html).toContain("Dataset");
     expect(html).toContain("Enter ID manually");
     expect(html).toContain("Customer");
+  });
+
+  it("renders CustomerJobTrackingSetupModal with suggested and custom options", () => {
+    const mockClient = {
+      isOwnerOrAdmin: true,
+      setupWorkspaceModule: async () => {},
+    } as unknown as Parameters<typeof CustomerJobTrackingSetupModal>[0]["client"];
+
+    const html = renderToString(
+      React.createElement(CustomerJobTrackingSetupModal, {
+        client: mockClient,
+        schemas: [],
+        isOpen: true,
+        onClose: () => {},
+      }),
+    );
+
+    expect(html).toContain("Configure Customer &amp; Job Tracking");
+    expect(html).toContain("Create Suggested Datasets (Recommended)");
+    expect(html).toContain("Map Existing Datasets");
+    expect(html).toContain("Customers");
+    expect(html).toContain("Jobs");
+    expect(html).toContain("Team Access &amp; Isolation Rules");
+    expect(html).toContain("Save &amp; Enable Module");
+  });
+
+  it("renders SchemaNavigation with Jobs & Customers tab when enabled", () => {
+    const htmlEnabled = renderToString(
+      React.createElement(SchemaNavigation, {
+        schemas: [],
+        activeTab: "customer_job_tracking",
+        onSelectTab: () => {},
+        showCustomerJobTracking: true,
+      }),
+    );
+    expect(htmlEnabled).toContain("Jobs &amp; Customers");
+    expect(htmlEnabled).toContain("lattice-tab--active");
+
+    const htmlDisabled = renderToString(
+      React.createElement(SchemaNavigation, {
+        schemas: [],
+        activeTab: "dashboard",
+        onSelectTab: () => {},
+        showCustomerJobTracking: false,
+      }),
+    );
+    expect(htmlDisabled).not.toContain("Jobs &amp; Customers");
+  });
+
+  it("renders CustomerJobTrackingView with segmented tabs and filters", () => {
+    const mockClient = {
+      isOwnerOrAdmin: false,
+      currentUserId: "member_1",
+      currentUserEmail: "member@example.com",
+      getWorkspaceModule: async () => null,
+      collection: () => ({
+        getList: async () => ({ items: [], totalPages: 1, totalItems: 0 }),
+        subscribe: () => Promise.resolve(() => {}),
+        unsubscribe: () => Promise.resolve(),
+      }),
+    } as unknown as Parameters<typeof CustomerJobTrackingView>[0]["client"];
+
+    const html = renderToString(
+      React.createElement(CustomerJobTrackingView, {
+        client: mockClient,
+        schemas: [],
+      }),
+    );
+
+    const cleanHtml = html.replace(/<!-- -->/g, "");
+    expect(cleanHtml).toContain("Customer &amp; Job Tracking");
+    expect(cleanHtml).toContain("Jobs (0)");
+    expect(cleanHtml).toContain("Customers (0)");
+    expect(cleanHtml).toContain("+ New Job");
+  });
+
+  it("renders WorkspaceMembersModal with Customer & Job Tracking preset button", () => {
+    const mockClient = {
+      isOwner: true,
+      isOwnerOrAdmin: true,
+      getWorkspaceUsers: async () => [],
+      getWorkspaceInvitations: async () => [],
+    } as unknown as Parameters<typeof WorkspaceMembersModal>[0]["client"];
+
+    const html = renderToString(
+      React.createElement(WorkspaceMembersModal, {
+        client: mockClient,
+        schemas: [
+          { schema_id: "customers", name: "Customers", fields: [{ name: "name", type: "text" }] },
+          { schema_id: "jobs", name: "Jobs", assignee_field: "assignee", fields: [{ name: "title", type: "text" }] },
+        ],
+        isOpen: true,
+        onClose: () => {},
+      }),
+    );
+
+    expect(html).toContain("Workspace Team &amp; Access Control");
   });
 });
 

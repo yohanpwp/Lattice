@@ -8,6 +8,7 @@ export interface SchemaNavigationProps {
   canCreateSchema?: boolean;
   onCreateSchemaClick?: () => void;
   showDashboard?: boolean;
+  showCustomerJobTracking?: boolean;
 }
 
 export function SchemaNavigation({
@@ -18,6 +19,7 @@ export function SchemaNavigation({
   canCreateSchema = false,
   onCreateSchemaClick,
   showDashboard = true,
+  showCustomerJobTracking = false,
 }: SchemaNavigationProps) {
   function getPageIcon(page: PageDefinition): string {
     if (page.icon) return page.icon;
@@ -47,6 +49,19 @@ export function SchemaNavigation({
           >
             <span className="lattice-tab-icon">📊</span>
             <span className="lattice-tab-label">Dashboard Overview</span>
+          </button>
+        )}
+
+        {showCustomerJobTracking && (
+          <button
+            type="button"
+            role="tab"
+            aria-selected={activeTab === "customer_job_tracking"}
+            className={`lattice-tab ${activeTab === "customer_job_tracking" ? "lattice-tab--active" : ""}`}
+            onClick={() => onSelectTab("customer_job_tracking")}
+          >
+            <span className="lattice-tab-icon">📋</span>
+            <span className="lattice-tab-label">Jobs &amp; Customers</span>
           </button>
         )}
 

@@ -943,4 +943,68 @@ describe("schema management", () => {
       "Only workspace owners and admins can configure workspace modules",
     );
   });
+
+  it("sets up managed workspace modules and subscribes to realtime updates", async () => {
+    let installedModule: any = null;
+    const customFetch = (async (input: RequestInfo | URL, init?: RequestInit) => {
+      const url = String(input);
+      if (url.endsWith("/v1/config")) return json(config);
+      if (url.includes("/v1/workspace/modules/customer_job_tracking/setup") && init?.method === "POST") {
+        installedModule = {
+          module_id: "customer_job_tracking",
+          version: "1.0.0",
+          enabled: true,
+          mapping: {
+            customer_dataset: "customers",
+            customer_name_field: "name",
+            job_dataset: "jobs",
+            job_title_field: "title",
+            job_customer_field: "customer",
+            job_status_field: "status",
+            job_assignee_field: "assignee",
+          },
+        };
+        return json(installedModule);
+      }
+      if (url.includes("/v1/workspace/modules") && init?.method === "GET") {
+        return json(installedModule ? [installedModule] : []);
+      }
+      if (url.includes("auth-with-password")) {
+        const token = `e30.${btoa(JSON.stringify({ exp: Math.floor(Date.now() / 1000) + 3600 }))}.sig`;
+        return json({
+          token,
+          record: { id: "owner_1", collectionName: "users", role: "owner" },
+        });
+      }
+      return json({});
+    }) as typeof fetch;
+
+    const client = await ProductClient.connect({
+      backendUrl: "https://acme.app.example.com/",
+      clientVersion: "1.0.0",
+      platform: {
+        storage: createMemoryStorage(),
+        fetch: customFetch,
+      },
+    });
+
+    await client.login("owner@example.com", "Password123!");
+
+    // Setup module
+    const setupRes = await client.setupWorkspaceModule("customer_job_tracking", {
+      use_suggested: true,
+    });
+    expect(setupRes.module_id).toBe("customer_job_tracking");
+    expect(setupRes.enabled).toBe(true);
+
+    // List modules
+    const modules = await client.getWorkspaceModules();
+    expect(modules.length).toBe(1);
+    expect(modules[0]?.module_id).toBe("customer_job_tracking");
+
+    // Realtime subscription unsubscribe handles gracefully
+    const unsub = client.subscribeWorkspaceModules(() => {});
+    expect(typeof unsub).toBe("function");
+    unsub();
+  });
 });

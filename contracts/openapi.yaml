@@ -438,6 +438,116 @@ paths:
                     type: string
                   permissions:
                     type: object
+  /v1/workspace/modules:
+    get:
+      operationId: listWorkspaceModules
+      summary: List managed modules with installation and catalog status
+      security:
+        - pocketbaseToken: []
+      responses:
+        "200":
+          description: List of catalog modules with installation status
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: ./schemas/module-contract.json
+        "401":
+          description: Unauthorized
+  /v1/workspace/modules/{id}:
+    get:
+      operationId: getWorkspaceModule
+      summary: Get managed module definition and installation status
+      security:
+        - pocketbaseToken: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          description: Module specification and installation details
+          content:
+            application/json:
+              schema:
+                $ref: ./schemas/module-contract.json
+        "404":
+          description: Module not found
+    put:
+      operationId: updateWorkspaceModule
+      summary: Enable, disable, or reconfigure an installed module
+      security:
+        - pocketbaseToken: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                enabled:
+                  type: boolean
+                mapping:
+                  type: object
+      responses:
+        "200":
+          description: Updated module installation record
+          content:
+            application/json:
+              schema:
+                $ref: ./schemas/workspace-module-installation.json
+        "400":
+          description: Invalid request or mapping
+        "403":
+          description: Owner or admin role required
+        "404":
+          description: Module not found
+  /v1/workspace/modules/{id}/setup:
+    post:
+      operationId: setupWorkspaceModule
+      summary: Execute module setup with suggested or custom datasets
+      security:
+        - pocketbaseToken: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [use_suggested]
+              properties:
+                use_suggested:
+                  type: boolean
+                mapping:
+                  type: object
+      responses:
+        "200":
+          description: Configured and installed module record
+          content:
+            application/json:
+              schema:
+                $ref: ./schemas/workspace-module-installation.json
+        "400":
+          description: Invalid setup request or incompatible mapping
+        "403":
+          description: Owner or admin role required
+        "404":
+          description: Module not found
 components:
   securitySchemes:
     pocketbaseToken:

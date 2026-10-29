@@ -453,3 +453,128 @@ export interface WorkspaceInvitation {
    */
   invited_by?: string;
 }
+
+/**
+ * Specification contract for a managed workspace module.
+ */
+export interface ModuleContract {
+  /**
+   * Unique identifier for this module (e.g. customer_job_tracking).
+   */
+  module_id: string;
+  /**
+   * Human-readable name of the module.
+   */
+  name: string;
+  /**
+   * Semver version of this module specification.
+   */
+  version: string;
+  /**
+   * Description of what this module does.
+   */
+  description?: string;
+  /**
+   * Emoji or icon identifier.
+   */
+  icon?: string;
+  /**
+   * @minItems 1
+   */
+  supported_platforms: ['web' | 'mobile' | 'desktop', ...('web' | 'mobile' | 'desktop')[]];
+  /**
+   * @minItems 1
+   */
+  required_datasets: [RequiredDataset, ...RequiredDataset[]];
+  /**
+   * Screen views provided by this module.
+   */
+  screens?: string[];
+  /**
+   * Actions provided by this module.
+   */
+  actions?: string[];
+  /**
+   * Recommended member permissions for mapped datasets.
+   */
+  permissions?: {
+    [k: string]: {
+      read?: boolean;
+      create?: boolean;
+      update?: boolean;
+      delete?: boolean;
+      scope?: 'all' | 'assigned';
+      [k: string]: unknown;
+    };
+  };
+  /**
+   * Explanation of disabling effect (retains records, hides screens).
+   */
+  disabling?: string;
+}
+export interface RequiredDataset {
+  /**
+   * Abstract role name for the dataset (e.g. customers, jobs).
+   */
+  dataset_role: string;
+  /**
+   * Suggested display name when creating the dataset.
+   */
+  name: string;
+  description?: string;
+  /**
+   * Optional field role acting as the assignee relation.
+   */
+  assignee_field_role?: string;
+  /**
+   * @minItems 1
+   */
+  required_fields: [RequiredField, ...RequiredField[]];
+}
+export interface RequiredField {
+  /**
+   * Abstract field role name (e.g. name, title, customer, status, assignee).
+   */
+  field_role: string;
+  /**
+   * Suggested field column name.
+   */
+  name: string;
+  /**
+   * Suggested field label.
+   */
+  label?: string;
+  type: 'text' | 'number' | 'bool' | 'email' | 'url' | 'date' | 'select' | 'relation' | 'json' | 'file';
+  required: boolean;
+  /**
+   * Target dataset role for relation fields (e.g. customers or users).
+   */
+  target_dataset_role?: string;
+  /**
+   * Required options for select fields.
+   */
+  options?: string[];
+}
+
+/**
+ * Installation record and field mappings for a managed workspace module.
+ */
+export interface WorkspaceModuleInstallation {
+  id?: string;
+  module_id: string;
+  version: string;
+  enabled: boolean;
+  installed_at?: string;
+  updated_at?: string;
+  mapping: {
+    customer_dataset: string;
+    customer_name_field: string;
+    customer_phone_field?: string;
+    job_dataset: string;
+    job_title_field: string;
+    job_customer_field: string;
+    job_status_field: string;
+    job_assignee_field: string;
+    [k: string]: unknown;
+  };
+}

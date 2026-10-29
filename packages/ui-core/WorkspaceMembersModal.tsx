@@ -406,7 +406,30 @@ export function WorkspaceMembersModal({ isOpen, onClose, client, schemas }: Work
 
               {inviteRole === "member" && (
                 <>
-                  <h4>Dataset Permissions Matrix (Deny by default)</h4>
+                  <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "0.5rem", flexWrap: "wrap", gap: "0.5rem" }}>
+                    <h4 style={{ margin: 0 }}>Dataset Permissions Matrix (Deny by default)</h4>
+                    <button
+                      type="button"
+                      className="lattice-btn-secondary"
+                      style={{ padding: "0.25rem 0.6rem", fontSize: "0.78rem" }}
+                      onClick={() => {
+                        const perms: Record<string, DatasetPermission> = {};
+                        for (const s of schemas) {
+                          if (s.schema_id === "customers" || s.schema_id.includes("customer")) {
+                            perms[s.schema_id] = { read: true, create: false, update: false, delete: false, scope: "all" };
+                          } else if (s.schema_id === "jobs" || s.schema_id.includes("job") || s.assignee_field) {
+                            perms[s.schema_id] = { read: true, create: true, update: true, delete: false, scope: "assigned" };
+                          }
+                        }
+                        setInvitePermissions(perms);
+                      }}
+                    >
+                      🎯 Customer &amp; Job Tracking Member Preset
+                    </button>
+                  </div>
+                  <div style={{ background: "#f8fafc", border: "1px solid var(--lattice-border)", padding: "0.5rem 0.75rem", borderRadius: "4px", fontSize: "0.78rem", marginBottom: "0.75rem" }}>
+                    <strong>Effective Access:</strong> Members with assigned scope can only view and update records assigned to their user ID.
+                  </div>
                   <div className="lattice-table-container" style={{ marginBottom: "1rem" }}>
                     <table className="lattice-table">
                       <thead>

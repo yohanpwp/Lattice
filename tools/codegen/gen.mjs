@@ -24,6 +24,8 @@ const schemaSpecs = [
   ["WorkspaceUser", "contracts/schemas/workspace-user.json", "workspace-user.json"],
   ["WorkspaceSetupRequest", "contracts/schemas/workspace-setup-request.json", "workspace-setup-request.json"],
   ["WorkspaceInvitation", "contracts/schemas/workspace-invitation.json", "workspace-invitation.json"],
+  ["ModuleContract", "contracts/schemas/module-contract.json", "module-contract.json"],
+  ["WorkspaceModuleInstallation", "contracts/schemas/workspace-module-installation.json", "workspace-module-installation.json"],
 ];
 
 async function output(path, content) {

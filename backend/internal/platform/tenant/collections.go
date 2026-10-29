@@ -17,6 +17,7 @@ var PlatformCollections = map[string]bool{
 	"app_pages":          true,
 	"invitations":        true,
 	"workspace_setup":    true,
+	"workspace_modules":  true,
 }
 
 // DiscoveredCollections returns all business collections in the PocketBase

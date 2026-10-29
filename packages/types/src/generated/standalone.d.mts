@@ -11,3 +11,5 @@ export declare const validatePageDefinition: { (data: unknown): boolean; errors?
 export declare const validateWorkspaceUser: { (data: unknown): boolean; errors?: Array<{ instancePath?: string; message?: string }> | null };
 export declare const validateWorkspaceSetupRequest: { (data: unknown): boolean; errors?: Array<{ instancePath?: string; message?: string }> | null };
 export declare const validateWorkspaceInvitation: { (data: unknown): boolean; errors?: Array<{ instancePath?: string; message?: string }> | null };
+export declare const validateModuleContract: { (data: unknown): boolean; errors?: Array<{ instancePath?: string; message?: string }> | null };
+export declare const validateWorkspaceModuleInstallation: { (data: unknown): boolean; errors?: Array<{ instancePath?: string; message?: string }> | null };

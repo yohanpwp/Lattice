@@ -1,0 +1,54 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$id": "https://lattice.dev/schemas/workspace-module-installation.json",
+  "title": "WorkspaceModuleInstallation",
+  "description": "Installation record and field mappings for a managed workspace module.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["module_id", "version", "enabled", "mapping"],
+  "properties": {
+    "id": {
+      "type": "string"
+    },
+    "module_id": {
+      "type": "string",
+      "pattern": "^[a-z][a-z0-9_]{1,40}$"
+    },
+    "version": {
+      "type": "string",
+      "pattern": "^[0-9]+\\.[0-9]+\\.[0-9]+$"
+    },
+    "enabled": {
+      "type": "boolean"
+    },
+    "installed_at": {
+      "type": "string"
+    },
+    "updated_at": {
+      "type": "string"
+    },
+    "mapping": {
+      "type": "object",
+      "additionalProperties": true,
+      "required": [
+        "customer_dataset",
+        "customer_name_field",
+        "job_dataset",
+        "job_title_field",
+        "job_customer_field",
+        "job_status_field",
+        "job_assignee_field"
+      ],
+      "properties": {
+        "customer_dataset": { "type": "string" },
+        "customer_name_field": { "type": "string" },
+        "customer_phone_field": { "type": "string" },
+        "job_dataset": { "type": "string" },
+        "job_title_field": { "type": "string" },
+        "job_customer_field": { "type": "string" },
+        "job_status_field": { "type": "string" },
+        "job_assignee_field": { "type": "string" }
+      }
+    }
+  }
+}

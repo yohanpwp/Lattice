@@ -9,6 +9,7 @@ import { DynamicPageView } from "./DynamicPageView";
 import { CreateSchemaModal } from "./CreateSchemaModal";
 import { WorkspaceMembersModal } from "./WorkspaceMembersModal";
 import { WorkspaceModulesModal } from "./WorkspaceModulesModal";
+import { CustomerJobTrackingView } from "./CustomerJobTrackingView";
 
 interface DashboardPageProps {
   client: ProductClient;
@@ -86,17 +87,26 @@ export function DashboardPage({ client, onSignOut, onChangeWorkspace }: Dashboar
       })
       .catch(() => {});
 
+    // Subscribe to realtime updates on workspace modules
+    const unsubModules = client.subscribeWorkspaceModules(() => {
+      if (!unsubscribed) {
+        fetchDisabledModules();
+      }
+    });
+
     return () => {
       ignore = true;
       unsubscribed = true;
       try {
         client.collection("app_pages").unsubscribe("*").catch(() => {});
       } catch {}
+      unsubModules();
     };
   }, [client, fetchSchemas, fetchPages, fetchDisabledModules]);
 
   const isOwnerOrAdmin = client.isOwnerOrAdmin;
   const isDashboardEnabled = !disabledModules.includes("dashboard");
+  const isCustomerJobTrackingEnabled = !disabledModules.includes("customer_job_tracking");
 
   const baseSchemas = isOwnerOrAdmin
     ? schemas
@@ -115,12 +125,23 @@ export function DashboardPage({ client, onSignOut, onChangeWorkspace }: Dashboar
   // If the active tab points to a disabled module, fall back to another visible tab
   useEffect(() => {
     if (activeTab === "dashboard" && !isDashboardEnabled) {
-      const firstSchema = visibleSchemas[0]?.schema_id;
-      const firstPage = visiblePages[0]?.page_id;
-      if (firstSchema) setActiveTab(firstSchema);
-      else if (firstPage) setActiveTab(firstPage);
+      if (isCustomerJobTrackingEnabled) setActiveTab("customer_job_tracking");
+      else {
+        const firstSchema = visibleSchemas[0]?.schema_id;
+        const firstPage = visiblePages[0]?.page_id;
+        if (firstSchema) setActiveTab(firstSchema);
+        else if (firstPage) setActiveTab(firstPage);
+      }
+    } else if (activeTab === "customer_job_tracking" && !isCustomerJobTrackingEnabled) {
+      if (isDashboardEnabled) setActiveTab("dashboard");
+      else {
+        const firstSchema = visibleSchemas[0]?.schema_id;
+        const firstPage = visiblePages[0]?.page_id;
+        if (firstSchema) setActiveTab(firstSchema);
+        else if (firstPage) setActiveTab(firstPage);
+      }
     }
-  }, [activeTab, isDashboardEnabled, visibleSchemas, visiblePages]);
+  }, [activeTab, isDashboardEnabled, isCustomerJobTrackingEnabled, visibleSchemas, visiblePages]);
 
   const selectedPage = visiblePages.find((p) => p.page_id === activeTab);
   const selectedSchema = visibleSchemas.find((s) => s.schema_id === activeTab);
@@ -169,9 +190,14 @@ export function DashboardPage({ client, onSignOut, onChangeWorkspace }: Dashboar
         canCreateSchema={isOwnerOrAdmin}
         onCreateSchemaClick={() => setCreateSchemaModalOpen(true)}
         showDashboard={isDashboardEnabled}
+        showCustomerJobTracking={isCustomerJobTrackingEnabled}
       />
 
       <main style={{ marginTop: "1.5rem" }}>
+        {activeTab === "customer_job_tracking" && (
+          <CustomerJobTrackingView client={client} schemas={schemas} />
+        )}
+
         {activeTab === "dashboard" && (
           <>
             {!loaded && <p className="yp-muted">Loading dashboard…</p>}

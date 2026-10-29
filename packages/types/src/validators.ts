@@ -11,6 +11,8 @@ import type {
   WorkspaceUser,
   WorkspaceSetupRequest,
   WorkspaceInvitation,
+  ModuleContract,
+  WorkspaceModuleInstallation,
 } from "./generated/types";
 import {
   validateAppConfig,
@@ -25,6 +27,8 @@ import {
   validateWorkspaceUser,
   validateWorkspaceSetupRequest,
   validateWorkspaceInvitation,
+  validateModuleContract,
+  validateWorkspaceModuleInstallation,
 } from "./generated/standalone.mjs";
 
 export interface ContractIssue {
@@ -70,3 +74,5 @@ export const assertPageDefinition = makeAssert<PageDefinition>("PageDefinition",
 export const assertWorkspaceUser = makeAssert<WorkspaceUser>("WorkspaceUser", validateWorkspaceUser);
 export const assertWorkspaceSetupRequest = makeAssert<WorkspaceSetupRequest>("WorkspaceSetupRequest", validateWorkspaceSetupRequest);
 export const assertWorkspaceInvitation = makeAssert<WorkspaceInvitation>("WorkspaceInvitation", validateWorkspaceInvitation);
+export const assertModuleContract = makeAssert<ModuleContract>("ModuleContract", validateModuleContract);
+export const assertWorkspaceModuleInstallation = makeAssert<WorkspaceModuleInstallation>("WorkspaceModuleInstallation", validateWorkspaceModuleInstallation);

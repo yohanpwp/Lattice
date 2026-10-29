@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useState } from "react";
 import type { PageDefinition, SchemaDefinition, WorkspaceModule } from "@lattice/types";
 import type { ProductClient } from "@lattice/sdk";
+import { CustomerJobTrackingSetupModal } from "./CustomerJobTrackingSetupModal";
 
 export interface WorkspaceModulesModalProps {
   isOpen: boolean;
@@ -25,6 +26,7 @@ export function WorkspaceModulesModal({
   const [searchQuery, setSearchQuery] = useState("");
   const [filterType, setFilterType] = useState<"all" | "dataset" | "features" | "views">("all");
   const [togglingId, setTogglingId] = useState<string | null>(null);
+  const [showCJTSetup, setShowCJTSetup] = useState(false);
 
   const loadModules = useCallback(async () => {
     setLoading(true);
@@ -314,35 +316,47 @@ export function WorkspaceModulesModal({
                         </td>
                         <td style={{ textAlign: "right" }}>
                           {isOwnerOrAdmin ? (
-                            mod.enabled ? (
-                              <button
-                                type="button"
-                                className="lattice-btn-secondary"
-                                style={{
-                                  padding: "0.3rem 0.6rem",
-                                  fontSize: "0.78rem",
-                                  color: "#b45309",
-                                  borderColor: "#fcd34d",
-                                }}
-                                disabled={isToggling}
-                                onClick={() => handleToggle(mod.id, false)}
-                              >
-                                {isToggling ? "Updating…" : "Disable"}
-                              </button>
-                            ) : (
-                              <button
-                                type="button"
-                                className="lattice-btn-primary"
-                                style={{
-                                  padding: "0.3rem 0.6rem",
-                                  fontSize: "0.78rem",
-                                }}
-                                disabled={isToggling}
-                                onClick={() => handleToggle(mod.id, true)}
-                              >
-                                {isToggling ? "Updating…" : "Enable"}
-                              </button>
-                            )
+                            <div style={{ display: "inline-flex", gap: "0.4rem", alignItems: "center" }}>
+                              {mod.id === "customer_job_tracking" && (
+                                <button
+                                  type="button"
+                                  className="lattice-btn-secondary"
+                                  style={{ padding: "0.3rem 0.6rem", fontSize: "0.78rem" }}
+                                  onClick={() => setShowCJTSetup(true)}
+                                >
+                                  Configure
+                                </button>
+                              )}
+                              {mod.enabled ? (
+                                <button
+                                  type="button"
+                                  className="lattice-btn-secondary"
+                                  style={{
+                                    padding: "0.3rem 0.6rem",
+                                    fontSize: "0.78rem",
+                                    color: "#b45309",
+                                    borderColor: "#fcd34d",
+                                  }}
+                                  disabled={isToggling}
+                                  onClick={() => handleToggle(mod.id, false)}
+                                >
+                                  {isToggling ? "Updating…" : "Disable"}
+                                </button>
+                              ) : (
+                                <button
+                                  type="button"
+                                  className="lattice-btn-primary"
+                                  style={{
+                                    padding: "0.3rem 0.6rem",
+                                    fontSize: "0.78rem",
+                                  }}
+                                  disabled={isToggling}
+                                  onClick={() => handleToggle(mod.id, true)}
+                                >
+                                  {isToggling ? "Updating…" : "Enable"}
+                                </button>
+                              )}
+                            </div>
                           ) : (
                             <span className="yp-muted" style={{ fontSize: "0.75rem" }}>
                               Admin only
@@ -364,6 +378,17 @@ export function WorkspaceModulesModal({
           </button>
         </div>
       </div>
+
+      <CustomerJobTrackingSetupModal
+        isOpen={showCJTSetup}
+        onClose={() => setShowCJTSetup(false)}
+        client={client}
+        schemas={schemas}
+        onConfigured={() => {
+          loadModules();
+          onModulesChanged?.();
+        }}
+      />
     </div>
   );
 }
