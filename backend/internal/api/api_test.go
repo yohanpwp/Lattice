@@ -2,6 +2,7 @@ package api
 
 import (
 	"bytes"
+	"context"
 	"encoding/json"
 	"fmt"
 	"net/http"
@@ -17,6 +18,7 @@ import (
 	_ "github.com/Lattice/backend/internal/migrations"
 	"github.com/Lattice/backend/internal/platform/authz"
 	"github.com/Lattice/backend/internal/platform/features"
+	"github.com/Lattice/backend/internal/platform/modules"
 	"github.com/Lattice/backend/internal/platform/tenant"
 	"github.com/Lattice/backend/internal/plugins/payments"
 )
@@ -1426,6 +1428,16 @@ func TestWorkspaceModules_EndToEndAndAssignedIsolation(t *testing.T) {
 		t.Fatalf("expected 400 Bad Request for invalid mapping, got %d: %s", badMapRec.Code, badMapRec.Body.String())
 	}
 
+	// Incompatible type mapping should fail (job_status_field points to title text field instead of select)
+	incompatReq := httptest.NewRequest(http.MethodPost, "/v1/workspace/modules/customer_job_tracking/setup", strings.NewReader(`{"use_suggested":false,"mapping":{"customer_dataset":"customers","customer_name_field":"name","customer_phone_field":"phone","job_dataset":"jobs","job_title_field":"title","job_customer_field":"customer","job_status_field":"title","job_assignee_field":"assignee"}}`))
+	incompatReq.Header.Set("Authorization", "Bearer owner")
+	incompatReq.Header.Set("Content-Type", "application/json")
+	incompatRec := httptest.NewRecorder()
+	mux.ServeHTTP(incompatRec, incompatReq)
+	if incompatRec.Code != http.StatusBadRequest || !strings.Contains(incompatRec.Body.String(), "select") {
+		t.Fatalf("expected 400 Bad Request for text field used as status, got %d: %s", incompatRec.Code, incompatRec.Body.String())
+	}
+
 	// 6. Grant assigned-scope permissions to member1 and member2
 	memberPerms := map[string]any{
 		"customers": map[string]any{"read": true, "scope": "all"},
@@ -1535,6 +1547,213 @@ func TestWorkspaceModules_EndToEndAndAssignedIsolation(t *testing.T) {
 	mux.ServeHTTP(enableRec, enableReq)
 	if enableRec.Code != http.StatusOK {
 		t.Fatalf("expected 200 OK for enable, got %d: %s", enableRec.Code, enableRec.Body.String())
+	}
+}
+
+func TestModuleSetup_IncompatibleRulesReported(t *testing.T) {
+	app := newTestApp(t)
+	usersCol, err := app.FindCollectionByNameOrId("users")
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	owner := core.NewRecord(usersCol)
+	owner.Set("email", "owner@example.com")
+	owner.Set("role", authz.RoleOwner)
+	owner.Set("disabled", false)
+	owner.SetPassword("Password123!")
+	if err := app.Save(owner); err != nil {
+		t.Fatal(err)
+	}
+
+	r := router.NewRouter[*core.RequestEvent](func(w http.ResponseWriter, req *http.Request) (*core.RequestEvent, router.EventCleanupFunc) {
+		event := &core.RequestEvent{App: app, Event: router.Event{Response: w, Request: req}}
+		if req.Header.Get("Authorization") == "Bearer owner" {
+			event.Auth = owner
+		}
+		return event, func() {}
+	})
+	cfg := &tenant.Config{
+		Version: 1, TenantID: "tenant_dev", BackendURL: "https://acme.app.example.com",
+		RealtimeURL: "https://acme.app.example.com/api/realtime", AppKey: "pk_dev_000000",
+		SchemaVersion: "opaque_schema_id", MinClientVersion: "0.1.0",
+		Features: []string{}, Collections: []string{},
+	}
+	Register(&core.ServeEvent{App: app, Router: r}, cfg, features.Empty())
+	mux, err := r.BuildMux()
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	// 1. Pre-provision datasets
+	ctx := context.Background()
+	mapping, err := modules.ProvisionSuggestedDatasets(ctx, app)
+	if err != nil {
+		t.Fatalf("failed to provision datasets: %v", err)
+	}
+
+	// 2. Set restrictive owner-only collection rules on jobs collection
+	jobCol, err := app.FindCollectionByNameOrId(mapping.JobDataset)
+	if err != nil || jobCol == nil {
+		t.Fatal("jobs collection not found")
+	}
+	ownerOnly := "@request.auth.role = 'owner'"
+	jobCol.ListRule = &ownerOnly
+	jobCol.ViewRule = &ownerOnly
+	jobCol.CreateRule = nil
+	jobCol.UpdateRule = &ownerOnly
+	jobCol.DeleteRule = &ownerOnly
+	if err := app.Save(jobCol); err != nil {
+		t.Fatal(err)
+	}
+
+	// 3. Attempt setup with use_suggested: true
+	req := httptest.NewRequest(http.MethodPost, "/v1/workspace/modules/customer_job_tracking/setup", strings.NewReader(`{"use_suggested":true}`))
+	req.Header.Set("Authorization", "Bearer owner")
+	req.Header.Set("Content-Type", "application/json")
+	rec := httptest.NewRecorder()
+	mux.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusBadRequest {
+		t.Fatalf("expected 400 Bad Request for incompatible rules, got %d: %s", rec.Code, rec.Body.String())
+	}
+
+	var resp map[string]any
+	if err := json.Unmarshal(rec.Body.Bytes(), &resp); err != nil {
+		t.Fatalf("failed to parse response JSON: %v", err)
+	}
+	if resp["error"] != "incompatible_rules" {
+		t.Fatalf("expected error 'incompatible_rules', got: %v", resp["error"])
+	}
+	if resp["dataset"] != "jobs" {
+		t.Fatalf("expected dataset 'jobs', got: %v", resp["dataset"])
+	}
+	blocked, ok := resp["blocked_operations"].([]any)
+	if !ok || len(blocked) == 0 {
+		t.Fatalf("expected blocked_operations array, got: %v", resp["blocked_operations"])
+	}
+
+	// 4. Verify that collection rules were preserved intact on disk
+	reloadedCol, err := app.FindCollectionByNameOrId("jobs")
+	if err != nil || reloadedCol == nil {
+		t.Fatal("failed to reload jobs collection")
+	}
+	if reloadedCol.ListRule == nil || *reloadedCol.ListRule != ownerOnly {
+		t.Fatalf("expected ListRule to remain owner-only, got: %v", reloadedCol.ListRule)
+	}
+	if reloadedCol.CreateRule != nil {
+		t.Fatalf("expected CreateRule to remain nil, got: %v", reloadedCol.CreateRule)
+	}
+
+	// 5. Verify module is not installed or enabled
+	inst, err := modules.GetInstalledModule(app, "customer_job_tracking")
+	if err != nil {
+		t.Fatalf("GetInstalledModule error: %v", err)
+	}
+	if inst != nil && inst.Enabled {
+		t.Fatal("expected module not to be installed or enabled after setup failure")
+	}
+}
+
+func TestModuleSetup_CustomerIncompatibleRulesReported(t *testing.T) {
+	app := newTestApp(t)
+	usersCol, err := app.FindCollectionByNameOrId("users")
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	owner := core.NewRecord(usersCol)
+	owner.Set("email", "owner@example.com")
+	owner.Set("role", authz.RoleOwner)
+	owner.Set("disabled", false)
+	owner.SetPassword("Password123!")
+	if err := app.Save(owner); err != nil {
+		t.Fatal(err)
+	}
+
+	r := router.NewRouter[*core.RequestEvent](func(w http.ResponseWriter, req *http.Request) (*core.RequestEvent, router.EventCleanupFunc) {
+		event := &core.RequestEvent{App: app, Event: router.Event{Response: w, Request: req}}
+		if req.Header.Get("Authorization") == "Bearer owner" {
+			event.Auth = owner
+		}
+		return event, func() {}
+	})
+	cfg := &tenant.Config{
+		Version: 1, TenantID: "tenant_dev", BackendURL: "https://acme.app.example.com",
+		RealtimeURL: "https://acme.app.example.com/api/realtime", AppKey: "pk_dev_000000",
+		SchemaVersion: "opaque_schema_id", MinClientVersion: "0.1.0",
+		Features: []string{}, Collections: []string{},
+	}
+	Register(&core.ServeEvent{App: app, Router: r}, cfg, features.Empty())
+	mux, err := r.BuildMux()
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	// 1. Pre-provision datasets
+	ctx := context.Background()
+	mapping, err := modules.ProvisionSuggestedDatasets(ctx, app)
+	if err != nil {
+		t.Fatalf("failed to provision datasets: %v", err)
+	}
+
+	// 2. Set restrictive owner-only list rule and locked create rule on customer collection
+	custCol, err := app.FindCollectionByNameOrId(mapping.CustomerDataset)
+	if err != nil || custCol == nil {
+		t.Fatal("customers collection not found")
+	}
+	ownerOnly := "(@request.auth.role = 'owner')"
+	custCol.ListRule = &ownerOnly
+	custCol.CreateRule = nil
+	if err := app.Save(custCol); err != nil {
+		t.Fatal(err)
+	}
+
+	// 3. Attempt setup with use_suggested: true
+	req := httptest.NewRequest(http.MethodPost, "/v1/workspace/modules/customer_job_tracking/setup", strings.NewReader(`{"use_suggested":true}`))
+	req.Header.Set("Authorization", "Bearer owner")
+	req.Header.Set("Content-Type", "application/json")
+	rec := httptest.NewRecorder()
+	mux.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusBadRequest {
+		t.Fatalf("expected 400 Bad Request for customer incompatible rules, got %d: %s", rec.Code, rec.Body.String())
+	}
+
+	var resp map[string]any
+	if err := json.Unmarshal(rec.Body.Bytes(), &resp); err != nil {
+		t.Fatalf("failed to parse response JSON: %v", err)
+	}
+	if resp["error"] != "incompatible_rules" {
+		t.Fatalf("expected error 'incompatible_rules', got: %v", resp["error"])
+	}
+	if resp["dataset"] != "customers" {
+		t.Fatalf("expected dataset 'customers', got: %v", resp["dataset"])
+	}
+	blocked, ok := resp["blocked_operations"].([]any)
+	if !ok || len(blocked) < 2 {
+		t.Fatalf("expected at least 2 blocked operations for customer dataset, got: %v", resp["blocked_operations"])
+	}
+
+	// 4. Verify that customer collection rules were preserved intact on disk
+	reloadedCol, err := app.FindCollectionByNameOrId("customers")
+	if err != nil || reloadedCol == nil {
+		t.Fatal("failed to reload customers collection")
+	}
+	if reloadedCol.ListRule == nil || *reloadedCol.ListRule != ownerOnly {
+		t.Fatalf("expected ListRule to remain %q, got: %v", ownerOnly, reloadedCol.ListRule)
+	}
+	if reloadedCol.CreateRule != nil {
+		t.Fatalf("expected CreateRule to remain nil, got: %v", reloadedCol.CreateRule)
+	}
+
+	// 5. Verify module is not installed or enabled
+	inst, err := modules.GetInstalledModule(app, "customer_job_tracking")
+	if err != nil {
+		t.Fatalf("GetInstalledModule error: %v", err)
+	}
+	if inst != nil && inst.Enabled {
+		t.Fatal("expected module not to be installed or enabled after setup failure")
 	}
 }
 

@@ -23,6 +23,9 @@ export function DashboardPage({ client, onSignOut, onChangeWorkspace }: Dashboar
   const [pages, setPages] = useState<PageDefinition[]>([]);
   const [schemas, setSchemas] = useState<SchemaDefinition[]>([]);
   const [disabledModules, setDisabledModules] = useState<string[]>([]);
+  const [managedModules, setManagedModules] = useState<
+    Array<{ module_id: string; installed: boolean; enabled: boolean }>
+  >([]);
   const [activeTab, setActiveTab] = useState<string>("dashboard");
   const [loadingInitial, setLoadingInitial] = useState(true);
   const [createSchemaModalOpen, setCreateSchemaModalOpen] = useState(false);
@@ -66,13 +69,24 @@ export function DashboardPage({ client, onSignOut, onChangeWorkspace }: Dashboar
     }
   }, [client]);
 
+  const fetchWorkspaceModules = useCallback(async () => {
+    try {
+      if (typeof client.getWorkspaceModules === "function") {
+        const list = await client.getWorkspaceModules();
+        setManagedModules(list);
+      }
+    } catch {
+      // Fallback gracefully if offline
+    }
+  }, [client]);
+
   useEffect(() => {
     let ignore = false;
     loadDashboardLayout(client, client.config.collections).then((result) => {
       if (!ignore) setLoaded(result);
     });
 
-    Promise.all([fetchSchemas(), fetchPages(), fetchDisabledModules()]).finally(() => {
+    Promise.all([fetchSchemas(), fetchPages(), fetchDisabledModules(), fetchWorkspaceModules()]).finally(() => {
       if (!ignore) setLoadingInitial(false);
     });
 
@@ -90,6 +104,7 @@ export function DashboardPage({ client, onSignOut, onChangeWorkspace }: Dashboar
     // Subscribe to realtime updates on workspace modules
     const unsubModules = client.subscribeWorkspaceModules(() => {
       if (!unsubscribed) {
+        fetchWorkspaceModules();
         fetchDisabledModules();
       }
     });
@@ -102,11 +117,12 @@ export function DashboardPage({ client, onSignOut, onChangeWorkspace }: Dashboar
       } catch {}
       unsubModules();
     };
-  }, [client, fetchSchemas, fetchPages, fetchDisabledModules]);
+  }, [client, fetchSchemas, fetchPages, fetchDisabledModules, fetchWorkspaceModules]);
 
   const isOwnerOrAdmin = client.isOwnerOrAdmin;
   const isDashboardEnabled = !disabledModules.includes("dashboard");
-  const isCustomerJobTrackingEnabled = !disabledModules.includes("customer_job_tracking");
+  const cjtMod = managedModules.find((m) => m.module_id === "customer_job_tracking");
+  const isCustomerJobTrackingEnabled = Boolean(cjtMod?.installed && cjtMod?.enabled);
 
   const baseSchemas = isOwnerOrAdmin
     ? schemas
@@ -124,6 +140,7 @@ export function DashboardPage({ client, onSignOut, onChangeWorkspace }: Dashboar
 
   // If the active tab points to a disabled module, fall back to another visible tab
   useEffect(() => {
+    if (loadingInitial) return;
     if (activeTab === "dashboard" && !isDashboardEnabled) {
       if (isCustomerJobTrackingEnabled) setActiveTab("customer_job_tracking");
       else {
@@ -141,7 +158,7 @@ export function DashboardPage({ client, onSignOut, onChangeWorkspace }: Dashboar
         else if (firstPage) setActiveTab(firstPage);
       }
     }
-  }, [activeTab, isDashboardEnabled, isCustomerJobTrackingEnabled, visibleSchemas, visiblePages]);
+  }, [activeTab, isDashboardEnabled, isCustomerJobTrackingEnabled, visibleSchemas, visiblePages, loadingInitial]);
 
   const selectedPage = visiblePages.find((p) => p.page_id === activeTab);
   const selectedSchema = visibleSchemas.find((s) => s.schema_id === activeTab);
@@ -224,11 +241,11 @@ export function DashboardPage({ client, onSignOut, onChangeWorkspace }: Dashboar
           </>
         )}
 
-        {activeTab !== "dashboard" && selectedPage && (
+        {activeTab !== "dashboard" && activeTab !== "customer_job_tracking" && selectedPage && (
           <DynamicPageView client={client} page={selectedPage} schemas={schemas} />
         )}
 
-        {activeTab !== "dashboard" && !selectedPage && selectedSchema && (
+        {activeTab !== "dashboard" && activeTab !== "customer_job_tracking" && !selectedPage && selectedSchema && (
           <SchemaView
             client={client}
             schema={selectedSchema}
@@ -237,7 +254,7 @@ export function DashboardPage({ client, onSignOut, onChangeWorkspace }: Dashboar
           />
         )}
 
-        {activeTab !== "dashboard" && !selectedPage && !selectedSchema && !loadingInitial && (
+        {activeTab !== "dashboard" && activeTab !== "customer_job_tracking" && !selectedPage && !selectedSchema && !loadingInitial && (
           <div className="lattice-empty-card">
             <p className="yp-muted">Page or Schema "{activeTab}" not found.</p>
             <button
@@ -277,7 +294,10 @@ export function DashboardPage({ client, onSignOut, onChangeWorkspace }: Dashboar
         client={client}
         schemas={schemas}
         pages={pages}
-        onModulesChanged={fetchDisabledModules}
+        onModulesChanged={() => {
+          fetchDisabledModules();
+          fetchWorkspaceModules();
+        }}
       />
     </div>
   );

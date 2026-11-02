@@ -1,28 +1,75 @@
-import { useCallback, useEffect, useState } from "react";
-import type { SchemaDefinition } from "@lattice/types";
+import { useCallback, useEffect, useRef, useState } from "react";
+import type { SchemaDefinition, WorkspaceUser } from "@lattice/types";
 import type { ProductClient } from "@lattice/sdk";
 
 type RecordModel = { id: string; [key: string]: any };
 
+export function isAbortError(err: unknown): boolean {
+  if (!err || typeof err !== "object") return false;
+  return (err as any).isAbort === true || (err as Error).name === "AbortError";
+}
+
+export const CJT_JOBS_REQUEST_KEY = "cjt_jobs_list";
+export const CJT_CUSTOMER_LIST_REQUEST_KEY = "cjt_customer_list";
+export const CJT_PICKER_REQUEST_KEY = "cjt_picker_customers";
+
 export interface CustomerJobTrackingViewProps {
   client: ProductClient;
   schemas?: SchemaDefinition[];
+  initialSegment?: "jobs" | "customers";
+  initialCustomerPhoneField?: string;
+  initialCreateCustModalOpen?: boolean;
 }
 
-export function CustomerJobTrackingView({ client, schemas = [] }: CustomerJobTrackingViewProps) {
-  const [activeSegment, setActiveSegment] = useState<"jobs" | "customers">("jobs");
+export function CustomerJobTrackingView({
+  client,
+  schemas = [],
+  initialSegment = "jobs",
+  initialCustomerPhoneField,
+  initialCreateCustModalOpen = false,
+}: CustomerJobTrackingViewProps) {
+  const [activeSegment, setActiveSegment] = useState<"jobs" | "customers">(initialSegment);
   const [statusFilter, setStatusFilter] = useState<string>("all");
+  const [jobsSearch, setJobsSearch] = useState<string>("");
   const [customerSearch, setCustomerSearch] = useState<string>("");
 
+  // Request sequencing refs to ignore stale out-of-order responses
+  const jobsReqSeq = useRef(0);
+  const customerReqSeq = useRef(0);
+  const pickerReqSeq = useRef(0);
+
+  // Jobs pagination
   const [jobs, setJobs] = useState<RecordModel[]>([]);
+  const [jobsPage, setJobsPage] = useState(1);
+  const [jobsPerPage] = useState(25);
+  const [jobsTotalPages, setJobsTotalPages] = useState(1);
+  const [jobsTotalItems, setJobsTotalItems] = useState(0);
+  const [loadingJobs, setLoadingJobs] = useState(true);
+
+  // Customers pagination
   const [customers, setCustomers] = useState<RecordModel[]>([]);
-  const [loading, setLoading] = useState(true);
+  const [customersPage, setCustomersPage] = useState(1);
+  const [customersPerPage] = useState(25);
+  const [customersTotalPages, setCustomersTotalPages] = useState(1);
+  const [customersTotalItems, setCustomersTotalItems] = useState(0);
+  const [loadingCustomers, setLoadingCustomers] = useState(true);
+
+  // Customer cache for relation display
+  const [customerCache, setCustomerCache] = useState<Record<string, RecordModel>>({});
+
+  // Workspace team members for assignee picker (owners / admins)
+  const [workspaceUsers, setWorkspaceUsers] = useState<WorkspaceUser[]>([]);
+
   const [error, setError] = useState<string | null>(null);
 
-  // Mappings
+  // Mappings (customerPhoneField is empty if no phone field mapped)
   const [customerDataset, setCustomerDataset] = useState("customers");
   const [customerNameField, setCustomerNameField] = useState("name");
-  const [customerPhoneField, setCustomerPhoneField] = useState("phone");
+  const [customerPhoneField, setCustomerPhoneField] = useState(initialCustomerPhoneField ?? "");
+  const [isPhoneRequiredState, setIsPhoneRequiredState] = useState(false);
+  const custSchema = schemas.find((s) => s.schema_id === customerDataset);
+  const phoneFieldDef = custSchema?.fields.find((f) => f.name === customerPhoneField);
+  const isPhoneRequired = Boolean(phoneFieldDef?.required || isPhoneRequiredState);
   const [jobDataset, setJobDataset] = useState("jobs");
   const [jobTitleField, setJobTitleField] = useState("title");
   const [jobCustomerField, setJobCustomerField] = useState("customer");
@@ -34,11 +81,21 @@ export function CustomerJobTrackingView({ client, schemas = [] }: CustomerJobTra
   const [newJobTitle, setNewJobTitle] = useState("");
   const [newJobCustomerId, setNewJobCustomerId] = useState("");
   const [newJobStatus, setNewJobStatus] = useState("Open");
+  const [newJobAssigneeId, setNewJobAssigneeId] = useState("");
   const [createJobPending, setCreateJobPending] = useState(false);
   const [createJobError, setCreateJobError] = useState<string | null>(null);
 
+  // Customer picker in Job modal (server-side search & pagination)
+  const [pickerSearch, setPickerSearch] = useState("");
+  const [pickerPage, setPickerPage] = useState(1);
+  const [pickerPerPage] = useState(10);
+  const [pickerTotalPages, setPickerTotalPages] = useState(1);
+  const [pickerTotalItems, setPickerTotalItems] = useState(0);
+  const [pickerCustomers, setPickerCustomers] = useState<RecordModel[]>([]);
+  const [pickerLoading, setPickerLoading] = useState(false);
+
   // Customer creation modal state
-  const [createCustModalOpen, setCreateCustModalOpen] = useState(false);
+  const [createCustModalOpen, setCreateCustModalOpen] = useState(initialCreateCustModalOpen);
   const [newCustName, setNewCustName] = useState("");
   const [newCustPhone, setNewCustPhone] = useState("");
   const [createCustPending, setCreateCustPending] = useState(false);
@@ -49,58 +106,295 @@ export function CustomerJobTrackingView({ client, schemas = [] }: CustomerJobTra
   // Load module configuration mappings
   useEffect(() => {
     let ignore = false;
-    client.getWorkspaceModule("customer_job_tracking").then((mod) => {
-      if (!ignore && mod?.mapping) {
-        if (mod.mapping.customer_dataset) setCustomerDataset(mod.mapping.customer_dataset);
-        if (mod.mapping.customer_name_field) setCustomerNameField(mod.mapping.customer_name_field);
-        if (mod.mapping.customer_phone_field) setCustomerPhoneField(mod.mapping.customer_phone_field);
-        if (mod.mapping.job_dataset) setJobDataset(mod.mapping.job_dataset);
-        if (mod.mapping.job_title_field) setJobTitleField(mod.mapping.job_title_field);
-        if (mod.mapping.job_customer_field) setJobCustomerField(mod.mapping.job_customer_field);
-        if (mod.mapping.job_status_field) setJobStatusField(mod.mapping.job_status_field);
-        if (mod.mapping.job_assignee_field) setJobAssigneeField(mod.mapping.job_assignee_field);
-      }
-    }).catch(() => {});
+    if (typeof client.getWorkspaceModule === "function") {
+      client
+        .getWorkspaceModule("customer_job_tracking")
+        .then((mod) => {
+          if (!ignore && mod?.mapping) {
+            if (mod.mapping.customer_dataset) setCustomerDataset(mod.mapping.customer_dataset);
+            if (mod.mapping.customer_name_field) setCustomerNameField(mod.mapping.customer_name_field);
+            setCustomerPhoneField(mod.mapping.customer_phone_field || "");
+            if (mod.mapping.job_dataset) setJobDataset(mod.mapping.job_dataset);
+            if (mod.mapping.job_title_field) setJobTitleField(mod.mapping.job_title_field);
+            if (mod.mapping.job_customer_field) setJobCustomerField(mod.mapping.job_customer_field);
+            if (mod.mapping.job_status_field) setJobStatusField(mod.mapping.job_status_field);
+            if (mod.mapping.job_assignee_field) setJobAssigneeField(mod.mapping.job_assignee_field);
+          }
+        })
+        .catch(() => {});
+    }
     return () => {
       ignore = true;
     };
   }, [client]);
 
-  const loadData = useCallback(async () => {
-    setLoading(true);
+  // Determine if mapped customer phone field is required
+  useEffect(() => {
+    let ignore = false;
+    if (customerPhoneField && typeof client.getSchema === "function") {
+      client
+        .getSchema(customerDataset)
+        .then((s) => {
+          if (!ignore && s) {
+            const f = s.fields?.find((field) => field.name === customerPhoneField);
+            setIsPhoneRequiredState(Boolean(f?.required));
+          }
+        })
+        .catch(() => {});
+    }
+    return () => {
+      ignore = true;
+    };
+  }, [client, customerDataset, customerPhoneField]);
+
+  // Load team users for assignee picker when owner/admin
+  useEffect(() => {
+    let ignore = false;
+    if (client.isOwnerOrAdmin && typeof client.getWorkspaceUsers === "function") {
+      client
+        .getWorkspaceUsers()
+        .then((list) => {
+          if (!ignore && Array.isArray(list)) {
+            const activeUsers = list.filter((u) => !u.disabled);
+            setWorkspaceUsers(activeUsers);
+            if (!newJobAssigneeId) {
+              setNewJobAssigneeId(client.currentUserId || activeUsers[0]?.id || "");
+            }
+          }
+        })
+        .catch(() => {});
+    }
+    return () => {
+      ignore = true;
+    };
+  }, [client, client.isOwnerOrAdmin, client.currentUserId, newJobAssigneeId]);
+
+  // Build PocketBase filter expression for jobs
+  const buildJobFilter = useCallback(() => {
+    const parts: string[] = [];
+    if (selectedCustomerIdFilter) {
+      parts.push(
+        client.filter
+          ? client.filter(`${jobCustomerField} = {:cid}`, { cid: selectedCustomerIdFilter })
+          : `${jobCustomerField} = '${selectedCustomerIdFilter}'`
+      );
+    }
+    if (statusFilter === "open") {
+      parts.push(
+        client.filter
+          ? client.filter(`${jobStatusField} = {:st}`, { st: "Open" })
+          : `${jobStatusField} = 'Open'`
+      );
+    } else if (statusFilter === "in_progress") {
+      parts.push(
+        client.filter
+          ? client.filter(`${jobStatusField} = {:st}`, { st: "In progress" })
+          : `${jobStatusField} = 'In progress'`
+      );
+    } else if (statusFilter === "done") {
+      parts.push(
+        client.filter
+          ? client.filter(`${jobStatusField} = {:st}`, { st: "Done" })
+          : `${jobStatusField} = 'Done'`
+      );
+    }
+    if (jobsSearch.trim()) {
+      const q = jobsSearch.trim();
+      parts.push(
+        client.filter
+          ? client.filter(`${jobTitleField} ~ {:q}`, { q })
+          : `${jobTitleField} ~ '${q}'`
+      );
+    }
+    return parts.length > 0 ? parts.join(" && ") : undefined;
+  }, [client, jobCustomerField, jobStatusField, jobTitleField, selectedCustomerIdFilter, statusFilter, jobsSearch]);
+
+  // Load Jobs from server
+  const loadJobs = useCallback(async () => {
+    const seq = ++jobsReqSeq.current;
+    setLoadingJobs(true);
     setError(null);
     try {
-      const [jobsRes, custRes] = await Promise.all([
-        client.collection(jobDataset).getList(1, 200, { sort: "-created" }).catch((err: unknown) => {
-          throw new Error(`Jobs access error: ${err instanceof Error ? err.message : String(err)}`);
-        }),
-        client.collection(customerDataset).getList(1, 200, { sort: "created" }).catch((err: unknown) => {
-          throw new Error(`Customers access error: ${err instanceof Error ? err.message : String(err)}`);
-        }),
-      ]);
+      const filter = buildJobFilter();
+      const res = await client.collection(jobDataset).getList(jobsPage, jobsPerPage, {
+        filter,
+        sort: "-created",
+        expand: jobCustomerField,
+        requestKey: "cjt_jobs_list",
+      });
 
-      setJobs(jobsRes.items);
-      setCustomers(custRes.items);
-      if (custRes.items.length > 0 && !newJobCustomerId && custRes.items[0]) {
-        setNewJobCustomerId(custRes.items[0].id);
+      if (seq !== jobsReqSeq.current) return;
+
+      setJobs(res.items);
+      setJobsTotalPages(res.totalPages || 1);
+      setJobsTotalItems(res.totalItems || 0);
+
+      // Cache expanded customers for fast lookup
+      const cacheUpdates: Record<string, RecordModel> = {};
+      for (const item of res.items) {
+        if (item.expand && item.expand[jobCustomerField]) {
+          const cust = item.expand[jobCustomerField];
+          cacheUpdates[cust.id] = cust;
+        }
+      }
+      if (Object.keys(cacheUpdates).length > 0) {
+        setCustomerCache((prev) => ({ ...prev, ...cacheUpdates }));
       }
     } catch (err: unknown) {
-      setError(err instanceof Error ? err.message : "Failed to load data");
+      if (seq !== jobsReqSeq.current) return;
+      if (isAbortError(err)) {
+        return;
+      }
+      setError(err instanceof Error ? err.message : "Failed to load jobs");
     } finally {
-      setLoading(false);
+      if (seq === jobsReqSeq.current) {
+        setLoadingJobs(false);
+      }
     }
-  }, [client, jobDataset, customerDataset, newJobCustomerId]);
+  }, [client, jobDataset, jobCustomerField, jobsPage, jobsPerPage, buildJobFilter]);
+
+  // Load Customers from server
+  const loadCustomers = useCallback(async () => {
+    const seq = ++customerReqSeq.current;
+    setLoadingCustomers(true);
+    setError(null);
+    try {
+      let filter: string | undefined;
+      if (customerSearch.trim()) {
+        const q = customerSearch.trim();
+        if (customerPhoneField) {
+          filter = client.filter
+            ? client.filter(`${customerNameField} ~ {:q} || ${customerPhoneField} ~ {:q}`, { q })
+            : `(${customerNameField} ~ '${q}' || ${customerPhoneField} ~ '${q}')`;
+        } else {
+          filter = client.filter
+            ? client.filter(`${customerNameField} ~ {:q}`, { q })
+            : `${customerNameField} ~ '${q}'`;
+        }
+      }
+
+      const res = await client.collection(customerDataset).getList(customersPage, customersPerPage, {
+        filter,
+        sort: "created",
+        requestKey: "cjt_customer_list",
+      });
+
+      if (seq !== customerReqSeq.current) return;
+
+      setCustomers(res.items);
+      setCustomersTotalPages(res.totalPages || 1);
+      setCustomersTotalItems(res.totalItems || 0);
+
+      // Update customer cache
+      const cacheUpdates: Record<string, RecordModel> = {};
+      for (const c of res.items) {
+        cacheUpdates[c.id] = c;
+      }
+      setCustomerCache((prev) => ({ ...prev, ...cacheUpdates }));
+
+      // Default job customer id if empty
+      if (!newJobCustomerId && res.items.length > 0 && res.items[0]) {
+        setNewJobCustomerId(res.items[0].id);
+      }
+    } catch (err: unknown) {
+      if (seq !== customerReqSeq.current) return;
+      if (isAbortError(err)) {
+        return;
+      }
+      setError(err instanceof Error ? err.message : "Failed to load customers");
+    } finally {
+      if (seq === customerReqSeq.current) {
+        setLoadingCustomers(false);
+      }
+    }
+  }, [client, customerDataset, customerNameField, customerPhoneField, customersPage, customersPerPage, customerSearch, newJobCustomerId]);
+
+  // Load Customer Picker records (for the modal dropdown)
+  const loadPickerCustomers = useCallback(async () => {
+    const seq = ++pickerReqSeq.current;
+    setPickerLoading(true);
+    try {
+      let filter: string | undefined;
+      if (pickerSearch.trim()) {
+        const q = pickerSearch.trim();
+        if (customerPhoneField) {
+          filter = client.filter
+            ? client.filter(`${customerNameField} ~ {:q} || ${customerPhoneField} ~ {:q}`, { q })
+            : `(${customerNameField} ~ '${q}' || ${customerPhoneField} ~ '${q}')`;
+        } else {
+          filter = client.filter
+            ? client.filter(`${customerNameField} ~ {:q}`, { q })
+            : `${customerNameField} ~ '${q}'`;
+        }
+      }
+
+      const res = await client.collection(customerDataset).getList(pickerPage, pickerPerPage, {
+        filter,
+        sort: "created",
+        requestKey: "cjt_picker_customers",
+      });
+
+      if (seq !== pickerReqSeq.current) return;
+
+      let items = [...res.items];
+      // Ensure currently selected customer is present in list
+      if (newJobCustomerId && !items.some((c) => c.id === newJobCustomerId)) {
+        try {
+          const selected = await client.collection(customerDataset).getOne(newJobCustomerId, { requestKey: null });
+          if (seq !== pickerReqSeq.current) return;
+          if (selected) {
+            items = [selected, ...items];
+          }
+        } catch {
+          // If customer not found, proceed
+        }
+      }
+
+      if (seq !== pickerReqSeq.current) return;
+
+      setPickerCustomers(items);
+      setPickerTotalPages(res.totalPages || 1);
+      setPickerTotalItems(res.totalItems || 0);
+
+      if (!newJobCustomerId && items[0]) {
+        setNewJobCustomerId(items[0].id);
+      }
+    } catch (err: unknown) {
+      if (seq !== pickerReqSeq.current) return;
+      if (isAbortError(err)) {
+        return;
+      }
+      setCreateJobError(err instanceof Error ? err.message : "Failed to load customers");
+    } finally {
+      if (seq === pickerReqSeq.current) {
+        setPickerLoading(false);
+      }
+    }
+  }, [client, customerDataset, customerNameField, customerPhoneField, pickerSearch, pickerPage, pickerPerPage, newJobCustomerId]);
+
+  // Effects to trigger loads
+  useEffect(() => {
+    loadJobs();
+  }, [loadJobs]);
 
   useEffect(() => {
-    loadData();
+    loadCustomers();
+  }, [loadCustomers]);
 
-    // Realtime subscriptions for jobs and customers
+  useEffect(() => {
+    if (createJobModalOpen) {
+      loadPickerCustomers();
+    }
+  }, [createJobModalOpen, loadPickerCustomers]);
+
+  // Realtime subscriptions
+  useEffect(() => {
     let unsubscribed = false;
     client
       .collection(jobDataset)
       .subscribe("*", () => {
         if (!unsubscribed) {
-          loadData();
+          loadJobs();
         }
       })
       .catch(() => {});
@@ -109,7 +403,10 @@ export function CustomerJobTrackingView({ client, schemas = [] }: CustomerJobTra
       .collection(customerDataset)
       .subscribe("*", () => {
         if (!unsubscribed) {
-          loadData();
+          loadCustomers();
+          if (createJobModalOpen) {
+            loadPickerCustomers();
+          }
         }
       })
       .catch(() => {});
@@ -121,11 +418,12 @@ export function CustomerJobTrackingView({ client, schemas = [] }: CustomerJobTra
         client.collection(customerDataset).unsubscribe("*").catch(() => {});
       } catch {}
     };
-  }, [client, jobDataset, customerDataset, loadData]);
+  }, [client, jobDataset, customerDataset, loadJobs, loadCustomers, loadPickerCustomers, createJobModalOpen]);
 
   // Quick status transition
   async function handleCycleStatus(job: RecordModel) {
-    const currentStatus = String(job[jobStatusField] || "Open");
+    const rawStatus = job[jobStatusField];
+    const currentStatus = Array.isArray(rawStatus) ? String(rawStatus[0] || "Open") : String(rawStatus || "Open");
     let nextStatus = "In progress";
     if (currentStatus === "In progress") {
       nextStatus = "Done";
@@ -154,17 +452,21 @@ export function CustomerJobTrackingView({ client, schemas = [] }: CustomerJobTra
     setCreateJobError(null);
 
     try {
+      const assigneeId = client.isOwnerOrAdmin
+        ? newJobAssigneeId || client.currentUserId || workspaceUsers[0]?.id || ""
+        : client.currentUserId || "";
+
       const payload: Record<string, any> = {
         [jobTitleField]: newJobTitle.trim(),
         [jobCustomerField]: newJobCustomerId,
         [jobStatusField]: newJobStatus,
-        [jobAssigneeField]: client.currentUserId || "",
+        [jobAssigneeField]: assigneeId,
       };
 
       await client.collection(jobDataset).create(payload);
       setNewJobTitle("");
       setCreateJobModalOpen(false);
-      await loadData();
+      await loadJobs();
     } catch (err: unknown) {
       setCreateJobError(err instanceof Error ? err.message : "Failed to create job");
     } finally {
@@ -176,6 +478,10 @@ export function CustomerJobTrackingView({ client, schemas = [] }: CustomerJobTra
   async function handleCreateCustomer(e: React.FormEvent) {
     e.preventDefault();
     if (!newCustName.trim()) return;
+    if (customerPhoneField && isPhoneRequired && !newCustPhone.trim()) {
+      setCreateCustError("Phone number is required");
+      return;
+    }
 
     setCreateCustPending(true);
     setCreateCustError(null);
@@ -184,15 +490,18 @@ export function CustomerJobTrackingView({ client, schemas = [] }: CustomerJobTra
       const payload: Record<string, any> = {
         [customerNameField]: newCustName.trim(),
       };
-      if (newCustPhone.trim()) {
+      if (customerPhoneField && (isPhoneRequired || newCustPhone.trim())) {
         payload[customerPhoneField] = newCustPhone.trim();
       }
 
-      await client.collection(customerDataset).create(payload);
+      const created = await client.collection(customerDataset).create(payload);
       setNewCustName("");
       setNewCustPhone("");
       setCreateCustModalOpen(false);
-      await loadData();
+      await loadCustomers();
+      if (created?.id) {
+        setNewJobCustomerId(created.id);
+      }
     } catch (err: unknown) {
       setCreateCustError(err instanceof Error ? err.message : "Failed to create customer");
     } finally {
@@ -200,38 +509,9 @@ export function CustomerJobTrackingView({ client, schemas = [] }: CustomerJobTra
     }
   }
 
-  const customerMap = new Map<string, RecordModel>();
-  for (const c of customers) {
-    customerMap.set(c.id, c);
-  }
-
-  // Filtering
-  const filteredJobs = jobs.filter((j) => {
-    if (selectedCustomerIdFilter && j[jobCustomerField] !== selectedCustomerIdFilter) {
-      return false;
-    }
-    const status = String(j[jobStatusField] || "").toLowerCase();
-    if (statusFilter === "open" && status !== "open") return false;
-    if (statusFilter === "in_progress" && status !== "in progress") return false;
-    if (statusFilter === "done" && status !== "done") return false;
-    return true;
-  });
-
-  const filteredCustomers = customers.filter((c) => {
-    if (!customerSearch.trim()) return true;
-    const q = customerSearch.toLowerCase();
-    const name = String(c[customerNameField] || "").toLowerCase();
-    const phone = String(c[customerPhoneField] || "").toLowerCase();
-    return name.includes(q) || phone.includes(q);
-  });
-
-  const openCount = jobs.filter((j) => String(j[jobStatusField] || "").toLowerCase() === "open").length;
-  const inProgressCount = jobs.filter((j) => String(j[jobStatusField] || "").toLowerCase() === "in progress").length;
-  const doneCount = jobs.filter((j) => String(j[jobStatusField] || "").toLowerCase() === "done").length;
-
   return (
     <div className="lattice-container" style={{ padding: "0.5rem 0", maxWidth: "900px", margin: "0 auto" }}>
-      {/* Phone/Responsive Header & Segment Switcher */}
+      {/* Header & New Button */}
       <div
         style={{
           display: "flex",
@@ -311,7 +591,7 @@ export function CustomerJobTrackingView({ client, schemas = [] }: CustomerJobTra
             setSelectedCustomerIdFilter(null);
           }}
         >
-          Jobs ({jobs.length})
+          Jobs ({jobsTotalItems})
         </button>
         <button
           type="button"
@@ -329,7 +609,7 @@ export function CustomerJobTrackingView({ client, schemas = [] }: CustomerJobTra
           }}
           onClick={() => setActiveSegment("customers")}
         >
-          Customers ({customers.length})
+          Customers ({customersTotalItems})
         </button>
       </div>
 
@@ -351,18 +631,17 @@ export function CustomerJobTrackingView({ client, schemas = [] }: CustomerJobTra
             type="button"
             className="lattice-btn-secondary"
             style={{ padding: "0.25rem 0.5rem", fontSize: "0.75rem" }}
-            onClick={loadData}
+            onClick={() => {
+              loadJobs();
+              loadCustomers();
+            }}
           >
             Retry
           </button>
         </div>
       )}
 
-      {loading ? (
-        <div style={{ textAlign: "center", padding: "3rem 1rem" }}>
-          <p className="yp-muted">Loading records…</p>
-        </div>
-      ) : activeSegment === "jobs" ? (
+      {activeSegment === "jobs" ? (
         /* JOBS VIEW */
         <div>
           {/* Customer filter alert if set */}
@@ -381,20 +660,47 @@ export function CustomerJobTrackingView({ client, schemas = [] }: CustomerJobTra
               }}
             >
               <span>
-                Filtered by customer: <strong>{customerMap.get(selectedCustomerIdFilter)?.[customerNameField] || "Selected"}</strong>
+                Filtered by customer:{" "}
+                <strong>
+                  {customerCache[selectedCustomerIdFilter]?.[customerNameField] || "Selected Customer"}
+                </strong>
               </span>
               <button
                 type="button"
                 className="app-link"
                 style={{ fontSize: "0.8rem" }}
-                onClick={() => setSelectedCustomerIdFilter(null)}
+                onClick={() => {
+                  setSelectedCustomerIdFilter(null);
+                  setJobsPage(1);
+                }}
               >
                 Clear filter
               </button>
             </div>
           )}
 
-          {/* Status filter pills */}
+          {/* Search bar for Jobs */}
+          <div style={{ marginBottom: "0.75rem" }}>
+            <input
+              type="text"
+              placeholder="Search jobs by title…"
+              value={jobsSearch}
+              onChange={(e) => {
+                setJobsSearch(e.target.value);
+                setJobsPage(1);
+              }}
+              style={{
+                width: "100%",
+                boxSizing: "border-box",
+                padding: "0.55rem 0.85rem",
+                fontSize: "0.875rem",
+                borderRadius: "6px",
+                border: "1px solid var(--lattice-border)",
+              }}
+            />
+          </div>
+
+          {/* Status filter pills without misleading partial counts */}
           <div
             style={{
               display: "flex",
@@ -408,42 +714,58 @@ export function CustomerJobTrackingView({ client, schemas = [] }: CustomerJobTra
               type="button"
               className={statusFilter === "all" ? "lattice-btn-primary" : "lattice-btn-secondary"}
               style={{ padding: "0.35rem 0.65rem", fontSize: "0.8rem", whiteSpace: "nowrap" }}
-              onClick={() => setStatusFilter("all")}
+              onClick={() => {
+                setStatusFilter("all");
+                setJobsPage(1);
+              }}
             >
-              All ({jobs.length})
+              All
             </button>
             <button
               type="button"
               className={statusFilter === "open" ? "lattice-btn-primary" : "lattice-btn-secondary"}
               style={{ padding: "0.35rem 0.65rem", fontSize: "0.8rem", whiteSpace: "nowrap" }}
-              onClick={() => setStatusFilter("open")}
+              onClick={() => {
+                setStatusFilter("open");
+                setJobsPage(1);
+              }}
             >
-              Open ({openCount})
+              Open
             </button>
             <button
               type="button"
               className={statusFilter === "in_progress" ? "lattice-btn-primary" : "lattice-btn-secondary"}
               style={{ padding: "0.35rem 0.65rem", fontSize: "0.8rem", whiteSpace: "nowrap" }}
-              onClick={() => setStatusFilter("in_progress")}
+              onClick={() => {
+                setStatusFilter("in_progress");
+                setJobsPage(1);
+              }}
             >
-              In progress ({inProgressCount})
+              In progress
             </button>
             <button
               type="button"
               className={statusFilter === "done" ? "lattice-btn-primary" : "lattice-btn-secondary"}
               style={{ padding: "0.35rem 0.65rem", fontSize: "0.8rem", whiteSpace: "nowrap" }}
-              onClick={() => setStatusFilter("done")}
+              onClick={() => {
+                setStatusFilter("done");
+                setJobsPage(1);
+              }}
             >
-              Done ({doneCount})
+              Done
             </button>
           </div>
 
           {/* Jobs List */}
-          {filteredJobs.length === 0 ? (
+          {loadingJobs ? (
+            <div style={{ textAlign: "center", padding: "3rem 1rem" }}>
+              <p className="yp-muted">Loading jobs…</p>
+            </div>
+          ) : jobs.length === 0 ? (
             <div className="lattice-empty-card" style={{ padding: "2.5rem 1rem", textAlign: "center" }}>
               <p className="yp-muted" style={{ margin: 0 }}>
                 {statusFilter === "all"
-                  ? "No jobs assigned to you yet."
+                  ? "No jobs found."
                   : `No jobs currently in "${statusFilter.replace("_", " ")}" status.`}
               </p>
               <button
@@ -457,11 +779,12 @@ export function CustomerJobTrackingView({ client, schemas = [] }: CustomerJobTra
             </div>
           ) : (
             <div style={{ display: "flex", flexDirection: "column", gap: "0.75rem" }}>
-              {filteredJobs.map((job) => {
-                const status = String(job[jobStatusField] || "Open");
-                const cust = customerMap.get(String(job[jobCustomerField]));
+              {jobs.map((job) => {
+                const rawStatus = job[jobStatusField];
+                const status = Array.isArray(rawStatus) ? String(rawStatus[0] || "Open") : String(rawStatus || "Open");
+                const cust = (job.expand && job.expand[jobCustomerField]) || customerCache[String(job[jobCustomerField])];
                 const custName = cust ? String(cust[customerNameField] || "Customer") : "Customer";
-                const custPhone = cust ? String(cust[customerPhoneField] || "") : "";
+                const custPhone = customerPhoneField && cust ? String(cust[customerPhoneField] || "") : "";
 
                 const statusColor =
                   status === "Done"
@@ -469,6 +792,21 @@ export function CustomerJobTrackingView({ client, schemas = [] }: CustomerJobTra
                     : status === "In progress"
                     ? { bg: "#eff6ff", border: "#93c5fd", text: "#1e40af" }
                     : { bg: "#fffbeb", border: "#fde68a", text: "#92400e" };
+
+                const assigneeId = job[jobAssigneeField];
+                let assigneeDisplay = "None";
+                if (assigneeId === client.currentUserId) {
+                  assigneeDisplay = "You";
+                } else {
+                  const matchedUser = workspaceUsers.find((u) => u.id === assigneeId);
+                  if (matchedUser) {
+                    assigneeDisplay = matchedUser.name
+                      ? `${matchedUser.name} (${matchedUser.email})`
+                      : matchedUser.email;
+                  } else if (assigneeId) {
+                    assigneeDisplay = String(assigneeId);
+                  }
+                }
 
                 return (
                   <div
@@ -509,14 +847,14 @@ export function CustomerJobTrackingView({ client, schemas = [] }: CustomerJobTra
 
                     <div style={{ display: "flex", alignItems: "center", gap: "0.5rem", fontSize: "0.85rem", color: "var(--lattice-muted)" }}>
                       <span>👤 {custName}</span>
-                      {custPhone && (
+                      {customerPhoneField && custPhone ? (
                         <a
                           href={`tel:${custPhone}`}
                           style={{ color: "#2563eb", textDecoration: "none", fontSize: "0.8rem" }}
                         >
                           📞 {custPhone}
                         </a>
-                      )}
+                      ) : null}
                     </div>
 
                     <div
@@ -532,10 +870,7 @@ export function CustomerJobTrackingView({ client, schemas = [] }: CustomerJobTra
                       }}
                     >
                       <span>
-                        Assignee:{" "}
-                        <strong>
-                          {job[jobAssigneeField] === client.currentUserId ? "You" : String(job[jobAssigneeField] || "None")}
-                        </strong>
+                        Assignee: <strong>{assigneeDisplay}</strong>
                       </span>
                       <span>ID: {job.id.slice(0, 8)}</span>
                     </div>
@@ -544,6 +879,31 @@ export function CustomerJobTrackingView({ client, schemas = [] }: CustomerJobTra
               })}
             </div>
           )}
+
+          {/* Jobs Pagination Footer */}
+          <footer className="lattice-table-footer" style={{ marginTop: "0.5rem" }}>
+            <div className="lattice-table-pagination-info">
+              Showing page {jobsPage} of {jobsTotalPages} ({jobsTotalItems} total jobs)
+            </div>
+            <div className="lattice-table-pagination-controls" style={{ display: "flex", gap: "0.4rem" }}>
+              <button
+                type="button"
+                className="lattice-btn-table"
+                disabled={jobsPage <= 1 || loadingJobs}
+                onClick={() => setJobsPage((p) => Math.max(1, p - 1))}
+              >
+                Previous
+              </button>
+              <button
+                type="button"
+                className="lattice-btn-table"
+                disabled={jobsPage >= jobsTotalPages || loadingJobs}
+                onClick={() => setJobsPage((p) => Math.min(jobsTotalPages, p + 1))}
+              >
+                Next
+              </button>
+            </div>
+          </footer>
         </div>
       ) : (
         /* CUSTOMERS VIEW */
@@ -552,9 +912,12 @@ export function CustomerJobTrackingView({ client, schemas = [] }: CustomerJobTra
           <div style={{ marginBottom: "1rem" }}>
             <input
               type="text"
-              placeholder="Search customers by name or phone…"
+              placeholder={customerPhoneField ? "Search customers by name or phone…" : "Search customers by name…"}
               value={customerSearch}
-              onChange={(e) => setCustomerSearch(e.target.value)}
+              onChange={(e) => {
+                setCustomerSearch(e.target.value);
+                setCustomersPage(1);
+              }}
               style={{
                 width: "100%",
                 boxSizing: "border-box",
@@ -566,7 +929,11 @@ export function CustomerJobTrackingView({ client, schemas = [] }: CustomerJobTra
             />
           </div>
 
-          {filteredCustomers.length === 0 ? (
+          {loadingCustomers ? (
+            <div style={{ textAlign: "center", padding: "3rem 1rem" }}>
+              <p className="yp-muted">Loading customers…</p>
+            </div>
+          ) : customers.length === 0 ? (
             <div className="lattice-empty-card" style={{ padding: "2.5rem 1rem", textAlign: "center" }}>
               <p className="yp-muted" style={{ margin: 0 }}>No customers found.</p>
               <button
@@ -580,10 +947,9 @@ export function CustomerJobTrackingView({ client, schemas = [] }: CustomerJobTra
             </div>
           ) : (
             <div style={{ display: "flex", flexDirection: "column", gap: "0.75rem" }}>
-              {filteredCustomers.map((cust) => {
+              {customers.map((cust) => {
                 const name = String(cust[customerNameField] || "Unnamed Customer");
-                const phone = String(cust[customerPhoneField] || "");
-                const custJobs = jobs.filter((j) => j[jobCustomerField] === cust.id);
+                const phone = customerPhoneField ? String(cust[customerPhoneField] || "") : "";
 
                 return (
                   <div
@@ -602,7 +968,7 @@ export function CustomerJobTrackingView({ client, schemas = [] }: CustomerJobTra
                   >
                     <div>
                       <strong style={{ fontSize: "1rem", display: "block" }}>{name}</strong>
-                      {phone && (
+                      {customerPhoneField && phone ? (
                         <a
                           href={`tel:${phone}`}
                           style={{
@@ -615,10 +981,7 @@ export function CustomerJobTrackingView({ client, schemas = [] }: CustomerJobTra
                         >
                           📞 {phone}
                         </a>
-                      )}
-                      <div style={{ fontSize: "0.75rem", color: "var(--lattice-muted)", marginTop: "0.25rem" }}>
-                        {custJobs.length} associated job(s)
-                      </div>
+                      ) : null}
                     </div>
 
                     <div style={{ display: "flex", gap: "0.5rem" }}>
@@ -628,10 +991,11 @@ export function CustomerJobTrackingView({ client, schemas = [] }: CustomerJobTra
                         style={{ padding: "0.35rem 0.65rem", fontSize: "0.8rem" }}
                         onClick={() => {
                           setSelectedCustomerIdFilter(cust.id);
+                          setJobsPage(1);
                           setActiveSegment("jobs");
                         }}
                       >
-                        View Jobs ({custJobs.length})
+                        View Jobs
                       </button>
                       <button
                         type="button"
@@ -650,6 +1014,31 @@ export function CustomerJobTrackingView({ client, schemas = [] }: CustomerJobTra
               })}
             </div>
           )}
+
+          {/* Customers Pagination Footer */}
+          <footer className="lattice-table-footer" style={{ marginTop: "0.5rem" }}>
+            <div className="lattice-table-pagination-info">
+              Showing page {customersPage} of {customersTotalPages} ({customersTotalItems} total customers)
+            </div>
+            <div className="lattice-table-pagination-controls" style={{ display: "flex", gap: "0.4rem" }}>
+              <button
+                type="button"
+                className="lattice-btn-table"
+                disabled={customersPage <= 1 || loadingCustomers}
+                onClick={() => setCustomersPage((p) => Math.max(1, p - 1))}
+              >
+                Previous
+              </button>
+              <button
+                type="button"
+                className="lattice-btn-table"
+                disabled={customersPage >= customersTotalPages || loadingCustomers}
+                onClick={() => setCustomersPage((p) => Math.min(customersTotalPages, p + 1))}
+              >
+                Next
+              </button>
+            </div>
+          </footer>
         </div>
       )}
 
@@ -687,20 +1076,76 @@ export function CustomerJobTrackingView({ client, schemas = [] }: CustomerJobTra
                   />
                 </div>
 
+                {/* Customer Picker with server-side search and pagination */}
                 <div>
                   <label style={{ fontSize: "0.85rem", fontWeight: 600 }}>Customer</label>
+                  <input
+                    type="text"
+                    placeholder={customerPhoneField ? "Search customers by name or phone…" : "Search customers by name…"}
+                    value={pickerSearch}
+                    onChange={(e) => {
+                      setPickerSearch(e.target.value);
+                      setPickerPage(1);
+                    }}
+                    style={{
+                      width: "100%",
+                      boxSizing: "border-box",
+                      padding: "0.45rem",
+                      marginBottom: "0.35rem",
+                      borderRadius: "4px",
+                      fontSize: "0.85rem",
+                      border: "1px solid var(--lattice-border)",
+                    }}
+                  />
                   <select
                     required
                     value={newJobCustomerId}
                     onChange={(e) => setNewJobCustomerId(e.target.value)}
                     style={{ width: "100%", boxSizing: "border-box", padding: "0.5rem", borderRadius: "4px" }}
                   >
-                    {customers.map((c) => (
+                    {pickerCustomers.length === 0 && <option value="">No customers found</option>}
+                    {pickerCustomers.map((c) => (
                       <option key={c.id} value={c.id}>
-                        {String(c[customerNameField] || c.id)}
+                        {String(c[customerNameField] || c.id)} {customerPhoneField && c[customerPhoneField] ? `(${c[customerPhoneField]})` : ""}
                       </option>
                     ))}
                   </select>
+                  {pickerTotalPages > 1 && (
+                    <div
+                      style={{
+                        display: "flex",
+                        justifyContent: "space-between",
+                        alignItems: "center",
+                        fontSize: "0.75rem",
+                        color: "var(--lattice-muted)",
+                        marginTop: "0.3rem",
+                      }}
+                    >
+                      <span>
+                        Page {pickerPage} of {pickerTotalPages} ({pickerTotalItems} customers)
+                      </span>
+                      <div style={{ display: "flex", gap: "0.3rem" }}>
+                        <button
+                          type="button"
+                          className="lattice-btn-secondary"
+                          style={{ padding: "0.15rem 0.5rem", fontSize: "0.75rem" }}
+                          disabled={pickerPage <= 1 || pickerLoading}
+                          onClick={() => setPickerPage((p) => Math.max(1, p - 1))}
+                        >
+                          Prev
+                        </button>
+                        <button
+                          type="button"
+                          className="lattice-btn-secondary"
+                          style={{ padding: "0.15rem 0.5rem", fontSize: "0.75rem" }}
+                          disabled={pickerPage >= pickerTotalPages || pickerLoading}
+                          onClick={() => setPickerPage((p) => Math.min(pickerTotalPages, p + 1))}
+                        >
+                          Next
+                        </button>
+                      </div>
+                    </div>
+                  )}
                 </div>
 
                 <div>
@@ -716,18 +1161,43 @@ export function CustomerJobTrackingView({ client, schemas = [] }: CustomerJobTra
                   </select>
                 </div>
 
-                <div
-                  style={{
-                    background: "var(--lattice-bg)",
-                    border: "1px solid var(--lattice-border)",
-                    borderRadius: "6px",
-                    padding: "0.6rem 0.75rem",
-                    fontSize: "0.8rem",
-                  }}
-                >
-                  <strong>👤 Assignee:</strong>{" "}
-                  <span>You ({client.currentUserEmail || "Current Member"}) - Automatically assigned</span>
-                </div>
+                {/* Assignee selection */}
+                {client.isOwnerOrAdmin ? (
+                  <div>
+                    <label style={{ fontSize: "0.85rem", fontWeight: 600 }}>Assignee</label>
+                    <select
+                      required
+                      value={newJobAssigneeId || client.currentUserId || ""}
+                      onChange={(e) => setNewJobAssigneeId(e.target.value)}
+                      style={{ width: "100%", boxSizing: "border-box", padding: "0.5rem", borderRadius: "4px" }}
+                    >
+                      {workspaceUsers.map((u) => (
+                        <option key={u.id} value={u.id}>
+                          {u.name ? `${u.name} (${u.email})` : u.email}
+                          {u.id === client.currentUserId ? " — You" : ""}
+                        </option>
+                      ))}
+                      {!workspaceUsers.some((u) => u.id === client.currentUserId) && (
+                        <option value={client.currentUserId || ""}>
+                          You ({client.currentUserEmail || "Current Member"})
+                        </option>
+                      )}
+                    </select>
+                  </div>
+                ) : (
+                  <div
+                    style={{
+                      background: "var(--lattice-bg)",
+                      border: "1px solid var(--lattice-border)",
+                      borderRadius: "6px",
+                      padding: "0.6rem 0.75rem",
+                      fontSize: "0.8rem",
+                    }}
+                  >
+                    <strong>👤 Assignee:</strong>{" "}
+                    <span>You ({client.currentUserEmail || "Current Member"}) - Automatically assigned</span>
+                  </div>
+                )}
               </div>
 
               <div className="lattice-modal-footer" style={{ display: "flex", justifyContent: "space-between" }}>
@@ -785,16 +1255,21 @@ export function CustomerJobTrackingView({ client, schemas = [] }: CustomerJobTra
                   />
                 </div>
 
-                <div>
-                  <label style={{ fontSize: "0.85rem", fontWeight: 600 }}>Phone (Optional)</label>
-                  <input
-                    type="tel"
-                    placeholder="e.g. 555-0199"
-                    value={newCustPhone}
-                    onChange={(e) => setNewCustPhone(e.target.value)}
-                    style={{ width: "100%", boxSizing: "border-box", padding: "0.5rem", borderRadius: "4px" }}
-                  />
-                </div>
+                {customerPhoneField ? (
+                  <div>
+                    <label style={{ fontSize: "0.85rem", fontWeight: 600 }}>
+                      {isPhoneRequired ? "Phone" : "Phone (Optional)"}
+                    </label>
+                    <input
+                      type="tel"
+                      required={isPhoneRequired}
+                      placeholder="e.g. 555-0199"
+                      value={newCustPhone}
+                      onChange={(e) => setNewCustPhone(e.target.value)}
+                      style={{ width: "100%", boxSizing: "border-box", padding: "0.5rem", borderRadius: "4px" }}
+                    />
+                  </div>
+                ) : null}
               </div>
 
               <div className="lattice-modal-footer" style={{ display: "flex", justifyContent: "space-between" }}>

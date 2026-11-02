@@ -40,6 +40,11 @@ import {
   WorkspaceModulesModal,
   CustomerJobTrackingSetupModal,
   CustomerJobTrackingView,
+  isAbortError,
+  CJT_JOBS_REQUEST_KEY,
+  CJT_CUSTOMER_LIST_REQUEST_KEY,
+  CJT_PICKER_REQUEST_KEY,
+  DashboardPage,
   type DataClient,
 } from "./index";
 import type { SchemaDefinition, PageDefinition } from "@lattice/types";
@@ -1008,6 +1013,215 @@ describe("schema navigation and validation", () => {
     );
 
     expect(html).toContain("Workspace Team &amp; Access Control");
+  });
+
+  it("CustomerJobTrackingView renders server-side search input, pagination controls and assignee picker for owners", () => {
+    const mockClient = {
+      isOwnerOrAdmin: true,
+      currentUserId: "owner_1",
+      currentUserEmail: "owner@example.com",
+      getWorkspaceModule: async () => ({
+        module_id: "customer_job_tracking",
+        installed: true,
+        enabled: true,
+      }),
+      getWorkspaceUsers: async () => [
+        { id: "owner_1", name: "Alice Owner", email: "alice@example.com", role: "owner" },
+        { id: "member_2", name: "Bob Member", email: "bob@example.com", role: "member" },
+      ],
+      filter: (expr: string, params: any) => `${expr} [${JSON.stringify(params)}]`,
+      collection: () => ({
+        getList: async () => ({ items: [], totalPages: 1, totalItems: 0 }),
+        subscribe: () => Promise.resolve(() => {}),
+        unsubscribe: () => Promise.resolve(),
+      }),
+    } as unknown as Parameters<typeof CustomerJobTrackingView>[0]["client"];
+
+    const html = renderToString(
+      React.createElement(CustomerJobTrackingView, {
+        client: mockClient,
+        schemas: [],
+      }),
+    );
+
+    const cleanHtml = html.replace(/<!-- -->/g, "");
+    expect(cleanHtml).toContain("Search jobs by title…");
+    expect(cleanHtml).toContain("Showing page 1 of 1 (0 total jobs)");
+    expect(cleanHtml).toContain("Previous");
+    expect(cleanHtml).toContain("Next");
+    // Status filters do not render misleading partial-page counts
+    expect(cleanHtml).toContain(">All</button>");
+    expect(cleanHtml).toContain(">Open</button>");
+    expect(cleanHtml).toContain(">In progress</button>");
+    expect(cleanHtml).toContain(">Done</button>");
+  });
+
+  it("CustomerJobTrackingView omits phone input and filtering when mapping has no phone field", () => {
+    const mockClient = {
+      isOwnerOrAdmin: false,
+      currentUserId: "member_1",
+      currentUserEmail: "member@example.com",
+      getWorkspaceModule: async () => ({
+        module_id: "customer_job_tracking",
+        installed: true,
+        enabled: true,
+        mapping: {
+          customer_dataset: "clients",
+          customer_name_field: "full_name",
+          // explicitly no customer_phone_field
+          job_dataset: "jobs",
+          job_title_field: "title",
+          job_customer_field: "customer",
+          job_status_field: "status",
+          job_assignee_field: "assignee",
+        },
+      }),
+      collection: () => ({
+        getList: async () => ({ items: [], totalPages: 1, totalItems: 0 }),
+        subscribe: () => Promise.resolve(() => {}),
+        unsubscribe: () => Promise.resolve(),
+      }),
+    } as unknown as Parameters<typeof CustomerJobTrackingView>[0]["client"];
+
+    const html = renderToString(
+      React.createElement(CustomerJobTrackingView, {
+        client: mockClient,
+        schemas: [],
+        initialSegment: "customers",
+      }),
+    );
+
+    const cleanHtml = html.replace(/<!-- -->/g, "");
+    expect(cleanHtml).toContain('placeholder="Search customers by name…"');
+    expect(cleanHtml).not.toContain('placeholder="Search customers by name or phone…"');
+    expect(cleanHtml).not.toContain("Phone (Optional)");
+  });
+
+  it("CustomerJobTrackingView defines distinct requestKeys for independent customer list, picker, and job requests", () => {
+    expect(CJT_JOBS_REQUEST_KEY).toBeDefined();
+    expect(CJT_CUSTOMER_LIST_REQUEST_KEY).toBeDefined();
+    expect(CJT_PICKER_REQUEST_KEY).toBeDefined();
+
+    const keys = [CJT_JOBS_REQUEST_KEY, CJT_CUSTOMER_LIST_REQUEST_KEY, CJT_PICKER_REQUEST_KEY];
+    const uniqueKeys = new Set(keys);
+    expect(uniqueKeys.size).toBe(3);
+    expect(CJT_CUSTOMER_LIST_REQUEST_KEY).not.toBe(CJT_PICKER_REQUEST_KEY);
+    expect(CJT_JOBS_REQUEST_KEY).not.toBe(CJT_CUSTOMER_LIST_REQUEST_KEY);
+  });
+
+  it("isAbortError distinguishes genuine cancellations from ordinary response errors", () => {
+    // PocketBase response error with isAbort: false (should NOT be treated as cancellation)
+    const pb403 = { status: 403, isAbort: false, message: "Forbidden" };
+    expect(isAbortError(pb403)).toBe(false);
+
+    const pb500 = { status: 500, isAbort: false, message: "Server error" };
+    expect(isAbortError(pb500)).toBe(false);
+
+    const netErr = new Error("Network request failed");
+    expect(isAbortError(netErr)).toBe(false);
+
+    // Genuine aborts
+    const pbAbort = { status: 0, isAbort: true, message: "Request cancelled" };
+    expect(isAbortError(pbAbort)).toBe(true);
+
+    const domAbort = new Error("The user aborted a request.");
+    domAbort.name = "AbortError";
+    expect(isAbortError(domAbort)).toBe(true);
+  });
+
+  it("CustomerJobTrackingView marks phone field as required in form when mapped phone is required", () => {
+    const mockClient = {
+      isOwnerOrAdmin: false,
+      currentUserId: "member_1",
+      currentUserEmail: "member@example.com",
+      getWorkspaceModule: async () => ({
+        installed: true,
+        enabled: true,
+        mapping: {
+          customer_dataset: "customers",
+          customer_name_field: "name",
+          customer_phone_field: "phone",
+          job_dataset: "jobs",
+          job_title_field: "title",
+          job_customer_field: "customer",
+          job_status_field: "status",
+          job_assignee_field: "assignee",
+        },
+      }),
+      collection: () => ({
+        getList: async () => ({ items: [], totalPages: 1, totalItems: 0 }),
+        subscribe: () => Promise.resolve(() => {}),
+        unsubscribe: () => Promise.resolve(),
+      }),
+    } as unknown as Parameters<typeof CustomerJobTrackingView>[0]["client"];
+
+    const customerSchemaWithRequiredPhone: SchemaDefinition = {
+      schema_id: "customers",
+      name: "Customers",
+      fields: [
+        { name: "name", label: "Name", type: "text", required: true },
+        { name: "phone", label: "Phone", type: "text", required: true },
+      ],
+    };
+
+    const html = renderToString(
+      React.createElement(CustomerJobTrackingView, {
+        client: mockClient,
+        schemas: [customerSchemaWithRequiredPhone],
+        initialSegment: "customers",
+        initialCustomerPhoneField: "phone",
+        initialCreateCustModalOpen: true,
+      }),
+    );
+
+    const cleanHtml = html.replace(/<!-- -->/g, "");
+    expect(cleanHtml).toContain('<label style="font-size:0.85rem;font-weight:600">Phone</label>');
+    expect(cleanHtml).not.toContain("Phone (Optional)");
+    expect(cleanHtml).toContain('<input type="tel" required=""');
+  });
+
+  it("DashboardPage excludes customer_job_tracking module tab from not-found card", () => {
+    const mockClient = {
+      isOwnerOrAdmin: true,
+      currentUserRole: "owner",
+      currentUserId: "owner_1",
+      currentUserEmail: "owner@example.com",
+      config: {
+        backend_url: "https://acme.app.example.com",
+        tenant_id: "acme",
+        features: [],
+        collections: {},
+      },
+      getSchemas: async () => [],
+      getPages: async () => [],
+      getDisabledModules: async () => [],
+      getWorkspaceModules: async () => [
+        { module_id: "customer_job_tracking", installed: true, enabled: true },
+      ],
+      getWorkspaceModule: async () => ({
+        module_id: "customer_job_tracking",
+        installed: true,
+        enabled: true,
+      }),
+      getWorkspaceUsers: async () => [],
+      hasDatasetPermission: () => true,
+      collection: () => ({
+        getList: async () => ({ items: [], totalPages: 1, totalItems: 0 }),
+        subscribe: () => Promise.resolve(() => {}),
+        unsubscribe: () => Promise.resolve(),
+      }),
+      subscribeWorkspaceModules: () => () => {},
+    } as unknown as Parameters<typeof DashboardPage>[0]["client"];
+
+    const html = renderToString(
+      React.createElement(DashboardPage, {
+        client: mockClient,
+        onSignOut: () => {},
+      }),
+    );
+
+    expect(html).not.toContain('Page or Schema &quot;customer_job_tracking&quot; not found.');
+    expect(html).not.toContain('Page or Schema "customer_job_tracking" not found.');
   });
 });
 

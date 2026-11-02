@@ -1007,4 +1007,94 @@ describe("schema management", () => {
     expect(typeof unsub).toBe("function");
     unsub();
   });
+
+  it("surfaces server errors on setModuleEnabled and preserves local state", async () => {
+    let serverFails = false;
+    let installed = true;
+    let enabled = true;
+
+    const customFetch = (async (input: RequestInfo | URL, init?: RequestInit) => {
+      const url = String(input);
+      if (url.endsWith("/v1/config")) return json(config);
+      if (url.includes("/v1/workspace/modules/customer_job_tracking") && init?.method === "PUT") {
+        if (serverFails) {
+          return new Response(JSON.stringify({ error: "not_installed", message: "Module not installed" }), {
+            status: 400,
+            headers: { "Content-Type": "application/json" },
+          });
+        }
+        const body = JSON.parse(String(init?.body || "{}"));
+        enabled = body.enabled;
+        return json({ module_id: "customer_job_tracking", installed, enabled });
+      }
+      if (url.includes("/v1/workspace/modules") && init?.method === "GET") {
+        return json([{ module_id: "customer_job_tracking", installed, enabled }]);
+      }
+      if (url.includes("auth-with-password")) {
+        const token = `e30.${btoa(JSON.stringify({ exp: Math.floor(Date.now() / 1000) + 3600 }))}.sig`;
+        return json({
+          token,
+          record: { id: "owner_1", collectionName: "users", role: "owner" },
+        });
+      }
+      return json({});
+    }) as typeof fetch;
+
+    const storage = createMemoryStorage();
+    const client = await ProductClient.connect({
+      backendUrl: "https://acme.app.example.com/",
+      clientVersion: "0.1.0",
+      platform: { storage, fetch: customFetch },
+    });
+    await client.login("owner@example.com", "Password123!");
+
+    // Initially enabled
+    expect(await client.isModuleEnabled("customer_job_tracking")).toBe(true);
+
+    // When server fails, error must be thrown and local state not updated
+    serverFails = true;
+    await expect(client.setModuleEnabled("customer_job_tracking", false)).rejects.toThrow();
+
+    // Still enabled according to server
+    serverFails = false;
+    expect(await client.isModuleEnabled("customer_job_tracking")).toBe(true);
+
+    // When server succeeds, state updates
+    await client.setModuleEnabled("customer_job_tracking", false);
+    expect(await client.isModuleEnabled("customer_job_tracking")).toBe(false);
+  });
+
+  it("decides enablement from server installation for fresh clients", async () => {
+    const customFetch = (async (input: RequestInfo | URL) => {
+      const url = String(input);
+      if (url.endsWith("/v1/config")) return json(config);
+      if (url.includes("/v1/workspace/modules/customer_job_tracking")) {
+        return json({ module_id: "customer_job_tracking", installed: false, enabled: false });
+      }
+      if (url.includes("/v1/workspace/modules")) {
+        return json([{ module_id: "customer_job_tracking", installed: false, enabled: false }]);
+      }
+      if (url.includes("auth-with-password")) {
+        const token = `e30.${btoa(JSON.stringify({ exp: Math.floor(Date.now() / 1000) + 3600 }))}.sig`;
+        return json({
+          token,
+          record: { id: "member_1", collectionName: "users", role: "member" },
+        });
+      }
+      return json({});
+    }) as typeof fetch;
+
+    const storage = createMemoryStorage(); // Fresh device with empty storage
+    const client = await ProductClient.connect({
+      backendUrl: "https://acme.app.example.com/",
+      clientVersion: "0.1.0",
+      platform: { storage, fetch: customFetch },
+    });
+    await client.login("member@example.com", "Password123!");
+
+    // Fresh client should see uninstalled module as disabled
+    const disabled = await client.getDisabledModules();
+    expect(disabled).toContain("customer_job_tracking");
+    expect(await client.isModuleEnabled("customer_job_tracking")).toBe(false);
+  });
 });

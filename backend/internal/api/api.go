@@ -894,8 +894,56 @@ func Register(se *core.ServeEvent, cfg *tenant.Config, flags *features.Flags) {
 			if err := modules.ValidateModuleMapping(se.App, *body.Mapping); err != nil {
 				return e.JSON(http.StatusBadRequest, map[string]string{"error": "invalid_mapping", "message": err.Error()})
 			}
+			if err := modules.ValidateCustomerDatasetAccess(e.Request.Context(), se.App, body.Mapping.CustomerDataset); err != nil {
+				var incompErr *modules.IncompatibleRulesError
+				if errors.As(err, &incompErr) {
+					return e.JSON(http.StatusBadRequest, map[string]any{
+						"error":              "incompatible_rules",
+						"message":            err.Error(),
+						"dataset":            incompErr.Dataset,
+						"blocked_operations": incompErr.BlockedOps,
+					})
+				}
+				return e.JSON(http.StatusBadRequest, map[string]string{"error": "customer_validation_failed", "message": err.Error()})
+			}
+			if err := modules.EnsureJobDatasetAssigneeProtection(e.Request.Context(), se.App, body.Mapping.JobDataset, body.Mapping.JobAssigneeField); err != nil {
+				var incompErr *modules.IncompatibleRulesError
+				if errors.As(err, &incompErr) {
+					return e.JSON(http.StatusBadRequest, map[string]any{
+						"error":              "incompatible_rules",
+						"message":            err.Error(),
+						"dataset":            incompErr.Dataset,
+						"blocked_operations": incompErr.BlockedOps,
+					})
+				}
+				return e.JSON(http.StatusBadRequest, map[string]string{"error": "protection_failed", "message": err.Error()})
+			}
 			inst.Mapping = *body.Mapping
-			_ = modules.EnsureJobDatasetAssigneeProtection(e.Request.Context(), se.App, body.Mapping.JobDataset, body.Mapping.JobAssigneeField)
+		} else if body.Enabled != nil && *body.Enabled && inst.Mapping.CustomerDataset != "" {
+			if err := modules.ValidateCustomerDatasetAccess(e.Request.Context(), se.App, inst.Mapping.CustomerDataset); err != nil {
+				var incompErr *modules.IncompatibleRulesError
+				if errors.As(err, &incompErr) {
+					return e.JSON(http.StatusBadRequest, map[string]any{
+						"error":              "incompatible_rules",
+						"message":            err.Error(),
+						"dataset":            incompErr.Dataset,
+						"blocked_operations": incompErr.BlockedOps,
+					})
+				}
+				return e.JSON(http.StatusBadRequest, map[string]string{"error": "customer_validation_failed", "message": err.Error()})
+			}
+			if err := modules.EnsureJobDatasetAssigneeProtection(e.Request.Context(), se.App, inst.Mapping.JobDataset, inst.Mapping.JobAssigneeField); err != nil {
+				var incompErr *modules.IncompatibleRulesError
+				if errors.As(err, &incompErr) {
+					return e.JSON(http.StatusBadRequest, map[string]any{
+						"error":              "incompatible_rules",
+						"message":            err.Error(),
+						"dataset":            incompErr.Dataset,
+						"blocked_operations": incompErr.BlockedOps,
+					})
+				}
+				return e.JSON(http.StatusBadRequest, map[string]string{"error": "protection_failed", "message": err.Error()})
+			}
 		}
 
 		saved, err := modules.SaveModuleInstallation(se.App, inst)
@@ -929,6 +977,33 @@ func Register(se *core.ServeEvent, cfg *tenant.Config, flags *features.Flags) {
 			if err != nil {
 				return e.JSON(http.StatusBadRequest, map[string]string{"error": "provision_failed", "message": err.Error()})
 			}
+			if err := modules.ValidateModuleMapping(se.App, m); err != nil {
+				return e.JSON(http.StatusBadRequest, map[string]string{"error": "invalid_mapping", "message": err.Error()})
+			}
+			if err := modules.ValidateCustomerDatasetAccess(e.Request.Context(), se.App, m.CustomerDataset); err != nil {
+				var incompErr *modules.IncompatibleRulesError
+				if errors.As(err, &incompErr) {
+					return e.JSON(http.StatusBadRequest, map[string]any{
+						"error":              "incompatible_rules",
+						"message":            err.Error(),
+						"dataset":            incompErr.Dataset,
+						"blocked_operations": incompErr.BlockedOps,
+					})
+				}
+				return e.JSON(http.StatusBadRequest, map[string]string{"error": "customer_validation_failed", "message": err.Error()})
+			}
+			if err := modules.EnsureJobDatasetAssigneeProtection(e.Request.Context(), se.App, m.JobDataset, m.JobAssigneeField); err != nil {
+				var incompErr *modules.IncompatibleRulesError
+				if errors.As(err, &incompErr) {
+					return e.JSON(http.StatusBadRequest, map[string]any{
+						"error":              "incompatible_rules",
+						"message":            err.Error(),
+						"dataset":            incompErr.Dataset,
+						"blocked_operations": incompErr.BlockedOps,
+					})
+				}
+				return e.JSON(http.StatusBadRequest, map[string]string{"error": "protection_failed", "message": err.Error()})
+			}
 			mapping = m
 		} else {
 			if req.Mapping == nil {
@@ -937,7 +1012,30 @@ func Register(se *core.ServeEvent, cfg *tenant.Config, flags *features.Flags) {
 			if err := modules.ValidateModuleMapping(se.App, *req.Mapping); err != nil {
 				return e.JSON(http.StatusBadRequest, map[string]string{"error": "invalid_mapping", "message": err.Error()})
 			}
-			_ = modules.EnsureJobDatasetAssigneeProtection(e.Request.Context(), se.App, req.Mapping.JobDataset, req.Mapping.JobAssigneeField)
+			if err := modules.ValidateCustomerDatasetAccess(e.Request.Context(), se.App, req.Mapping.CustomerDataset); err != nil {
+				var incompErr *modules.IncompatibleRulesError
+				if errors.As(err, &incompErr) {
+					return e.JSON(http.StatusBadRequest, map[string]any{
+						"error":              "incompatible_rules",
+						"message":            err.Error(),
+						"dataset":            incompErr.Dataset,
+						"blocked_operations": incompErr.BlockedOps,
+					})
+				}
+				return e.JSON(http.StatusBadRequest, map[string]string{"error": "customer_validation_failed", "message": err.Error()})
+			}
+			if err := modules.EnsureJobDatasetAssigneeProtection(e.Request.Context(), se.App, req.Mapping.JobDataset, req.Mapping.JobAssigneeField); err != nil {
+				var incompErr *modules.IncompatibleRulesError
+				if errors.As(err, &incompErr) {
+					return e.JSON(http.StatusBadRequest, map[string]any{
+						"error":              "incompatible_rules",
+						"message":            err.Error(),
+						"dataset":            incompErr.Dataset,
+						"blocked_operations": incompErr.BlockedOps,
+					})
+				}
+				return e.JSON(http.StatusBadRequest, map[string]string{"error": "protection_failed", "message": err.Error()})
+			}
 			mapping = *req.Mapping
 		}
 

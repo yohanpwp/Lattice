@@ -489,15 +489,40 @@ export class ProductClient {
    * Retrieves list of disabled module IDs for this tenant workspace.
    */
   async getDisabledModules(): Promise<string[]> {
+    const disabled = new Set<string>();
     try {
       const key = `lattice:disabled_modules:${encodeURIComponent(this.config.backend_url)}:${encodeURIComponent(this.config.tenant_id)}`;
       const raw = await this.platform.storage.getItem(key);
-      if (!raw) return [];
-      const parsed = JSON.parse(raw);
-      return Array.isArray(parsed) ? parsed : [];
+      if (raw) {
+        const parsed = JSON.parse(raw);
+        if (Array.isArray(parsed)) {
+          for (const id of parsed) {
+            disabled.add(id);
+          }
+        }
+      }
     } catch {
-      return [];
+      // Fallback
     }
+
+    if (this.isAuthenticated) {
+      try {
+        const serverModules = await this.getWorkspaceModules();
+        for (const sm of serverModules) {
+          if (sm && sm.module_id) {
+            if (!sm.installed || !sm.enabled) {
+              disabled.add(sm.module_id);
+            } else {
+              disabled.delete(sm.module_id);
+            }
+          }
+        }
+      } catch {
+        // Fallback gracefully if server is unreachable
+      }
+    }
+
+    return Array.from(disabled);
   }
 
   /**
@@ -506,8 +531,8 @@ export class ProductClient {
   async isModuleEnabled(moduleId: string): Promise<boolean> {
     if (this.isAuthenticated) {
       const serverMod = await this.getWorkspaceModule(moduleId);
-      if (serverMod && typeof serverMod.enabled === "boolean") {
-        return serverMod.enabled;
+      if (serverMod && serverMod.module_id && typeof serverMod.enabled === "boolean") {
+        return Boolean(serverMod.installed && serverMod.enabled);
       }
     }
     const disabled = await this.getDisabledModules();
@@ -522,14 +547,24 @@ export class ProductClient {
     if (!this.isOwnerOrAdmin) {
       throw new Error("Only workspace owners and admins can configure workspace modules");
     }
-    try {
+
+    let isManaged = moduleId === "customer_job_tracking";
+    if (!isManaged) {
+      try {
+        const serverModules = await this.getWorkspaceModules();
+        isManaged = serverModules.some((m) => m.module_id === moduleId);
+      } catch {
+        // Fallback
+      }
+    }
+
+    if (isManaged) {
       await this.pb.send<WorkspaceModuleInstallation>(`/v1/workspace/modules/${encodeURIComponent(moduleId)}`, {
         method: "PUT",
         body: { enabled },
       });
-    } catch {
-      // Fallback if not yet installed or server offline
     }
+
     const current = await this.getDisabledModules();
     const set = new Set(current);
     if (enabled) {
@@ -620,7 +655,7 @@ export class ProductClient {
         name: mm.name,
         description: mm.description || "Managed workspace module",
         icon: mm.icon || "📦",
-        enabled: Boolean(mm.enabled),
+        enabled: Boolean(mm.installed && mm.enabled),
         dataset_id: mm.mapping?.job_dataset,
       });
     }
