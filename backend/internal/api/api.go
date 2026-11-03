@@ -58,6 +58,79 @@ func Register(se *core.ServeEvent, cfg *tenant.Config, flags *features.Flags) {
 
 	schemaSvc := schemas.NewService(se.App)
 
+	// Enforce that members with assigned scope creating records with an assignee field are
+	// automatically assigned to themselves. Members with all scope are not restricted.
+	se.App.OnRecordCreateRequest().BindFunc(func(e *core.RecordRequestEvent) error {
+		if e.Auth != nil && e.Auth.GetString("role") == authz.RoleMember && e.Record != nil {
+			colName := ""
+			if e.Record.Collection() != nil {
+				colName = e.Record.Collection().Name
+			} else if e.Collection != nil {
+				colName = e.Collection.Name
+			}
+			perms := authz.GetUserPermissions(e.Auth)
+			p, hasP := perms[colName]
+			if !hasP || p.Scope != authz.ScopeAssigned {
+				return e.Next()
+			}
+
+			assigneeField := ""
+			schemaRec, err := e.App.FindFirstRecordByFilter("schema_definitions", "schema_id = {:id}", map[string]any{"id": colName})
+			if err == nil && schemaRec != nil {
+				assigneeField = schemaRec.GetString("assignee_field")
+			}
+			if assigneeField == "" {
+				if inst, err := modules.GetInstalledModule(e.App, modules.ModuleIDCustomerJobTracking); err == nil && inst != nil && inst.Enabled {
+					if inst.Mapping.JobDataset == colName {
+						assigneeField = inst.Mapping.JobAssigneeField
+					}
+				}
+			}
+			if assigneeField != "" {
+				e.Record.Set(assigneeField, e.Auth.Id)
+			}
+		}
+		return e.Next()
+	})
+
+	// Prevent members with assigned scope from reassigning existing jobs to other users on update.
+	// Members with all scope are not restricted.
+	se.App.OnRecordUpdateRequest().BindFunc(func(e *core.RecordRequestEvent) error {
+		if e.Auth != nil && e.Auth.GetString("role") == authz.RoleMember && e.Record != nil {
+			colName := ""
+			if e.Record.Collection() != nil {
+				colName = e.Record.Collection().Name
+			} else if e.Collection != nil {
+				colName = e.Collection.Name
+			}
+			perms := authz.GetUserPermissions(e.Auth)
+			p, hasP := perms[colName]
+			if !hasP || p.Scope != authz.ScopeAssigned {
+				return e.Next()
+			}
+
+			assigneeField := ""
+			schemaRec, err := e.App.FindFirstRecordByFilter("schema_definitions", "schema_id = {:id}", map[string]any{"id": colName})
+			if err == nil && schemaRec != nil {
+				assigneeField = schemaRec.GetString("assignee_field")
+			}
+			if assigneeField == "" {
+				if inst, err := modules.GetInstalledModule(e.App, modules.ModuleIDCustomerJobTracking); err == nil && inst != nil && inst.Enabled {
+					if inst.Mapping.JobDataset == colName {
+						assigneeField = inst.Mapping.JobAssigneeField
+					}
+				}
+			}
+			if assigneeField != "" {
+				currentVal := e.Record.GetString(assigneeField)
+				if currentVal != "" && currentVal != e.Auth.Id {
+					return apis.NewForbiddenError("members cannot reassign jobs", nil)
+				}
+			}
+		}
+		return e.Next()
+	})
+
 	// List all business schemas with fields (requires auth)
 	se.Router.GET("/v1/schemas", func(e *core.RequestEvent) error {
 		if e.Auth != nil && e.Auth.GetBool("disabled") {
@@ -836,6 +909,13 @@ func Register(se *core.ServeEvent, cfg *tenant.Config, flags *features.Flags) {
 			return e.JSON(http.StatusNotFound, map[string]string{"error": "not_found", "message": fmt.Sprintf("Module %q not found in catalog", id)})
 		}
 
+		if err := modules.ValidateModuleContract(*cat); err != nil {
+			return e.JSON(http.StatusBadRequest, map[string]string{
+				"error":   "incompatible_module_contract",
+				"message": err.Error(),
+			})
+		}
+
 		inst, _ := modules.GetInstalledModule(se.App, id)
 		res := map[string]any{
 			"module_id":           cat.ModuleID,
@@ -964,6 +1044,13 @@ func Register(se *core.ServeEvent, cfg *tenant.Config, flags *features.Flags) {
 		cat, ok := modules.GetCatalogModule(id)
 		if !ok || cat == nil {
 			return e.JSON(http.StatusNotFound, map[string]string{"error": "not_found", "message": fmt.Sprintf("Module %q not found in catalog", id)})
+		}
+
+		if err := modules.ValidateModuleContract(*cat); err != nil {
+			return e.JSON(http.StatusBadRequest, map[string]string{
+				"error":   "incompatible_module_contract",
+				"message": err.Error(),
+			})
 		}
 
 		var req modules.ModuleSetupRequest

@@ -11,6 +11,7 @@ import {
   assertPluginManifest,
   assertSchemaDefinition,
   assertPageDefinition,
+  assertModuleContract,
 } from "./index";
 
 const validConfig = {
@@ -32,6 +33,7 @@ describe("shared TypeScript and Go contract fixtures", () => {
     ["dashboard-layout", assertDashboardLayout],
     ["plugin-manifest", assertPluginManifest],
     ["event-envelope", assertEventEnvelope],
+    ["module-contract", assertModuleContract],
   ] as const;
 
   for (const [schema, validate] of cases) {
@@ -213,5 +215,64 @@ describe("Features, PluginManifest, EventEnvelope", () => {
 
     expect(() => assertPageDefinition({ ...validKanban, view_type: "invalid_type" })).toThrow(ContractError);
     expect(() => assertPageDefinition({ ...validKanban, page_id: "Invalid Page ID!" })).toThrow(ContractError);
+  });
+
+  describe("ModuleContract", () => {
+    const validMod = {
+      module_id: "customer_job_tracking",
+      name: "Customer & Job Tracking",
+      version: "1.0.0",
+      description: "Track customer contacts and manage assigned jobs with status updates.",
+      icon: "clipboard-check",
+      supported_platforms: ["web", "mobile"],
+      required_datasets: [
+        {
+          dataset_role: "customers",
+          name: "Customers",
+          required_fields: [
+            {
+              field_role: "name",
+              name: "name",
+              type: "text",
+              required: true,
+            },
+          ],
+        },
+      ],
+      screens: ["job_list", "customer_list"],
+      actions: ["create_job", "update_job_status"],
+      permissions: {
+        customers: { read: true, scope: "all" },
+      },
+      disabling: "Disabling hides dedicated module screens and navigation.",
+    };
+
+    it("accepts a valid module contract", () => {
+      expect(assertModuleContract(validMod)).toEqual(validMod);
+    });
+
+    it("rejects an incompatible non-semver version", () => {
+      expect(() => assertModuleContract({ ...validMod, version: "v1.0" })).toThrow(ContractError);
+      expect(() => assertModuleContract({ ...validMod, version: "1.0-beta" })).toThrow(ContractError);
+      expect(() => assertModuleContract({ ...validMod, version: "alpha" })).toThrow(ContractError);
+    });
+
+    it("rejects a missing requirement such as required_datasets or missing field", () => {
+      const { required_datasets: _omit, ...missingReq } = validMod;
+      expect(() => assertModuleContract(missingReq)).toThrow(ContractError);
+      expect(() => assertModuleContract({ ...validMod, required_datasets: [] })).toThrow(ContractError);
+      expect(() =>
+        assertModuleContract({
+          ...validMod,
+          required_datasets: [
+            {
+              dataset_role: "customers",
+              name: "Customers",
+              required_fields: [],
+            },
+          ],
+        }),
+      ).toThrow(ContractError);
+    });
   });
 });

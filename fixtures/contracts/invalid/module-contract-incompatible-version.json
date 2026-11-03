@@ -1,0 +1,22 @@
+{
+  "module_id": "customer_job_tracking",
+  "name": "Customer & Job Tracking",
+  "version": "v1.0-incompatible",
+  "description": "Module definition with invalid semver format version",
+  "icon": "clipboard-check",
+  "supported_platforms": ["web"],
+  "required_datasets": [
+    {
+      "dataset_role": "customers",
+      "name": "Customers",
+      "required_fields": [
+        {
+          "field_role": "name",
+          "name": "name",
+          "type": "text",
+          "required": true
+        }
+      ]
+    }
+  ]
+}

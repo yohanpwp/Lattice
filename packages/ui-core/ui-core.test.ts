@@ -732,33 +732,35 @@ describe("schema navigation and validation", () => {
   });
 
   it("renders WorkspaceModulesModal with module list, type chips, and status badges", () => {
+    const modulesList = [
+      {
+        id: "dashboard",
+        name: "Dashboard & Analytics",
+        icon: "📊",
+        enabled: true,
+      },
+      {
+        id: "customers",
+        name: "Customers Directory",
+        icon: "👥",
+        dataset_id: "customers",
+        page_ids: ["cust_table"],
+        enabled: true,
+      },
+      {
+        id: "feature_billing",
+        name: "Feature: Billing",
+        icon: "⚡",
+        feature_flag: "billing",
+        enabled: false,
+      },
+    ];
+
     const mockClient = {
       config: { tenant_id: "tenant_dev", features: ["billing"] },
       isOwnerOrAdmin: true,
       currentUserRole: "owner",
-      getModules: async () => [
-        {
-          id: "dashboard",
-          name: "Dashboard & Analytics",
-          icon: "📊",
-          enabled: true,
-        },
-        {
-          id: "customers",
-          name: "Customers Directory",
-          icon: "👥",
-          dataset_id: "customers",
-          page_ids: ["cust_table"],
-          enabled: true,
-        },
-        {
-          id: "feature_billing",
-          name: "Feature: Billing",
-          icon: "⚡",
-          feature_flag: "billing",
-          enabled: false,
-        },
-      ],
+      getModules: async () => modulesList,
       getDisabledModules: async () => ["feature_billing"],
       setModuleEnabled: async () => {},
     } as unknown as Parameters<typeof WorkspaceModulesModal>[0]["client"];
@@ -768,6 +770,7 @@ describe("schema navigation and validation", () => {
         isOpen: true,
         onClose: () => {},
         client: mockClient,
+        initialModules: modulesList,
       }),
     );
 
@@ -777,6 +780,73 @@ describe("schema navigation and validation", () => {
     expect(html).toContain("Datasets");
     expect(html).toContain("Features");
     expect(html).toContain("Close");
+    expect(html).toContain("Dashboard &amp; Analytics");
+    expect(html).toContain("Customers Directory");
+    expect(html).toContain("Feature: Billing");
+  });
+
+  it("renders WorkspaceModulesModal with incompatible module showing incompatible badge, disabled button, and no Enable button", () => {
+    const mockClient = {
+      config: { tenant_id: "tenant_dev" },
+      isOwnerOrAdmin: true,
+      currentUserRole: "owner",
+      getModules: async () => [],
+      getDisabledModules: async () => [],
+      setModuleEnabled: async () => {},
+    } as unknown as Parameters<typeof WorkspaceModulesModal>[0]["client"];
+
+    const sampleModules = [
+      {
+        id: "customer_job_tracking",
+        name: "Customer & Job Tracking",
+        icon: "💼",
+        enabled: true,
+        compatible: true,
+      },
+      {
+        id: "future_module",
+        name: "Future Module V2",
+        icon: "🚀",
+        enabled: false,
+        compatible: false,
+        compatibility_error: 'incompatible module version: version "2.0.0" is not supported (supported major version: 1)',
+      },
+      {
+        id: "standard_disabled_mod",
+        name: "Inventory Tracking",
+        icon: "📦",
+        enabled: false,
+        compatible: true,
+      },
+    ];
+
+    const html = renderToString(
+      React.createElement(WorkspaceModulesModal, {
+        isOpen: true,
+        onClose: () => {},
+        client: mockClient,
+        initialModules: sampleModules,
+      }),
+    );
+
+    const cleanHtml = html.replace(/<!-- -->/g, "");
+    // Summary metrics include Incompatible count
+    expect(cleanHtml).toContain("Incompatible");
+    expect(cleanHtml).toContain("lattice-status-badge--incompatible");
+    expect(cleanHtml).toContain("✕</span> Incompatible");
+
+    // Incompatible module action button is disabled and labeled Incompatible, NOT Enable
+    expect(cleanHtml).toContain('disabled=""');
+    expect(cleanHtml).toContain(
+      'title="incompatible module version: version &quot;2.0.0&quot; is not supported (supported major version: 1)"',
+    );
+    expect(cleanHtml).toContain(">Incompatible</button>");
+
+    // Standard disabled module still shows Enable button
+    expect(cleanHtml).toContain(">Enable</button>");
+
+    // Active module shows Disable button
+    expect(cleanHtml).toContain(">Disable</button>");
   });
 
   it("renders SchemaView sorting correctly when created field is absent", () => {
@@ -1222,6 +1292,129 @@ describe("schema navigation and validation", () => {
 
     expect(html).not.toContain('Page or Schema &quot;customer_job_tracking&quot; not found.');
     expect(html).not.toContain('Page or Schema "customer_job_tracking" not found.');
+  });
+
+  it("CustomerJobTrackingView renders phone workflow: job cards with status update actions and assigned display", () => {
+    const mockClient = {
+      isOwnerOrAdmin: false,
+      currentUserId: "member_1",
+      currentUserEmail: "member@example.com",
+      getWorkspaceModule: async () => null,
+      collection: () => ({
+        getList: async () => ({ items: [], totalPages: 1, totalItems: 0 }),
+        subscribe: () => Promise.resolve(() => {}),
+        unsubscribe: () => Promise.resolve(),
+      }),
+    } as unknown as Parameters<typeof CustomerJobTrackingView>[0]["client"];
+
+    const sampleJobs = [
+      {
+        id: "job_1",
+        title: "Boiler Maintenance",
+        status: "Open",
+        customer: "cust_1",
+        assignee: "member_1",
+      },
+    ];
+
+    const html = renderToString(
+      React.createElement(CustomerJobTrackingView, {
+        client: mockClient,
+        schemas: [],
+        initialLoadingJobs: false,
+        initialJobs: sampleJobs,
+      }),
+    );
+
+    const cleanHtml = html.replace(/<!-- -->/g, "");
+    expect(cleanHtml).toContain("Boiler Maintenance");
+    expect(cleanHtml).toContain("Assignee: <strong>You</strong>");
+    expect(cleanHtml).toContain("In progress");
+    expect(cleanHtml).toContain("Done");
+  });
+
+  it("CustomerJobTrackingView renders empty state and loading state correctly", () => {
+    const mockClient = {
+      isOwnerOrAdmin: false,
+      currentUserId: "member_1",
+      getWorkspaceModule: async () => null,
+      collection: () => ({
+        getList: async () => ({ items: [], totalPages: 1, totalItems: 0 }),
+        subscribe: () => Promise.resolve(() => {}),
+        unsubscribe: () => Promise.resolve(),
+      }),
+    } as unknown as Parameters<typeof CustomerJobTrackingView>[0]["client"];
+
+    // Loading state
+    const loadingHtml = renderToString(
+      React.createElement(CustomerJobTrackingView, {
+        client: mockClient,
+        initialLoadingJobs: true,
+      }),
+    );
+    expect(loadingHtml).toContain("Loading jobs…");
+
+    // Empty state
+    const emptyHtml = renderToString(
+      React.createElement(CustomerJobTrackingView, {
+        client: mockClient,
+        initialLoadingJobs: false,
+        initialJobs: [],
+      }),
+    );
+    expect(emptyHtml).toContain("No jobs found.");
+    expect(emptyHtml).toContain("+ Create First Job");
+  });
+
+  it("CustomerJobTrackingView renders connection and access error banners with retry action", () => {
+    const mockClient = {
+      isOwnerOrAdmin: false,
+      currentUserId: "member_1",
+      getWorkspaceModule: async () => null,
+      collection: () => ({
+        getList: async () => ({ items: [], totalPages: 1, totalItems: 0 }),
+        subscribe: () => Promise.resolve(() => {}),
+        unsubscribe: () => Promise.resolve(),
+      }),
+    } as unknown as Parameters<typeof CustomerJobTrackingView>[0]["client"];
+
+    const html = renderToString(
+      React.createElement(CustomerJobTrackingView, {
+        client: mockClient,
+        initialError: "Connection lost. Please check network connection.",
+      }),
+    );
+
+    expect(html).toContain("Access Alert:");
+    expect(html).toContain("Connection lost. Please check network connection.");
+    expect(html).toContain("Retry");
+  });
+
+  it("CustomerJobTrackingView hides assignee dropdown for regular members in job creation modal", () => {
+    const mockClient = {
+      isOwnerOrAdmin: false,
+      currentUserId: "member_1",
+      currentUserEmail: "member1@example.com",
+      getWorkspaceModule: async () => null,
+      collection: () => ({
+        getList: async () => ({ items: [], totalPages: 1, totalItems: 0 }),
+        subscribe: () => Promise.resolve(() => {}),
+        unsubscribe: () => Promise.resolve(),
+      }),
+    } as unknown as Parameters<typeof CustomerJobTrackingView>[0]["client"];
+
+    const html = renderToString(
+      React.createElement(CustomerJobTrackingView, {
+        client: mockClient,
+        initialCreateJobModalOpen: true,
+      }),
+    );
+
+    const cleanHtml = html.replace(/<!-- -->/g, "");
+    expect(cleanHtml).toContain("New Job");
+    expect(cleanHtml).toContain("Assignee:");
+    expect(cleanHtml).toContain("Automatically assigned");
+    expect(cleanHtml).not.toContain('<select value="member_1">');
   });
 });
 

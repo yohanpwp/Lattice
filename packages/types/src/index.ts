@@ -11,4 +11,6 @@ export interface WorkspaceModule {
   dataset_id?: string;
   page_ids?: string[];
   feature_flag?: string;
+  compatible?: boolean;
+  compatibility_error?: string;
 }

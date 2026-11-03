@@ -54,7 +54,7 @@ func TestValidate_Failures(t *testing.T) {
 }
 
 func TestSharedContractFixtures(t *testing.T) {
-	for _, name := range []string{"app-config", "features", "dashboard-layout", "plugin-manifest", "event-envelope"} {
+	for _, name := range []string{"app-config", "features", "dashboard-layout", "plugin-manifest", "event-envelope", "module-contract"} {
 		t.Run(name, func(t *testing.T) {
 			for _, kind := range []string{"valid", "invalid"} {
 				fixtureDir := filepath.Join("../../../../fixtures/contracts", kind)
@@ -78,6 +78,7 @@ func TestSharedContractFixtures(t *testing.T) {
 						err = validateContract(map[string]string{
 							"app-config": "AppConfig", "features": "Features", "dashboard-layout": "DashboardLayout",
 							"plugin-manifest": "PluginManifest", "event-envelope": "EventEnvelope",
+							"module-contract": "ModuleContract",
 						}[name], value)
 						if kind == "valid" && err != nil {
 							t.Fatalf("valid fixture rejected: %v", err)

@@ -19,6 +19,10 @@ export interface CustomerJobTrackingViewProps {
   initialSegment?: "jobs" | "customers";
   initialCustomerPhoneField?: string;
   initialCreateCustModalOpen?: boolean;
+  initialLoadingJobs?: boolean;
+  initialJobs?: RecordModel[];
+  initialError?: string;
+  initialCreateJobModalOpen?: boolean;
 }
 
 export function CustomerJobTrackingView({
@@ -27,6 +31,10 @@ export function CustomerJobTrackingView({
   initialSegment = "jobs",
   initialCustomerPhoneField,
   initialCreateCustModalOpen = false,
+  initialLoadingJobs,
+  initialJobs,
+  initialError,
+  initialCreateJobModalOpen = false,
 }: CustomerJobTrackingViewProps) {
   const [activeSegment, setActiveSegment] = useState<"jobs" | "customers">(initialSegment);
   const [statusFilter, setStatusFilter] = useState<string>("all");
@@ -39,12 +47,12 @@ export function CustomerJobTrackingView({
   const pickerReqSeq = useRef(0);
 
   // Jobs pagination
-  const [jobs, setJobs] = useState<RecordModel[]>([]);
+  const [jobs, setJobs] = useState<RecordModel[]>(initialJobs ?? []);
   const [jobsPage, setJobsPage] = useState(1);
   const [jobsPerPage] = useState(25);
   const [jobsTotalPages, setJobsTotalPages] = useState(1);
-  const [jobsTotalItems, setJobsTotalItems] = useState(0);
-  const [loadingJobs, setLoadingJobs] = useState(true);
+  const [jobsTotalItems, setJobsTotalItems] = useState(initialJobs?.length ?? 0);
+  const [loadingJobs, setLoadingJobs] = useState(initialLoadingJobs ?? (initialJobs ? false : true));
 
   // Customers pagination
   const [customers, setCustomers] = useState<RecordModel[]>([]);
@@ -60,7 +68,7 @@ export function CustomerJobTrackingView({
   // Workspace team members for assignee picker (owners / admins)
   const [workspaceUsers, setWorkspaceUsers] = useState<WorkspaceUser[]>([]);
 
-  const [error, setError] = useState<string | null>(null);
+  const [error, setError] = useState<string | null>(initialError ?? null);
 
   // Mappings (customerPhoneField is empty if no phone field mapped)
   const [customerDataset, setCustomerDataset] = useState("customers");
@@ -77,7 +85,7 @@ export function CustomerJobTrackingView({
   const [jobAssigneeField, setJobAssigneeField] = useState("assignee");
 
   // Job creation modal state
-  const [createJobModalOpen, setCreateJobModalOpen] = useState(false);
+  const [createJobModalOpen, setCreateJobModalOpen] = useState(initialCreateJobModalOpen ?? false);
   const [newJobTitle, setNewJobTitle] = useState("");
   const [newJobCustomerId, setNewJobCustomerId] = useState("");
   const [newJobStatus, setNewJobStatus] = useState("Open");

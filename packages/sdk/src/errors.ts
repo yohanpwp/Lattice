@@ -23,3 +23,19 @@ export class ClientTooOldError extends Error {
     this.minClientVersion = minClientVersion;
   }
 }
+
+/** A module specification version is not supported by this client build. */
+export class IncompatibleModuleError extends Error {
+  readonly moduleId: string;
+  readonly version?: string;
+
+  constructor(moduleId: string, version?: string, message?: string) {
+    super(
+      message ??
+        `Module "${moduleId}" specification version "${version ?? "unknown"}" is not supported by this client build. Supported major version is 1.`,
+    );
+    this.name = "IncompatibleModuleError";
+    this.moduleId = moduleId;
+    this.version = version;
+  }
+}

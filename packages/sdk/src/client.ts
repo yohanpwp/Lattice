@@ -7,6 +7,10 @@ import {
   assertWorkspaceUser,
   assertWorkspaceSetupRequest,
   assertWorkspaceInvitation,
+  assertModuleContract,
+  assertWorkspaceModuleInstallation,
+  ContractError,
+  type ContractIssue,
   type AppConfig,
   type Features,
   type SchemaDefinition,
@@ -21,9 +25,9 @@ import {
 } from "@lattice/types";
 import { AuthPersistenceError, createAuthStore, type PersistentAuthStore } from "./authStore";
 import { fetchAppConfig } from "./config";
-import { ClientTooOldError } from "./errors";
+import { ClientTooOldError, IncompatibleModuleError } from "./errors";
 import { createMemoryStorage, type PlatformAdapters } from "./platform";
-import { isClientCompatible } from "./version";
+import { isClientCompatible, isModuleVersionCompatible } from "./version";
 
 export interface ClientOptions {
   /** Version of this app build, MAJOR.MINOR.PATCH. Checked against min_client_version. */
@@ -63,6 +67,79 @@ function normalizeRealtimeURL(value: string): string {
 
 import { PaymentsClient } from "./payments";
 
+export interface WorkspaceModuleEntry extends ModuleContract {
+  installed: boolean;
+  enabled: boolean;
+  mapping?: any;
+  installed_at?: string;
+  updated_at?: string;
+  compatible?: boolean;
+  compatibility_error?: string;
+}
+
+/**
+ * Splits and validates a module contract response alongside its installation state.
+ * Validates the contract structure against ModuleContract schema and enforces
+ * the client supported-version policy.
+ */
+export function assertModuleEntry(value: unknown): WorkspaceModuleEntry {
+  if (!value || typeof value !== "object") {
+    throw new ContractError("ModuleContract", [{ path: "/", message: "must be an object" }]);
+  }
+  const raw = value as Record<string, unknown>;
+  const { installed, enabled, mapping, installed_at, updated_at, ...contractPart } = raw;
+
+  const issues: ContractIssue[] = [];
+  if (typeof installed !== "boolean") {
+    issues.push({ path: "/installed", message: "must be a boolean" });
+  }
+  if (typeof enabled !== "boolean") {
+    issues.push({ path: "/enabled", message: "must be a boolean" });
+  }
+  if (installed_at !== undefined && typeof installed_at !== "string") {
+    issues.push({ path: "/installed_at", message: "must be a string" });
+  }
+  if (updated_at !== undefined && typeof updated_at !== "string") {
+    issues.push({ path: "/updated_at", message: "must be a string" });
+  }
+  if (issues.length > 0) {
+    throw new ContractError("ModuleContract", issues);
+  }
+
+  const contract = assertModuleContract(contractPart);
+  if (!isModuleVersionCompatible(contract.version)) {
+    throw new IncompatibleModuleError(contract.module_id, contract.version);
+  }
+  return {
+    ...contract,
+    installed,
+    enabled,
+    ...(mapping !== undefined ? { mapping } : {}),
+    ...(installed_at !== undefined ? { installed_at } : {}),
+    ...(updated_at !== undefined ? { updated_at } : {}),
+    compatible: true,
+  };
+}
+
+/**
+ * Maps backend HTTP 400 incompatible_module_contract errors to IncompatibleModuleError.
+ */
+function mapBackendModuleError(err: any, moduleId?: string): Error {
+  if (
+    (err?.status === 400 || err?.response?.status === 400) &&
+    (err?.response?.error === "incompatible_module_contract" || err?.data?.error === "incompatible_module_contract")
+  ) {
+    const msg = err?.response?.message || err?.data?.message || err?.message;
+    const versionMatch = typeof msg === "string" ? /version\s+"([^"]+)"/.exec(msg) : null;
+    const version = versionMatch ? versionMatch[1] : undefined;
+    return new IncompatibleModuleError(moduleId ?? "unknown", version, msg);
+  }
+  if (err?.originalError instanceof Error) {
+    return err.originalError;
+  }
+  return err;
+}
+
 /** Central API for every client platform. */
 export class ProductClient {
   readonly config: AppConfig;
@@ -70,6 +147,7 @@ export class ProductClient {
   readonly authStore: PersistentAuthStore;
   readonly platform: PlatformAdapters;
   readonly payments: PaymentsClient;
+  private readonly knownManagedModules = new Set<string>(["customer_job_tracking"]);
   private constructor(config: AppConfig, pb: PocketBase, authStore: PersistentAuthStore, platform?: PlatformAdapters) {
     this.config = config;
     this.pb = pb;
@@ -418,25 +496,100 @@ export class ProductClient {
 
   /**
    * Retrieves list of managed modules with installation and catalog status from server.
+   * Validates each module contract and enforces the client's supported-version policy,
+   * handling incompatible entries individually and surfacing their status while keeping
+   * compatible modules available.
    */
-  async getWorkspaceModules(): Promise<Array<ModuleContract & { installed: boolean; enabled: boolean; mapping?: any; installed_at?: string; updated_at?: string }>> {
+  async getWorkspaceModules(): Promise<WorkspaceModuleEntry[]> {
+    let res: any[];
     try {
-      const res = await this.pb.send<any[]>("/v1/workspace/modules", { method: "GET" });
-      return Array.isArray(res) ? res : [];
-    } catch {
-      return [];
+      res = await this.pb.send<any[]>("/v1/workspace/modules", { method: "GET" });
+    } catch (err: any) {
+      if (err?.status === 404 || err?.response?.status === 404) {
+        return [];
+      }
+      throw mapBackendModuleError(err);
     }
+    if (!Array.isArray(res)) return [];
+    const entries = res.map((entry) => {
+      try {
+        return assertModuleEntry(entry);
+      } catch (err: unknown) {
+        if (err instanceof IncompatibleModuleError || err instanceof ContractError) {
+          const raw = (entry && typeof entry === "object" ? entry : {}) as Record<string, unknown>;
+          const moduleId =
+            typeof raw.module_id === "string"
+              ? raw.module_id
+              : err instanceof IncompatibleModuleError
+              ? err.moduleId
+              : "unknown";
+          const name = typeof raw.name === "string" ? raw.name : moduleId;
+          const version =
+            typeof raw.version === "string"
+              ? raw.version
+              : err instanceof IncompatibleModuleError && err.version
+              ? err.version
+              : "unknown";
+
+          return {
+            module_id: moduleId,
+            name,
+            version,
+            description: typeof raw.description === "string" ? raw.description : undefined,
+            icon: typeof raw.icon === "string" ? raw.icon : undefined,
+            supported_platforms: Array.isArray(raw.supported_platforms)
+              ? (raw.supported_platforms as any)
+              : ["web"],
+            required_datasets: Array.isArray(raw.required_datasets)
+              ? (raw.required_datasets as any)
+              : [],
+            screens: Array.isArray(raw.screens) ? (raw.screens as string[]) : undefined,
+            actions: Array.isArray(raw.actions) ? (raw.actions as string[]) : undefined,
+            permissions:
+              typeof raw.permissions === "object" && raw.permissions !== null
+                ? (raw.permissions as any)
+                : undefined,
+            disabling: typeof raw.disabling === "string" ? raw.disabling : undefined,
+            installed: typeof raw.installed === "boolean" ? raw.installed : false,
+            enabled: false,
+            mapping: raw.mapping,
+            installed_at: typeof raw.installed_at === "string" ? raw.installed_at : undefined,
+            updated_at: typeof raw.updated_at === "string" ? raw.updated_at : undefined,
+            compatible: false,
+            compatibility_error: err instanceof Error ? err.message : String(err),
+          };
+        }
+        throw err;
+      }
+    });
+
+    for (const item of entries) {
+      if (item && typeof item.module_id === "string") {
+        this.knownManagedModules.add(item.module_id);
+      }
+    }
+
+    return entries;
   }
 
   /**
    * Retrieves specific module definition and installation status from server.
+   * Validates the module contract and enforces the client's supported-version policy.
    */
-  async getWorkspaceModule(id: string): Promise<(ModuleContract & { installed: boolean; enabled: boolean; mapping?: any; installed_at?: string; updated_at?: string }) | null> {
+  async getWorkspaceModule(id: string): Promise<WorkspaceModuleEntry | null> {
+    let res: any;
     try {
-      return await this.pb.send<any>(`/v1/workspace/modules/${encodeURIComponent(id)}`, { method: "GET" });
-    } catch {
-      return null;
+      res = await this.pb.send<any>(`/v1/workspace/modules/${encodeURIComponent(id)}`, { method: "GET" });
+    } catch (err: any) {
+      if (err?.status === 404 || err?.response?.status === 404) {
+        return null;
+      }
+      throw mapBackendModuleError(err, id);
     }
+    if (!res) return null;
+    const entry = assertModuleEntry(res);
+    this.knownManagedModules.add(entry.module_id);
+    return entry;
   }
 
   /**
@@ -447,17 +600,27 @@ export class ProductClient {
     id: string,
     payload: { use_suggested: boolean; mapping?: any }
   ): Promise<WorkspaceModuleInstallation> {
-    const res = await this.pb.send<WorkspaceModuleInstallation>(`/v1/workspace/modules/${encodeURIComponent(id)}/setup`, {
-      method: "POST",
-      body: payload,
-    });
+    let res: WorkspaceModuleInstallation;
+    try {
+      res = await this.pb.send<WorkspaceModuleInstallation>(`/v1/workspace/modules/${encodeURIComponent(id)}/setup`, {
+        method: "POST",
+        body: payload,
+      });
+    } catch (err: any) {
+      throw mapBackendModuleError(err, id);
+    }
+    const valid = assertWorkspaceModuleInstallation(res);
+    if (!isModuleVersionCompatible(valid.version)) {
+      throw new IncompatibleModuleError(valid.module_id, valid.version);
+    }
+    this.knownManagedModules.add(valid.module_id);
     // Sync state locally as well
     const disabled = await this.getDisabledModules();
     const set = new Set(disabled);
     set.delete(id);
     const key = `lattice:disabled_modules:${encodeURIComponent(this.config.backend_url)}:${encodeURIComponent(this.config.tenant_id)}`;
     await this.platform.storage.setItem(key, JSON.stringify(Array.from(set)));
-    return res;
+    return valid;
   }
 
   /**
@@ -510,7 +673,7 @@ export class ProductClient {
         const serverModules = await this.getWorkspaceModules();
         for (const sm of serverModules) {
           if (sm && sm.module_id) {
-            if (!sm.installed || !sm.enabled) {
+            if (sm.compatible === false || !sm.installed || !sm.enabled) {
               disabled.add(sm.module_id);
             } else {
               disabled.delete(sm.module_id);
@@ -530,9 +693,17 @@ export class ProductClient {
    */
   async isModuleEnabled(moduleId: string): Promise<boolean> {
     if (this.isAuthenticated) {
-      const serverMod = await this.getWorkspaceModule(moduleId);
-      if (serverMod && serverMod.module_id && typeof serverMod.enabled === "boolean") {
-        return Boolean(serverMod.installed && serverMod.enabled);
+      try {
+        const serverMod = await this.getWorkspaceModule(moduleId);
+        if (serverMod && serverMod.module_id && typeof serverMod.enabled === "boolean") {
+          return Boolean(serverMod.installed && serverMod.enabled);
+        }
+      } catch (err) {
+        const mapped = mapBackendModuleError(err, moduleId);
+        if (mapped instanceof IncompatibleModuleError || mapped instanceof ContractError) {
+          throw mapped;
+        }
+        // Fallback to local storage if module retrieval fails due to offline/network error
       }
     }
     const disabled = await this.getDisabledModules();
@@ -548,13 +719,65 @@ export class ProductClient {
       throw new Error("Only workspace owners and admins can configure workspace modules");
     }
 
-    let isManaged = moduleId === "customer_job_tracking";
-    if (!isManaged) {
+    let isManaged = this.knownManagedModules.has(moduleId) || moduleId === "customer_job_tracking";
+    let compatibilityVerified = false;
+    let lookupError: unknown = null;
+
+    if (enabled) {
       try {
-        const serverModules = await this.getWorkspaceModules();
-        isManaged = serverModules.some((m) => m.module_id === moduleId);
-      } catch {
-        // Fallback
+        const serverMod = await this.getWorkspaceModule(moduleId);
+        if (serverMod) {
+          isManaged = true;
+          this.knownManagedModules.add(moduleId);
+          if (serverMod.compatible === false) {
+            throw new IncompatibleModuleError(moduleId, serverMod.version, serverMod.compatibility_error);
+          }
+          compatibilityVerified = true;
+        }
+      } catch (err) {
+        if (err instanceof IncompatibleModuleError || err instanceof ContractError) {
+          throw err;
+        }
+        lookupError = err;
+      }
+
+      if (!compatibilityVerified) {
+        try {
+          const serverModules = await this.getWorkspaceModules();
+          const target = serverModules.find((m) => m.module_id === moduleId);
+          if (target) {
+            isManaged = true;
+            this.knownManagedModules.add(moduleId);
+            if (target.compatible === false) {
+              throw new IncompatibleModuleError(moduleId, target.version, target.compatibility_error);
+            }
+            compatibilityVerified = true;
+            lookupError = null;
+          }
+        } catch (err) {
+          if (err instanceof IncompatibleModuleError || err instanceof ContractError) {
+            throw err;
+          }
+          if (!lookupError) {
+            lookupError = err;
+          }
+        }
+      }
+
+      if (isManaged && !compatibilityVerified) {
+        throw lookupError ?? new Error(`Unable to verify compatibility for managed module "${moduleId}"`);
+      }
+    } else {
+      if (!isManaged) {
+        try {
+          const serverModules = await this.getWorkspaceModules();
+          if (serverModules.some((m) => m.module_id === moduleId)) {
+            isManaged = true;
+            this.knownManagedModules.add(moduleId);
+          }
+        } catch {
+          // Fallback
+        }
       }
     }
 
@@ -653,10 +876,14 @@ export class ProductClient {
       modules.push({
         id: mm.module_id,
         name: mm.name,
-        description: mm.description || "Managed workspace module",
+        description: mm.compatibility_error
+          ? `${mm.description || "Managed workspace module"} (${mm.compatibility_error})`
+          : (mm.description || "Managed workspace module"),
         icon: mm.icon || "📦",
-        enabled: Boolean(mm.installed && mm.enabled),
+        enabled: Boolean(mm.compatible !== false && mm.installed && mm.enabled),
         dataset_id: mm.mapping?.job_dataset,
+        compatible: mm.compatible !== false,
+        compatibility_error: mm.compatibility_error,
       });
     }
 

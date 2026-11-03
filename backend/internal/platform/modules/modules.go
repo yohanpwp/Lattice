@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"sort"
 	"strings"
 
 	"github.com/ganigeorgiev/fexpr"
@@ -17,7 +18,23 @@ import (
 const (
 	ModuleIDCustomerJobTracking = "customer_job_tracking"
 	ModuleVersion               = "1.0.0"
+	SupportedModuleMajorVersion = 1
 )
+
+var (
+	ErrIncompatibleModuleVersion = errors.New("incompatible module version")
+)
+
+// IsSupportedModuleVersion checks whether a module version is compatible with the runtime.
+// The supported version policy requires a valid semver string with major version 1.
+func IsSupportedModuleVersion(version string) bool {
+	var major, minor, patch int
+	n, err := fmt.Sscanf(version, "%d.%d.%d", &major, &minor, &patch)
+	if err != nil || n != 3 {
+		return false
+	}
+	return major == SupportedModuleMajorVersion
+}
 
 type ModulePermission struct {
 	Read   bool   `json:"read"`
@@ -176,7 +193,49 @@ func GetCatalogModule(moduleID string) (*ModuleContract, bool) {
 }
 
 func ListCatalogModules() []ModuleContract {
-	return []ModuleContract{CustomerJobTrackingContract}
+	list := make([]ModuleContract, 0, len(Catalog))
+	for _, m := range Catalog {
+		list = append(list, m)
+	}
+	sort.Slice(list, func(i, j int) bool {
+		return list[i].ModuleID < list[j].ModuleID
+	})
+	return list
+}
+
+// ValidateModuleContract validates a ModuleContract against the shared JSON schema
+// and verifies that the module version complies with the supported version policy.
+func ValidateModuleContract(contract ModuleContract) error {
+	data, err := json.Marshal(contract)
+	if err != nil {
+		return fmt.Errorf("failed to marshal module contract: %w", err)
+	}
+	var doc any
+	if err := json.Unmarshal(data, &doc); err != nil {
+		return fmt.Errorf("failed to unmarshal module contract: %w", err)
+	}
+	if err := tenant.ValidateContractDocument("ModuleContract", doc); err != nil {
+		return err
+	}
+	if !IsSupportedModuleVersion(contract.Version) {
+		return fmt.Errorf("%w: version %q is not supported (supported major version: %d)", ErrIncompatibleModuleVersion, contract.Version, SupportedModuleMajorVersion)
+	}
+	return nil
+}
+
+// RegisterCatalogModule validates and registers a module contract in the runtime catalog.
+func RegisterCatalogModule(contract ModuleContract) error {
+	if err := ValidateModuleContract(contract); err != nil {
+		return fmt.Errorf("cannot register module contract %q: %w", contract.ModuleID, err)
+	}
+	Catalog[contract.ModuleID] = contract
+	return nil
+}
+
+func init() {
+	if err := ValidateModuleContract(CustomerJobTrackingContract); err != nil {
+		panic(fmt.Sprintf("invalid built-in customer_job_tracking module contract: %v", err))
+	}
 }
 
 // ValidateModuleMapping verifies that the mapped collections and fields exist,

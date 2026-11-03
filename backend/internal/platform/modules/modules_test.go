@@ -34,6 +34,108 @@ func TestCatalog(t *testing.T) {
 	}
 }
 
+func TestRegisterCatalogModule_AppearsInListCatalogModules(t *testing.T) {
+	// Base catalog check
+	initialList := modules.ListCatalogModules()
+	initialCount := len(initialList)
+
+	// Create and register a new valid module contract
+	customContract := modules.CustomerJobTrackingContract
+	customContract.ModuleID = "equipment_inventory"
+	customContract.Name = "Equipment Inventory"
+	customContract.Version = "1.0.0"
+
+	err := modules.RegisterCatalogModule(customContract)
+	if err != nil {
+		t.Fatalf("expected successful registration of valid contract: %v", err)
+	}
+	t.Cleanup(func() {
+		delete(modules.Catalog, "equipment_inventory")
+	})
+
+	// Verify it can be retrieved by ID
+	retrieved, ok := modules.GetCatalogModule("equipment_inventory")
+	if !ok || retrieved == nil {
+		t.Fatal("expected registered module to be retrieved by ID")
+	}
+	if retrieved.Name != "Equipment Inventory" {
+		t.Fatalf("expected name 'Equipment Inventory', got %q", retrieved.Name)
+	}
+
+	// Verify it appears in ListCatalogModules()
+	afterList := modules.ListCatalogModules()
+	if len(afterList) != initialCount+1 {
+		t.Fatalf("expected catalog list count to be %d, got %d", initialCount+1, len(afterList))
+	}
+
+	found := false
+	for _, m := range afterList {
+		if m.ModuleID == "equipment_inventory" {
+			found = true
+			if m.Name != "Equipment Inventory" {
+				t.Fatalf("unexpected name in list: %q", m.Name)
+			}
+			break
+		}
+	}
+	if !found {
+		t.Fatal("expected registered module 'equipment_inventory' to appear in ListCatalogModules()")
+	}
+}
+
+func TestValidateModuleContract(t *testing.T) {
+	// 1. Valid contract from catalog
+	mod, ok := modules.GetCatalogModule("customer_job_tracking")
+	if !ok || mod == nil {
+		t.Fatal("expected customer_job_tracking module in catalog")
+	}
+	if err := modules.ValidateModuleContract(*mod); err != nil {
+		t.Fatalf("expected valid contract to pass validation: %v", err)
+	}
+
+	// 2. Malformed version format rejected by schema
+	malformedMod := *mod
+	malformedMod.Version = "v1.0-incompatible"
+	if err := modules.ValidateModuleContract(malformedMod); err == nil {
+		t.Fatal("expected error for malformed non-semver version")
+	}
+
+	// 3. Syntactically valid semver but incompatible version rejected by supported-version policy
+	incompatMod := *mod
+	incompatMod.Version = "2.0.0"
+	if err := modules.ValidateModuleContract(incompatMod); err == nil || !errors.Is(err, modules.ErrIncompatibleModuleVersion) {
+		t.Fatalf("expected ErrIncompatibleModuleVersion for syntactically valid version 2.0.0, got: %v", err)
+	}
+
+	// 4. Runtime boundary rejection when registering incompatible contract
+	incompatRegMod := *mod
+	incompatRegMod.ModuleID = "custom_module_v2"
+	incompatRegMod.Version = "2.0.0"
+	if err := modules.RegisterCatalogModule(incompatRegMod); err == nil || !errors.Is(err, modules.ErrIncompatibleModuleVersion) {
+		t.Fatalf("expected RegisterCatalogModule to reject incompatible version 2.0.0 at runtime boundary, got: %v", err)
+	}
+
+	// 5. Missing requirement: empty required_datasets
+	missingReqMod := *mod
+	missingReqMod.RequiredDatasets = nil
+	if err := modules.ValidateModuleContract(missingReqMod); err == nil {
+		t.Fatal("expected error for missing required_datasets requirement")
+	}
+
+	// 6. Missing requirement: empty required_fields on dataset
+	emptyFieldsMod := *mod
+	emptyFieldsMod.RequiredDatasets = []modules.RequiredDatasetSpec{
+		{
+			DatasetRole:    "customers",
+			Name:           "Customers",
+			RequiredFields: []modules.RequiredFieldSpec{},
+		},
+	}
+	if err := modules.ValidateModuleContract(emptyFieldsMod); err == nil {
+		t.Fatal("expected error for empty required_fields requirement")
+	}
+}
+
 func TestProvisionSuggestedDatasets_Idempotent(t *testing.T) {
 	app, err := tests.NewTestApp(t.TempDir())
 	if err != nil {

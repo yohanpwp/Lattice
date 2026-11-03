@@ -1,0 +1,86 @@
+{
+  "module_id": "customer_job_tracking",
+  "name": "Customer & Job Tracking",
+  "version": "1.0.0",
+  "description": "Track customer contacts and manage assigned jobs with status updates.",
+  "icon": "clipboard-check",
+  "supported_platforms": ["web", "mobile"],
+  "required_datasets": [
+    {
+      "dataset_role": "customers",
+      "name": "Customers",
+      "description": "Customer contact directory for job tracking",
+      "required_fields": [
+        {
+          "field_role": "name",
+          "name": "name",
+          "label": "Customer Name",
+          "type": "text",
+          "required": true
+        },
+        {
+          "field_role": "phone",
+          "name": "phone",
+          "label": "Phone Number",
+          "type": "text",
+          "required": false
+        }
+      ]
+    },
+    {
+      "dataset_role": "jobs",
+      "name": "Jobs",
+      "description": "Customer jobs and work order tracking",
+      "assignee_field_role": "assignee",
+      "required_fields": [
+        {
+          "field_role": "title",
+          "name": "title",
+          "label": "Job Title",
+          "type": "text",
+          "required": true
+        },
+        {
+          "field_role": "customer",
+          "name": "customer",
+          "label": "Customer",
+          "type": "relation",
+          "required": true,
+          "target_dataset_role": "customers"
+        },
+        {
+          "field_role": "status",
+          "name": "status",
+          "label": "Status",
+          "type": "select",
+          "required": true,
+          "options": ["Open", "In progress", "Done"]
+        },
+        {
+          "field_role": "assignee",
+          "name": "assignee",
+          "label": "Assignee",
+          "type": "relation",
+          "required": true,
+          "target_dataset_role": "users"
+        }
+      ]
+    }
+  ],
+  "screens": ["job_list", "job_detail", "customer_list", "customer_detail"],
+  "actions": ["create_job", "assign_job", "update_job_status"],
+  "permissions": {
+    "customers": {
+      "read": true,
+      "scope": "all"
+    },
+    "jobs": {
+      "read": true,
+      "create": true,
+      "update": true,
+      "delete": false,
+      "scope": "assigned"
+    }
+  },
+  "disabling": "Disabling hides dedicated module screens and navigation while retaining all existing records and datasets."
+}

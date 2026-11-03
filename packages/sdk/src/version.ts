@@ -21,3 +21,19 @@ export function compareVersions(a: string, b: string): number {
 export function isClientCompatible(clientVersion: string, minClientVersion: string): boolean {
   return compareVersions(clientVersion, minClientVersion) >= 0;
 }
+
+/** Supported major version for managed module specifications (^1.0.0). */
+export const SUPPORTED_MODULE_MAJOR_VERSION = 1;
+
+/**
+ * Checks whether a module specification version complies with the client's supported-version policy.
+ * Only specifications within major version 1 are supported by this client build.
+ */
+export function isModuleVersionCompatible(version: string): boolean {
+  try {
+    const [major] = parse(version);
+    return major === SUPPORTED_MODULE_MAJOR_VERSION;
+  } catch {
+    return false;
+  }
+}

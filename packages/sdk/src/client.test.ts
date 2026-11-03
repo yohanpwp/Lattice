@@ -1,16 +1,20 @@
 import { describe, expect, it, vi } from "vitest";
-import type { SchemaDefinition } from "@lattice/types";
+import { ContractError, type SchemaDefinition } from "@lattice/types";
 import {
   AuthPersistenceError,
   ClientTooOldError,
   ConfigFetchError,
+  IncompatibleModuleError,
   ProductClient,
   RealtimeURLMismatchError,
+  SUPPORTED_MODULE_MAJOR_VERSION,
+  assertModuleEntry,
   createDesktopStorage,
   createMemoryStorage,
   createMobileStorage,
   createWebStorage,
   fetchAppConfig,
+  isModuleVersionCompatible,
   type StorageAdapter,
 } from "@lattice/sdk";
 
@@ -882,6 +886,12 @@ describe("schema management", () => {
           },
         });
       }
+      if (url.includes("/v1/workspace/modules/")) {
+        return new Response(JSON.stringify({ error: "not_found" }), {
+          status: 404,
+          headers: { "Content-Type": "application/json" },
+        });
+      }
       return json({});
     }) as typeof fetch;
 
@@ -944,6 +954,39 @@ describe("schema management", () => {
     );
   });
 
+  const validCatalogModule = {
+    module_id: "customer_job_tracking",
+    name: "Customer & Job Tracking",
+    version: "1.0.0",
+    description: "Track customer contacts and manage assigned jobs with status updates.",
+    icon: "clipboard-check",
+    supported_platforms: ["web", "mobile"] as ["web", "mobile"],
+    required_datasets: [
+      {
+        dataset_role: "customers",
+        name: "Customers",
+        required_fields: [
+          { field_role: "name", name: "name", type: "text" as const, required: true },
+        ],
+      },
+      {
+        dataset_role: "jobs",
+        name: "Jobs",
+        assignee_field_role: "assignee",
+        required_fields: [
+          { field_role: "title", name: "title", type: "text" as const, required: true },
+        ],
+      },
+    ],
+    screens: ["job_list", "customer_list"],
+    actions: ["create_job", "update_job_status"],
+    permissions: {
+      customers: { read: true, scope: "all" as const },
+      jobs: { read: true, create: true, update: true, scope: "assigned" as const },
+    },
+    disabling: "Disabling hides dedicated module screens and navigation.",
+  };
+
   it("sets up managed workspace modules and subscribes to realtime updates", async () => {
     let installedModule: any = null;
     const customFetch = (async (input: RequestInfo | URL, init?: RequestInit) => {
@@ -967,7 +1010,7 @@ describe("schema management", () => {
         return json(installedModule);
       }
       if (url.includes("/v1/workspace/modules") && init?.method === "GET") {
-        return json(installedModule ? [installedModule] : []);
+        return json(installedModule ? [{ ...validCatalogModule, ...installedModule, installed: true }] : []);
       }
       if (url.includes("auth-with-password")) {
         const token = `e30.${btoa(JSON.stringify({ exp: Math.floor(Date.now() / 1000) + 3600 }))}.sig`;
@@ -1025,10 +1068,13 @@ describe("schema management", () => {
         }
         const body = JSON.parse(String(init?.body || "{}"));
         enabled = body.enabled;
-        return json({ module_id: "customer_job_tracking", installed, enabled });
+        return json({ ...validCatalogModule, installed, enabled });
+      }
+      if (url.includes("/v1/workspace/modules/customer_job_tracking") && init?.method === "GET") {
+        return json({ ...validCatalogModule, installed, enabled });
       }
       if (url.includes("/v1/workspace/modules") && init?.method === "GET") {
-        return json([{ module_id: "customer_job_tracking", installed, enabled }]);
+        return json([{ ...validCatalogModule, installed, enabled }]);
       }
       if (url.includes("auth-with-password")) {
         const token = `e30.${btoa(JSON.stringify({ exp: Math.floor(Date.now() / 1000) + 3600 }))}.sig`;
@@ -1069,10 +1115,10 @@ describe("schema management", () => {
       const url = String(input);
       if (url.endsWith("/v1/config")) return json(config);
       if (url.includes("/v1/workspace/modules/customer_job_tracking")) {
-        return json({ module_id: "customer_job_tracking", installed: false, enabled: false });
+        return json({ ...validCatalogModule, installed: false, enabled: false });
       }
       if (url.includes("/v1/workspace/modules")) {
-        return json([{ module_id: "customer_job_tracking", installed: false, enabled: false }]);
+        return json([{ ...validCatalogModule, installed: false, enabled: false }]);
       }
       if (url.includes("auth-with-password")) {
         const token = `e30.${btoa(JSON.stringify({ exp: Math.floor(Date.now() / 1000) + 3600 }))}.sig`;
@@ -1096,5 +1142,534 @@ describe("schema management", () => {
     const disabled = await client.getDisabledModules();
     expect(disabled).toContain("customer_job_tracking");
     expect(await client.isModuleEnabled("customer_job_tracking")).toBe(false);
+  });
+});
+
+describe("managed module contract and version compatibility", () => {
+  const validModContract = {
+    module_id: "customer_job_tracking",
+    name: "Customer & Job Tracking",
+    version: "1.0.0",
+    description: "Track customer contacts and manage assigned jobs with status updates.",
+    icon: "clipboard-check",
+    supported_platforms: ["web", "mobile"] as ["web", "mobile"],
+    required_datasets: [
+      {
+        dataset_role: "customers",
+        name: "Customers",
+        required_fields: [
+          { field_role: "name", name: "name", type: "text" as const, required: true },
+        ],
+      },
+      {
+        dataset_role: "jobs",
+        name: "Jobs",
+        assignee_field_role: "assignee",
+        required_fields: [
+          { field_role: "title", name: "title", type: "text" as const, required: true },
+        ],
+      },
+    ],
+    screens: ["job_list", "customer_list"],
+    actions: ["create_job", "update_job_status"],
+    permissions: {
+      customers: { read: true, scope: "all" as const },
+      jobs: { read: true, create: true, update: true, scope: "assigned" as const },
+    },
+    disabling: "Disabling hides dedicated module screens and navigation.",
+  };
+
+  it("checks supported module major version policy", () => {
+    expect(SUPPORTED_MODULE_MAJOR_VERSION).toBe(1);
+    expect(isModuleVersionCompatible("1.0.0")).toBe(true);
+    expect(isModuleVersionCompatible("1.2.3")).toBe(true);
+    expect(isModuleVersionCompatible("2.0.0")).toBe(false);
+    expect(isModuleVersionCompatible("0.9.0")).toBe(false);
+    expect(isModuleVersionCompatible("invalid")).toBe(false);
+  });
+
+  it("assertModuleEntry accepts valid module contract with installation metadata", () => {
+    const entry = {
+      ...validModContract,
+      installed: true,
+      enabled: true,
+      mapping: { customer_dataset: "customers" },
+      installed_at: "2026-11-03T00:00:00Z",
+      updated_at: "2026-11-03T01:00:00Z",
+    };
+    const validated = assertModuleEntry(entry);
+    expect(validated.module_id).toBe("customer_job_tracking");
+    expect(validated.version).toBe("1.0.0");
+    expect(validated.installed).toBe(true);
+    expect(validated.enabled).toBe(true);
+    expect(validated.mapping).toEqual({ customer_dataset: "customers" });
+  });
+
+  it("assertModuleEntry rejects an incompatible major version with IncompatibleModuleError", () => {
+    const entry = {
+      ...validModContract,
+      version: "2.0.0",
+      installed: true,
+      enabled: true,
+    };
+    expect(() => assertModuleEntry(entry)).toThrow(IncompatibleModuleError);
+    try {
+      assertModuleEntry(entry);
+    } catch (err: any) {
+      expect(err).toBeInstanceOf(IncompatibleModuleError);
+      expect(err.moduleId).toBe("customer_job_tracking");
+      expect(err.version).toBe("2.0.0");
+    }
+  });
+
+  it("assertModuleEntry requires actual booleans for installed and enabled", () => {
+    // Malformed string boolean "false" or "true" must be rejected, not coerced
+    expect(() =>
+      assertModuleEntry({
+        ...validModContract,
+        installed: "false" as any,
+        enabled: true,
+      }),
+    ).toThrow(ContractError);
+
+    expect(() =>
+      assertModuleEntry({
+        ...validModContract,
+        installed: true,
+        enabled: "true" as any,
+      }),
+    ).toThrow(ContractError);
+
+    expect(() =>
+      assertModuleEntry({
+        ...validModContract,
+        installed: 1 as any,
+        enabled: true,
+      }),
+    ).toThrow(ContractError);
+
+    // Missing installed or enabled must be rejected
+    expect(() =>
+      assertModuleEntry({
+        ...validModContract,
+        enabled: true,
+      }),
+    ).toThrow(ContractError);
+
+    expect(() =>
+      assertModuleEntry({
+        ...validModContract,
+        installed: true,
+      }),
+    ).toThrow(ContractError);
+
+    expect(() =>
+      assertModuleEntry({
+        ...validModContract,
+      }),
+    ).toThrow(ContractError);
+
+    // Actual booleans must be accepted
+    const res = assertModuleEntry({
+      ...validModContract,
+      installed: false,
+      enabled: false,
+    });
+    expect(res.installed).toBe(false);
+    expect(res.enabled).toBe(false);
+  });
+
+  it("assertModuleEntry rejects malformed contract with ContractError", () => {
+    // Non-semver version
+    expect(() =>
+      assertModuleEntry({ ...validModContract, version: "v1.0", installed: true, enabled: true }),
+    ).toThrow(ContractError);
+    expect(() =>
+      assertModuleEntry({ ...validModContract, version: "1.0-beta", installed: true, enabled: true }),
+    ).toThrow(ContractError);
+
+    // Missing required fields
+    const { required_datasets: _omit, ...missingReq } = validModContract;
+    expect(() => assertModuleEntry({ ...missingReq, installed: true, enabled: true })).toThrow(ContractError);
+
+    const { module_id: _omitId, ...missingId } = validModContract;
+    expect(() => assertModuleEntry({ ...missingId, installed: true, enabled: true })).toThrow(ContractError);
+  });
+
+  it("getWorkspaceModules handles incompatible entries individually without hiding the catalog", async () => {
+    const validOtherMod = {
+      ...validModContract,
+      module_id: "fleet_dispatch",
+      name: "Fleet & Dispatch",
+      version: "1.0.0",
+    };
+    const incompatibleMod = {
+      ...validModContract,
+      module_id: "future_module",
+      name: "Future Module V2",
+      version: "2.0.0",
+    };
+    const malformedMod = {
+      module_id: "broken_module",
+      version: "invalid",
+      installed: "not-a-boolean",
+    };
+
+    let modulePayload: any = [
+      { ...validModContract, installed: true, enabled: true },
+      { ...incompatibleMod, installed: true, enabled: true },
+      { ...validOtherMod, installed: false, enabled: false },
+      malformedMod,
+    ];
+
+    const customFetch = (async (input: RequestInfo | URL) => {
+      const url = String(input);
+      if (url.endsWith("/v1/config")) return json(config);
+      if (url.includes("auth-with-password")) {
+        const token = `e30.${btoa(JSON.stringify({ exp: Math.floor(Date.now() / 1000) + 3600 }))}.sig`;
+        return json({
+          token,
+          record: { id: "owner_1", collectionName: "users", role: "owner" },
+        });
+      }
+      const singleMatch = url.match(/\/v1\/workspace\/modules\/([^/?#]+)$/);
+      if (singleMatch) {
+        const id = decodeURIComponent(singleMatch[1]);
+        const found = modulePayload.find((m: any) => m.module_id === id);
+        if (found) return json(found);
+        return new Response(JSON.stringify({ error: "not_found" }), {
+          status: 404,
+          headers: { "Content-Type": "application/json" },
+        });
+      }
+      if (url.includes("/v1/workspace/modules")) {
+        return json(modulePayload);
+      }
+      return json({});
+    }) as typeof fetch;
+
+    const client = await ProductClient.connect({
+      backendUrl: "https://acme.app.example.com/",
+      clientVersion: "1.0.0",
+      platform: { storage: createMemoryStorage(), fetch: customFetch },
+    });
+
+    // 1. One incompatible or malformed module does NOT reject the whole list
+    const modules = await client.getWorkspaceModules();
+    expect(modules).toHaveLength(4);
+
+    // 2. Compatible modules are preserved and marked compatible: true
+    expect(modules[0]?.module_id).toBe("customer_job_tracking");
+    expect(modules[0]?.compatible).toBe(true);
+    expect(modules[0]?.enabled).toBe(true);
+
+    expect(modules[2]?.module_id).toBe("fleet_dispatch");
+    expect(modules[2]?.compatible).toBe(true);
+    expect(modules[2]?.enabled).toBe(false);
+
+    // 3. Incompatible module surfaces its status and is disabled
+    expect(modules[1]?.module_id).toBe("future_module");
+    expect(modules[1]?.compatible).toBe(false);
+    expect(modules[1]?.compatibility_error).toContain("2.0.0");
+    expect(modules[1]?.enabled).toBe(false);
+
+    // 4. Malformed module surfaces its status and is disabled
+    expect(modules[3]?.module_id).toBe("broken_module");
+    expect(modules[3]?.compatible).toBe(false);
+    expect(modules[3]?.compatibility_error).toBeDefined();
+    expect(modules[3]?.enabled).toBe(false);
+
+    // 5. getModules preserves compatible modules while carrying compatibility status
+    const allModules = await client.getModules();
+    const cjt = allModules.find((m) => m.id === "customer_job_tracking");
+    expect(cjt).toBeDefined();
+    expect(cjt?.enabled).toBe(true);
+    expect(cjt?.compatible).toBe(true);
+
+    const future = allModules.find((m) => m.id === "future_module");
+    expect(future).toBeDefined();
+    expect(future?.enabled).toBe(false);
+    expect(future?.compatible).toBe(false);
+    expect(future?.compatibility_error).toContain("2.0.0");
+    expect(future?.description).toContain("2.0.0");
+
+    const broken = allModules.find((m) => m.id === "broken_module");
+    expect(broken).toBeDefined();
+    expect(broken?.enabled).toBe(false);
+    expect(broken?.compatible).toBe(false);
+    expect(broken?.compatibility_error).toBeDefined();
+
+    // 6. setModuleEnabled rejects enabling incompatible or broken modules
+    await client.login("owner@example.com", "Password123!");
+    await expect(client.setModuleEnabled("future_module", true)).rejects.toBeInstanceOf(
+      IncompatibleModuleError,
+    );
+    await expect(client.setModuleEnabled("broken_module", true)).rejects.toBeInstanceOf(
+      ContractError,
+    );
+  });
+
+  it("getWorkspaceModule validates contract and enforces version compatibility", async () => {
+    let status = 200;
+    let singlePayload: any = { ...validModContract, installed: true, enabled: true };
+
+    const customFetch = (async (input: RequestInfo | URL) => {
+      const url = String(input);
+      if (url.endsWith("/v1/config")) return json(config);
+      if (url.includes("/v1/workspace/modules/customer_job_tracking")) {
+        if (status !== 200) {
+          return new Response(JSON.stringify(status === 404 ? { error: "not_found" } : singlePayload), {
+            status,
+            headers: { "Content-Type": "application/json" },
+          });
+        }
+        return json(singlePayload);
+      }
+      return json({});
+    }) as typeof fetch;
+
+    const client = await ProductClient.connect({
+      backendUrl: "https://acme.app.example.com/",
+      clientVersion: "1.0.0",
+      platform: { storage: createMemoryStorage(), fetch: customFetch },
+    });
+
+    // 1. Valid module retrieved
+    const mod = await client.getWorkspaceModule("customer_job_tracking");
+    expect(mod).not.toBeNull();
+    expect(mod?.module_id).toBe("customer_job_tracking");
+    expect(mod?.version).toBe("1.0.0");
+
+    // 2. 404 returns null
+    status = 404;
+    expect(await client.getWorkspaceModule("customer_job_tracking")).toBeNull();
+
+    // 3. Incompatible major version in 200 response throws IncompatibleModuleError
+    status = 200;
+    singlePayload = { ...validModContract, version: "2.1.0", installed: true, enabled: true };
+    await expect(client.getWorkspaceModule("customer_job_tracking")).rejects.toBeInstanceOf(IncompatibleModuleError);
+
+    // 4. Backend HTTP 400 with incompatible_module_contract is mapped to IncompatibleModuleError
+    status = 400;
+    singlePayload = {
+      error: "incompatible_module_contract",
+      message: 'incompatible module version: version "2.0.0" is not supported (supported major version: 1)',
+    };
+    await expect(client.getWorkspaceModule("customer_job_tracking")).rejects.toBeInstanceOf(IncompatibleModuleError);
+    try {
+      await client.getWorkspaceModule("customer_job_tracking");
+    } catch (err: any) {
+      expect(err).toBeInstanceOf(IncompatibleModuleError);
+      expect(err.moduleId).toBe("customer_job_tracking");
+      expect(err.version).toBe("2.0.0");
+    }
+
+    // 5. Missing requirements throws ContractError
+    status = 200;
+    singlePayload = { module_id: "customer_job_tracking", version: "1.0.0", installed: true, enabled: true };
+    await expect(client.getWorkspaceModule("customer_job_tracking")).rejects.toBeInstanceOf(ContractError);
+  });
+
+  it("setupWorkspaceModule enforces version compatibility and validates installation", async () => {
+    let setupResponse: any = {
+      module_id: "customer_job_tracking",
+      version: "1.0.0",
+      enabled: true,
+      mapping: {
+        customer_dataset: "customers",
+        customer_name_field: "name",
+        job_dataset: "jobs",
+        job_title_field: "title",
+        job_customer_field: "customer",
+        job_status_field: "status",
+        job_assignee_field: "assignee",
+      },
+    };
+
+    let setupStatus = 200;
+    const customFetch = (async (input: RequestInfo | URL, init?: RequestInit) => {
+      const url = String(input);
+      if (url.endsWith("/v1/config")) return json(config);
+      if (url.includes("/v1/workspace/modules/customer_job_tracking/setup") && init?.method === "POST") {
+        if (setupStatus !== 200) {
+          return new Response(JSON.stringify(setupResponse), {
+            status: setupStatus,
+            headers: { "Content-Type": "application/json" },
+          });
+        }
+        return json(setupResponse);
+      }
+      return json({});
+    }) as typeof fetch;
+
+    const client = await ProductClient.connect({
+      backendUrl: "https://acme.app.example.com/",
+      clientVersion: "1.0.0",
+      platform: { storage: createMemoryStorage(), fetch: customFetch },
+    });
+
+    // 1. Compatible setup succeeds
+    const res = await client.setupWorkspaceModule("customer_job_tracking", { use_suggested: true });
+    expect(res.module_id).toBe("customer_job_tracking");
+    expect(res.version).toBe("1.0.0");
+
+    // 2. Incompatible major version in setup response throws IncompatibleModuleError
+    setupResponse = { ...setupResponse, version: "2.0.0" };
+    await expect(
+      client.setupWorkspaceModule("customer_job_tracking", { use_suggested: true }),
+    ).rejects.toBeInstanceOf(IncompatibleModuleError);
+
+    // 3. Backend HTTP 400 with incompatible_module_contract is mapped to IncompatibleModuleError
+    setupStatus = 400;
+    setupResponse = {
+      error: "incompatible_module_contract",
+      message: 'incompatible module version: version "2.0.0" is not supported (supported major version: 1)',
+    };
+    await expect(
+      client.setupWorkspaceModule("customer_job_tracking", { use_suggested: true }),
+    ).rejects.toBeInstanceOf(IncompatibleModuleError);
+
+    // 4. Malformed installation throws ContractError
+    setupStatus = 200;
+    setupResponse = { module_id: "customer_job_tracking", version: "1.0.0" }; // missing enabled and mapping
+    await expect(
+      client.setupWorkspaceModule("customer_job_tracking", { use_suggested: true }),
+    ).rejects.toBeInstanceOf(ContractError);
+  });
+
+  it("isModuleEnabled propagates IncompatibleModuleError and does not fall back to true", async () => {
+    let modulePayload: any = { ...validModContract, version: "2.0.0", installed: true, enabled: true };
+    let httpStatus = 200;
+    let shouldNetworkFail = false;
+
+    const customFetch = (async (input: RequestInfo | URL) => {
+      const url = String(input);
+      if (url.endsWith("/v1/config")) return json(config);
+      if (url.includes("auth-with-password")) {
+        const token = `e30.${btoa(JSON.stringify({ exp: Math.floor(Date.now() / 1000) + 3600 }))}.sig`;
+        return json({
+          token,
+          record: { id: "member_1", collectionName: "users", role: "member" },
+        });
+      }
+      if (url.includes("/v1/workspace/modules/customer_job_tracking")) {
+        if (shouldNetworkFail) {
+          throw new Error("Network error");
+        }
+        if (httpStatus !== 200) {
+          return new Response(JSON.stringify(modulePayload), {
+            status: httpStatus,
+            headers: { "Content-Type": "application/json" },
+          });
+        }
+        return json(modulePayload);
+      }
+      return json({});
+    }) as typeof fetch;
+
+    const storage = createMemoryStorage(); // Fresh client without disabled storage entries
+    const client = await ProductClient.connect({
+      backendUrl: "https://acme.app.example.com/",
+      clientVersion: "1.0.0",
+      platform: { storage, fetch: customFetch },
+    });
+    await client.login("member@example.com", "Password123!");
+
+    // 1. Incompatible version in 200 response must reject with IncompatibleModuleError rather than falling back to true
+    await expect(client.isModuleEnabled("customer_job_tracking")).rejects.toBeInstanceOf(
+      IncompatibleModuleError,
+    );
+
+    // 2. Backend HTTP 400 with incompatible_module_contract must reject with IncompatibleModuleError rather than falling back to true
+    httpStatus = 400;
+    modulePayload = {
+      error: "incompatible_module_contract",
+      message: 'incompatible module version: version "2.0.0" is not supported (supported major version: 1)',
+    };
+    await expect(client.isModuleEnabled("customer_job_tracking")).rejects.toBeInstanceOf(
+      IncompatibleModuleError,
+    );
+
+    // 3. Malformed installation state (e.g. non-boolean string "false") must reject with ContractError
+    httpStatus = 200;
+    modulePayload = { ...validModContract, version: "1.0.0", installed: "false", enabled: true };
+    await expect(client.isModuleEnabled("customer_job_tracking")).rejects.toBeInstanceOf(ContractError);
+
+    // 4. Network error falls back to local storage (not disabled on fresh client -> true)
+    shouldNetworkFail = true;
+    expect(await client.isModuleEnabled("customer_job_tracking")).toBe(true);
+
+    // If local storage has it disabled, network error falls back to false
+    const key = `lattice:disabled_modules:${encodeURIComponent(config.backend_url)}:${encodeURIComponent(config.tenant_id)}`;
+    await storage.setItem(key, JSON.stringify(["customer_job_tracking"]));
+    expect(await client.isModuleEnabled("customer_job_tracking")).toBe(false);
+  });
+
+  it("requires a successful compatibility check before enabling managed modules and rejects when reads fail even if write would succeed", async () => {
+    let getSingleFailed = true;
+    let getCatalogFailed = true;
+    let putCalled = false;
+
+    const modulePayload = {
+      ...validModContract,
+      version: "1.0.0",
+      installed: true,
+      enabled: false,
+    };
+
+    const customFetch = (async (input: RequestInfo | URL, init?: RequestInit) => {
+      const url = String(input);
+      if (url.endsWith("/v1/config")) return json(config);
+      if (url.includes("auth-with-password")) {
+        const token = `e30.${btoa(JSON.stringify({ exp: Math.floor(Date.now() / 1000) + 3600 }))}.sig`;
+        return json({
+          token,
+          record: { id: "owner_1", collectionName: "users", role: "owner" },
+        });
+      }
+      if (url.includes("/v1/workspace/modules/customer_job_tracking") && init?.method === "PUT") {
+        putCalled = true;
+        const body = JSON.parse(String(init?.body || "{}"));
+        modulePayload.enabled = Boolean(body.enabled);
+        return json({ ...modulePayload });
+      }
+      if (url.includes("/v1/workspace/modules/customer_job_tracking") && (!init?.method || init.method === "GET")) {
+        if (getSingleFailed) {
+          throw new Error("Temporary network failure on single module lookup");
+        }
+        return json(modulePayload);
+      }
+      if (url.includes("/v1/workspace/modules") && (!init?.method || init.method === "GET")) {
+        if (getCatalogFailed) {
+          throw new Error("Temporary network failure on catalog lookup");
+        }
+        return json([modulePayload]);
+      }
+      return json({});
+    }) as typeof fetch;
+
+    const storage = createMemoryStorage();
+    const key = `lattice:disabled_modules:${encodeURIComponent(config.backend_url)}:${encodeURIComponent(config.tenant_id)}`;
+    await storage.setItem(key, JSON.stringify(["customer_job_tracking"]));
+
+    const client = await ProductClient.connect({
+      backendUrl: "https://acme.app.example.com/",
+      clientVersion: "1.0.0",
+      platform: { storage, fetch: customFetch },
+    });
+    await client.login("owner@example.com", "Password123!");
+
+    // 1. When both reads fail, enabling customer_job_tracking must reject, must NOT call PUT, and must NOT update local state
+    await expect(client.setModuleEnabled("customer_job_tracking", true)).rejects.toThrow(
+      "Temporary network failure on single module lookup",
+    );
+    expect(putCalled).toBe(false);
+    expect(await client.getDisabledModules()).toContain("customer_job_tracking");
+
+    // 2. When single read fails but catalog read succeeds, compatibility is verified and PUT succeeds
+    getCatalogFailed = false;
+    await client.setModuleEnabled("customer_job_tracking", true);
+    expect(putCalled).toBe(true);
+    expect(await client.getDisabledModules()).not.toContain("customer_job_tracking");
   });
 });

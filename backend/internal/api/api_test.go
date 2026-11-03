@@ -1758,3 +1758,243 @@ func TestModuleSetup_CustomerIncompatibleRulesReported(t *testing.T) {
 }
 
 
+
+func TestModuleSetup_IncompatibleContractVersionAtRuntimeBoundary(t *testing.T) {
+	app := newTestApp(t)
+	usersCol, err := app.FindCollectionByNameOrId("users")
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	owner := core.NewRecord(usersCol)
+	owner.Set("email", "owner@example.com")
+	owner.Set("role", authz.RoleOwner)
+	owner.Set("disabled", false)
+	owner.SetPassword("Password123!")
+	if err := app.Save(owner); err != nil {
+		t.Fatal(err)
+	}
+
+	r := router.NewRouter[*core.RequestEvent](func(w http.ResponseWriter, req *http.Request) (*core.RequestEvent, router.EventCleanupFunc) {
+		event := &core.RequestEvent{App: app, Event: router.Event{Response: w, Request: req}}
+		if req.Header.Get("Authorization") == "Bearer owner" {
+			event.Auth = owner
+		}
+		return event, func() {}
+	})
+	cfg := &tenant.Config{
+		Version: 1, TenantID: "tenant_dev", BackendURL: "https://acme.app.example.com",
+		RealtimeURL: "https://acme.app.example.com/api/realtime", AppKey: "pk_dev_000000",
+		SchemaVersion: "opaque_schema_id", MinClientVersion: "0.1.0",
+		Features: []string{}, Collections: []string{},
+	}
+	Register(&core.ServeEvent{App: app, Router: r}, cfg, features.Empty())
+	mux, err := r.BuildMux()
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	// Insert a module contract with syntactically valid semver but incompatible major version "2.0.0"
+	incompatContract := modules.CustomerJobTrackingContract
+	incompatContract.ModuleID = "incompatible_v2_module"
+	incompatContract.Version = "2.0.0"
+	modules.Catalog["incompatible_v2_module"] = incompatContract
+	t.Cleanup(func() {
+		delete(modules.Catalog, "incompatible_v2_module")
+	})
+
+	// 1. GET /v1/workspace/modules/incompatible_v2_module returns 400 Bad Request
+	getReq := httptest.NewRequest(http.MethodGet, "/v1/workspace/modules/incompatible_v2_module", nil)
+	getReq.Header.Set("Authorization", "Bearer owner")
+	getRec := httptest.NewRecorder()
+	mux.ServeHTTP(getRec, getReq)
+	if getRec.Code != http.StatusBadRequest || !strings.Contains(getRec.Body.String(), "incompatible_module_contract") {
+		t.Fatalf("expected 400 Bad Request with incompatible_module_contract, got %d: %s", getRec.Code, getRec.Body.String())
+	}
+
+	// 2. POST /v1/workspace/modules/incompatible_v2_module/setup returns 400 Bad Request
+	setupReq := httptest.NewRequest(http.MethodPost, "/v1/workspace/modules/incompatible_v2_module/setup", strings.NewReader(`{"use_suggested":true}`))
+	setupReq.Header.Set("Authorization", "Bearer owner")
+	setupReq.Header.Set("Content-Type", "application/json")
+	setupRec := httptest.NewRecorder()
+	mux.ServeHTTP(setupRec, setupReq)
+	if setupRec.Code != http.StatusBadRequest || !strings.Contains(setupRec.Body.String(), "incompatible_module_contract") {
+		t.Fatalf("expected 400 Bad Request with incompatible_module_contract for setup, got %d: %s", setupRec.Code, setupRec.Body.String())
+	}
+}
+
+func TestAssignmentHooks_AssignedVsAllScope(t *testing.T) {
+	app := newTestApp(t)
+	authz.RegisterAuthnHooks(app)
+
+	usersCol, err := app.FindCollectionByNameOrId("users")
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	owner := core.NewRecord(usersCol)
+	owner.Set("email", "owner@example.com")
+	owner.Set("role", authz.RoleOwner)
+	owner.SetPassword("Password123!")
+	if err := app.Save(owner); err != nil {
+		t.Fatal(err)
+	}
+
+	assignedMember := core.NewRecord(usersCol)
+	assignedMember.Set("email", "assigned@example.com")
+	assignedMember.Set("role", authz.RoleMember)
+	assignedMember.SetPassword("Password123!")
+	assignedMember.Set("permissions", map[string]any{
+		"jobs": map[string]any{"read": true, "create": true, "update": true, "delete": false, "scope": "assigned"},
+	})
+	if err := app.Save(assignedMember); err != nil {
+		t.Fatal(err)
+	}
+
+	allMember := core.NewRecord(usersCol)
+	allMember.Set("email", "all@example.com")
+	allMember.Set("role", authz.RoleMember)
+	allMember.SetPassword("Password123!")
+	allMember.Set("permissions", map[string]any{
+		"jobs": map[string]any{"read": true, "create": true, "update": true, "delete": false, "scope": "all"},
+	})
+	if err := app.Save(allMember); err != nil {
+		t.Fatal(err)
+	}
+
+	r := router.NewRouter[*core.RequestEvent](func(w http.ResponseWriter, req *http.Request) (*core.RequestEvent, router.EventCleanupFunc) {
+		event := &core.RequestEvent{App: app, Event: router.Event{Response: w, Request: req}}
+		return event, func() {}
+	})
+	cfg := &tenant.Config{
+		Version: 1, TenantID: "tenant_dev", BackendURL: "https://acme.app.example.com",
+		RealtimeURL: "https://acme.app.example.com/api/realtime", AppKey: "pk_dev_000000",
+		SchemaVersion: "opaque_schema_id", MinClientVersion: "0.1.0",
+		Features: []string{}, Collections: []string{},
+	}
+	Register(&core.ServeEvent{App: app, Router: r}, cfg, features.Empty())
+
+	// Provision datasets
+	ctx := context.Background()
+	_, err = modules.ProvisionSuggestedDatasets(ctx, app)
+	if err != nil {
+		t.Fatalf("failed to provision datasets: %v", err)
+	}
+
+	jobCol, err := app.FindCollectionByNameOrId("jobs")
+	if err != nil || jobCol == nil {
+		t.Fatal("jobs collection not found")
+	}
+
+	custCol, err := app.FindCollectionByNameOrId("customers")
+	if err != nil || custCol == nil {
+		t.Fatal("customers collection not found")
+	}
+	customer := core.NewRecord(custCol)
+	customer.Set("name", "Acme")
+	if err := app.Save(customer); err != nil {
+		t.Fatal(err)
+	}
+
+	// 1. Assigned-scope member creates job providing allMember as assignee:
+	// Overwritten to assignedMember's own ID
+	assignedNewRec := core.NewRecord(jobCol)
+	assignedNewRec.Set("title", "Assigned Job")
+	assignedNewRec.Set("customer", customer.Id)
+	assignedNewRec.Set("status", "Open")
+	assignedNewRec.Set("assignee", allMember.Id)
+
+	assignedCreateEvent := &core.RecordRequestEvent{
+		RequestEvent: &core.RequestEvent{
+			App:  app,
+			Auth: assignedMember,
+		},
+		Record: assignedNewRec,
+	}
+	err = app.OnRecordCreateRequest().Trigger(assignedCreateEvent, func(e *core.RecordRequestEvent) error {
+		return nil
+	})
+	if err != nil {
+		t.Fatalf("unexpected error on assigned create: %v", err)
+	}
+	if assignedNewRec.GetString("assignee") != assignedMember.Id {
+		t.Fatalf("expected assignee to be overwritten with assignedMember ID %q, got: %q", assignedMember.Id, assignedNewRec.GetString("assignee"))
+	}
+
+	// 2. Assigned-scope member updates job attempting to reassign: 403 Forbidden
+	jobRec := core.NewRecord(jobCol)
+	jobRec.Set("title", "Existing Job")
+	jobRec.Set("customer", customer.Id)
+	jobRec.Set("status", "Open")
+	jobRec.Set("assignee", assignedMember.Id)
+	if err := app.Save(jobRec); err != nil {
+		t.Fatal(err)
+	}
+
+	jobRec.Set("assignee", allMember.Id)
+	assignedUpEvent := &core.RecordRequestEvent{
+		RequestEvent: &core.RequestEvent{
+			App:  app,
+			Auth: assignedMember,
+		},
+		Record: jobRec,
+	}
+	err = app.OnRecordUpdateRequest().Trigger(assignedUpEvent, func(e *core.RecordRequestEvent) error {
+		return nil
+	})
+	if err == nil {
+		t.Fatal("expected 403 Forbidden for assigned member reassigning")
+	}
+
+	// 3. All-scope member creates job assigned to assignedMember: preserves assignedMember
+	allNewRec := core.NewRecord(jobCol)
+	allNewRec.Set("title", "All Scope Job")
+	allNewRec.Set("customer", customer.Id)
+	allNewRec.Set("status", "Open")
+	allNewRec.Set("assignee", assignedMember.Id)
+
+	allCreateEvent := &core.RecordRequestEvent{
+		RequestEvent: &core.RequestEvent{
+			App:  app,
+			Auth: allMember,
+		},
+		Record: allNewRec,
+	}
+	err = app.OnRecordCreateRequest().Trigger(allCreateEvent, func(e *core.RecordRequestEvent) error {
+		return nil
+	})
+	if err != nil {
+		t.Fatalf("unexpected error for all-scope create: %v", err)
+	}
+	if allNewRec.GetString("assignee") != assignedMember.Id {
+		t.Fatalf("expected all-scope member to preserve assignedMember ID %q, got: %q", assignedMember.Id, allNewRec.GetString("assignee"))
+	}
+
+	// 4. All-scope member updates job reassigning it to another member: succeeds
+	jobRec2 := core.NewRecord(jobCol)
+	jobRec2.Set("title", "Job 2")
+	jobRec2.Set("customer", customer.Id)
+	jobRec2.Set("status", "Open")
+	jobRec2.Set("assignee", assignedMember.Id)
+	if err := app.Save(jobRec2); err != nil {
+		t.Fatal(err)
+	}
+
+	jobRec2.Set("assignee", allMember.Id)
+	allUpEvent := &core.RecordRequestEvent{
+		RequestEvent: &core.RequestEvent{
+			App:  app,
+			Auth: allMember,
+		},
+		Record: jobRec2,
+	}
+	err = app.OnRecordUpdateRequest().Trigger(allUpEvent, func(e *core.RecordRequestEvent) error {
+		return nil
+	})
+	if err != nil {
+		t.Fatalf("unexpected error for all-scope update: %v", err)
+	}
+	if jobRec2.GetString("assignee") != allMember.Id {
+		t.Fatalf("expected all-scope member reassignment to %q, got: %q", allMember.Id, jobRec2.GetString("assignee"))
+	}
+}

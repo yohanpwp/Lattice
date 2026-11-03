@@ -9,6 +9,7 @@ export interface WorkspaceModulesModalProps {
   client: ProductClient;
   schemas?: SchemaDefinition[];
   pages?: PageDefinition[];
+  initialModules?: WorkspaceModule[];
   onModulesChanged?: () => void;
 }
 
@@ -18,9 +19,10 @@ export function WorkspaceModulesModal({
   client,
   schemas = [],
   pages = [],
+  initialModules,
   onModulesChanged,
 }: WorkspaceModulesModalProps) {
-  const [modules, setModules] = useState<WorkspaceModule[]>([]);
+  const [modules, setModules] = useState<WorkspaceModule[]>(initialModules ?? []);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [searchQuery, setSearchQuery] = useState("");
@@ -87,7 +89,8 @@ export function WorkspaceModulesModal({
   });
 
   const activeCount = modules.filter((m) => m.enabled).length;
-  const disabledCount = modules.filter((m) => !m.enabled).length;
+  const incompatibleCount = modules.filter((m) => m.compatible === false).length;
+  const disabledCount = modules.filter((m) => !m.enabled && m.compatible !== false).length;
 
   function getModuleTypeBadge(mod: WorkspaceModule) {
     if (mod.dataset_id) {
@@ -152,6 +155,12 @@ export function WorkspaceModulesModal({
                 <div>
                   <span className="yp-muted" style={{ fontSize: "0.75rem", textTransform: "uppercase" }}>Disabled</span>
                   <div style={{ fontWeight: 700, fontSize: "1.1rem", color: "#ea580c" }}>{disabledCount}</div>
+                </div>
+              )}
+              {incompatibleCount > 0 && (
+                <div>
+                  <span className="yp-muted" style={{ fontSize: "0.75rem", textTransform: "uppercase" }}>Incompatible</span>
+                  <div style={{ fontWeight: 700, fontSize: "1.1rem", color: "#dc2626" }}>{incompatibleCount}</div>
                 </div>
               )}
             </div>
@@ -284,7 +293,22 @@ export function WorkspaceModulesModal({
                           )}
                         </td>
                         <td>
-                          {mod.enabled ? (
+                          {mod.compatible === false ? (
+                            <span
+                              className="lattice-status-badge lattice-status-badge--incompatible"
+                              style={{
+                                display: "inline-flex",
+                                alignItems: "center",
+                                gap: "0.3rem",
+                                fontSize: "0.75rem",
+                                fontWeight: 600,
+                                color: "#ef4444",
+                              }}
+                              title={mod.compatibility_error || "Incompatible with this client build"}
+                            >
+                              <span style={{ fontSize: "0.7rem" }}>✕</span> Incompatible
+                            </span>
+                          ) : mod.enabled ? (
                             <span
                               className="lattice-status-badge lattice-status-badge--active"
                               style={{
@@ -317,7 +341,7 @@ export function WorkspaceModulesModal({
                         <td style={{ textAlign: "right" }}>
                           {isOwnerOrAdmin ? (
                             <div style={{ display: "inline-flex", gap: "0.4rem", alignItems: "center" }}>
-                              {mod.id === "customer_job_tracking" && (
+                              {mod.id === "customer_job_tracking" && mod.compatible !== false && (
                                 <button
                                   type="button"
                                   className="lattice-btn-secondary"
@@ -327,7 +351,23 @@ export function WorkspaceModulesModal({
                                   Configure
                                 </button>
                               )}
-                              {mod.enabled ? (
+                              {mod.compatible === false ? (
+                                <button
+                                  type="button"
+                                  className="lattice-btn-secondary"
+                                  style={{
+                                    padding: "0.3rem 0.6rem",
+                                    fontSize: "0.78rem",
+                                    color: "#9ca3af",
+                                    borderColor: "#e5e7eb",
+                                    cursor: "not-allowed",
+                                  }}
+                                  disabled
+                                  title={mod.compatibility_error || "This module is incompatible with this client build"}
+                                >
+                                  Incompatible
+                                </button>
+                              ) : mod.enabled ? (
                                 <button
                                   type="button"
                                   className="lattice-btn-secondary"

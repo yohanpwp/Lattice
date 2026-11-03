@@ -1,0 +1,9 @@
+{
+  "module_id": "customer_job_tracking",
+  "name": "Customer & Job Tracking",
+  "version": "1.0.0",
+  "description": "Missing required datasets and platforms",
+  "icon": "clipboard-check",
+  "supported_platforms": [],
+  "required_datasets": []
+}
