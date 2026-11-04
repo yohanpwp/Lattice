@@ -167,6 +167,17 @@ export function registerProductClient(client: unknown): () => void {
   };
 }
 
+let webOnlineListenerAdded = false;
+
+export function ensureWebOnlineListener(): void {
+  if (typeof window !== "undefined" && !webOnlineListenerAdded) {
+    webOnlineListenerAdded = true;
+    window.addEventListener("online", async () => {
+      await handleAppResume();
+    });
+  }
+}
+
 export async function bootstrapPlatform(): Promise<PlatformAdapters> {
   if (Capacitor.isNativePlatform()) {
     const storageApi = createClientSecureStorageApi();
@@ -181,7 +192,11 @@ export async function bootstrapPlatform(): Promise<PlatformAdapters> {
     };
   }
 
+  ensureWebOnlineListener();
   return {
     storage: createWebStorage(),
+    onClientInitialized: (client) => {
+      return registerProductClient(client);
+    },
   };
 }

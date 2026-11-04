@@ -119,7 +119,7 @@ func (s *Service) ListSchemas(ctx context.Context) ([]SchemaDefinition, error) {
 			if col == nil || col.System || strings.HasPrefix(col.Name, "_") {
 				continue
 			}
-			if tenant.PlatformCollections[col.Name] {
+			if tenant.PlatformCollections[col.Name] || col.Name == "users" {
 				continue
 			}
 			if !recordedMap[col.Name] {
@@ -842,9 +842,18 @@ func CollectionToSchemaDefinition(col *core.Collection) SchemaDefinition {
 	}
 
 	for _, f := range col.Fields {
+		fType := f.Type()
+		if fType == "password" || f.GetName() == "tokenKey" || f.GetName() == "password" {
+			continue
+		}
+		if fType == "autodate" {
+			fType = "date"
+		} else if fType == "editor" {
+			fType = "text"
+		}
 		fDef := FieldDefinition{
 			Name:   f.GetName(),
-			Type:   f.Type(),
+			Type:   fType,
 			System: f.GetSystem(),
 		}
 

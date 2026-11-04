@@ -1,6 +1,6 @@
 # Customer & Job Tracking: Pilot Acceptance Scenario & Release Test
 
-This document defines the release acceptance criteria and end-to-end verification scenario for the Customer & Job Tracking managed module in Lattice. It serves as the proposed pilot release test (pending confirmation) for single-tenant PocketBase deployments across web and mobile clients.
+This document defines the release acceptance criteria and end-to-end verification scenario for the Customer & Job Tracking managed module in Lattice. It serves as the release test for single-tenant PocketBase deployments across web and mobile clients, with formal pilot business confirmation recorded.
 
 ---
 
@@ -10,7 +10,7 @@ This document defines the release acceptance criteria and end-to-end verificatio
 - **Workspace Owner (`owner@example.com`)**: Sets up the workspace, configures modules, invites team members, creates customers, and assigns work orders.
 - **Member 1 (`tech1@example.com`)**: Field service technician operating primarily on a mobile phone.
 - **Member 2 (`tech2@example.com`)**: Field service technician operating primarily on a mobile phone.
-- **Pilot Scope (Proposed - Pending Confirmation)**: All participating team members are granted **read-only access to all customer records** (`customers: { read: true, scope: "all" }`) so they can find, identify, and view details of any customer linked to their assigned jobs. This read-all policy is proposed and pending confirmation with the pilot business.
+- **Pilot Scope & Business Decision**: All participating team members are granted **read-only access to all customer records** (`customers: { read: true, scope: "all" }`) so they can find, identify, and view details of any customer linked to their assigned jobs. The pilot business formally confirmed and approved this policy on 2026-11-04: field technicians have read-only access to all customer names and phone numbers (no financial, payment, or billing data is exposed) to facilitate field operations and work order identification.
 
 ---
 

@@ -40,6 +40,9 @@ import {
   WorkspaceModulesModal,
   CustomerJobTrackingSetupModal,
   CustomerJobTrackingView,
+  jobModalDraftReducer,
+  buildJobCreatePayload,
+  type JobModalDraftState,
   isAbortError,
   CJT_JOBS_REQUEST_KEY,
   CJT_CUSTOMER_LIST_REQUEST_KEY,
@@ -556,6 +559,66 @@ describe("schema navigation and validation", () => {
     expect(html).toContain("lattice-req");
   });
 
+  it("dynamically renders optional field additions in SchemaRecordModal and TableView when schema definition changes", () => {
+    // 1. Initial schema definition without optional field
+    const initialModalHtml = renderToString(
+      React.createElement(SchemaRecordModal, {
+        schema: sampleSchema,
+        isOpen: true,
+        onClose: () => {},
+        onSave: async () => {},
+      }),
+    );
+    expect(initialModalHtml).not.toContain("Special Instructions");
+    expect(initialModalHtml).not.toContain('id="field-notes"');
+
+    // 2. Updated schema session (after owner adds optional field "notes" and client synchronizes/navigates)
+    const updatedSchemaWithNotes: SchemaDefinition = {
+      ...sampleSchema,
+      fields: [
+        ...sampleSchema.fields,
+        { name: "notes", label: "Special Instructions", type: "text", required: false },
+      ],
+    };
+
+    const updatedModalHtml = renderToString(
+      React.createElement(SchemaRecordModal, {
+        schema: updatedSchemaWithNotes,
+        isOpen: true,
+        onClose: () => {},
+        onSave: async () => {},
+      }),
+    );
+    expect(updatedModalHtml).toContain("Special Instructions");
+    expect(updatedModalHtml).toContain('id="field-notes"');
+
+    // 3. TableView on second client immediately reflects the new column without manual code change
+    const mockClient = {
+      hasDatasetPermission: () => true,
+      collection: () => ({
+        getList: async () => ({ items: [], totalPages: 1, totalItems: 0 }),
+      }),
+    } as unknown as Parameters<typeof TableView>[0]["client"];
+
+    const pageDef: PageDefinition = {
+      page_id: "inventory_page",
+      name: "Inventory",
+      view_type: "table",
+      collection: "inventory",
+    };
+
+    const tableHtml = renderToString(
+      React.createElement(TableView, {
+        client: mockClient,
+        page: pageDef,
+        schema: updatedSchemaWithNotes,
+        initialRecords: [{ id: "rec_1", sku: "SKU-001", stock: 5, notes: "Handle with care" }],
+      }),
+    );
+    expect(tableHtml).toContain("Special Instructions");
+    expect(tableHtml).toContain("Handle with care");
+  });
+
   it("renders CreateSchemaModal dialog and field definitions builder", () => {
     const html = renderToString(
       React.createElement(CreateSchemaModal, {
@@ -1012,6 +1075,164 @@ describe("schema navigation and validation", () => {
     expect(html).toContain("Save &amp; Enable Module");
   });
 
+  it("renders CustomerJobTrackingSetupModal custom mapping mode with field dropdowns and pre-selected datasets", () => {
+    const mockClient = {
+      isOwnerOrAdmin: true,
+      setupWorkspaceModule: async () => {},
+    } as unknown as Parameters<typeof CustomerJobTrackingSetupModal>[0]["client"];
+
+    const customSchemas: SchemaDefinition[] = [
+      {
+        schema_id: "client_directory",
+        name: "Client Directory",
+        fields: [
+          { name: "client_name", label: "Client Name", type: "text", required: true },
+          { name: "contact_number", label: "Contact Number", type: "text", required: false },
+        ],
+      },
+      {
+        schema_id: "work_orders",
+        name: "Work Orders",
+        assignee_field: "assigned_tech",
+        fields: [
+          { name: "summary", label: "Summary", type: "text", required: true },
+          { name: "client_link", label: "Client", type: "relation", required: true, target: "client_directory" },
+          { name: "current_state", label: "State", type: "select", required: true, options: ["Open", "In progress", "Done"] },
+          { name: "assigned_tech", label: "Assigned Tech", type: "relation", required: true, target: "users" },
+        ],
+      },
+    ];
+
+    const html = renderToString(
+      React.createElement(CustomerJobTrackingSetupModal, {
+        client: mockClient,
+        schemas: customSchemas,
+        initialMode: "custom",
+        initialCustomerDataset: "client_directory",
+        initialJobDataset: "work_orders",
+        isOpen: true,
+        onClose: () => {},
+      }),
+    );
+
+    const cleanHtml = html.replace(/<!-- -->/g, "");
+    expect(cleanHtml).toContain("1. Customer Dataset");
+    expect(cleanHtml).toContain("Client Directory (client_directory)");
+    expect(cleanHtml).toContain("Client Name (text)");
+    expect(cleanHtml).toContain("Contact Number (text)");
+    expect(cleanHtml).toContain("2. Job Dataset");
+    expect(cleanHtml).toContain("Work Orders (work_orders)");
+    expect(cleanHtml).toContain("Summary (text)");
+    expect(cleanHtml).toContain("Client → client_directory");
+    expect(cleanHtml).toContain("Assigned Tech → users");
+    expect(cleanHtml).toContain("Team Access &amp; Isolation Rules");
+  });
+
+  it("renders CustomerJobTrackingSetupModal with actionable error banner on validation failure", () => {
+    const mockClient = {
+      isOwnerOrAdmin: true,
+      setupWorkspaceModule: async () => {},
+    } as unknown as Parameters<typeof CustomerJobTrackingSetupModal>[0]["client"];
+
+    const html = renderToString(
+      React.createElement(CustomerJobTrackingSetupModal, {
+        client: mockClient,
+        schemas: [],
+        initialError: 'incompatible mapping: relation field "client_link" must target "client_directory"',
+        isOpen: true,
+        onClose: () => {},
+      }),
+    );
+
+    expect(html).toContain("lattice-alert-error");
+    expect(html).toContain('incompatible mapping: relation field &quot;client_link&quot; must target &quot;client_directory&quot;');
+  });
+
+  it("renders CustomerJobTrackingSetupModal recovery card on partial provisioning failure showing preserved datasets and retry guidance", () => {
+    const mockClient = {
+      isOwnerOrAdmin: true,
+      setupWorkspaceModule: async () => {},
+    } as unknown as Parameters<typeof CustomerJobTrackingSetupModal>[0]["client"];
+
+    const html = renderToString(
+      React.createElement(CustomerJobTrackingSetupModal, {
+        client: mockClient,
+        schemas: [],
+        initialError: "Failed to provision jobs collection: disk error",
+        initialCreatedDatasets: ["customers"],
+        isOpen: true,
+        onClose: () => {},
+      }),
+    );
+
+    const cleanHtml = html.replace(/<!-- -->/g, "");
+    expect(cleanHtml).toContain("⚠️ Setup Interrupted");
+    expect(cleanHtml).toContain("Why setup stopped:");
+    expect(cleanHtml).toContain("Failed to provision jobs collection: disk error");
+    expect(cleanHtml).toContain("Datasets preserved in workspace:");
+    expect(cleanHtml).toContain("<code>customers</code> (created and ready)");
+    expect(cleanHtml).toContain("Safe to retry:</strong> Existing datasets will be reused without creating duplicates.");
+    expect(cleanHtml).toContain("🔄 Retry Setup");
+  });
+
+  it("renders CustomerJobTrackingSetupModal recovery card on rule protection failure carrying created datasets and blocked operations", () => {
+    const mockClient = {
+      isOwnerOrAdmin: true,
+      setupWorkspaceModule: async () => {},
+    } as unknown as Parameters<typeof CustomerJobTrackingSetupModal>[0]["client"];
+
+    const html = renderToString(
+      React.createElement(CustomerJobTrackingSetupModal, {
+        client: mockClient,
+        schemas: [],
+        initialError: "incompatible rules on customers dataset",
+        initialCreatedDatasets: ["customers", "jobs"],
+        initialBlockedOperations: ["view", "list"],
+        isOpen: true,
+        onClose: () => {},
+      }),
+    );
+
+    const cleanHtml = html.replace(/<!-- -->/g, "");
+    expect(cleanHtml).toContain("⚠️ Setup Interrupted");
+    expect(cleanHtml).toContain("Why setup stopped:");
+    expect(cleanHtml).toContain("incompatible rules on customers dataset");
+    expect(cleanHtml).toContain("Datasets preserved in workspace:");
+    expect(cleanHtml).toContain("<code>customers</code> (created and ready)");
+    expect(cleanHtml).toContain("<code>jobs</code> (created and ready)");
+    expect(cleanHtml).toContain("Blocked operations:</strong> view, list");
+    expect(cleanHtml).toContain("Safe to retry:</strong> Existing datasets will be reused without creating duplicates.");
+    expect(cleanHtml).toContain("🔄 Retry Setup");
+  });
+
+  it("renders CustomerJobTrackingSetupModal recovery card on installation save failure carrying created datasets", () => {
+    const mockClient = {
+      isOwnerOrAdmin: true,
+      setupWorkspaceModule: async () => {},
+    } as unknown as Parameters<typeof CustomerJobTrackingSetupModal>[0]["client"];
+
+    const html = renderToString(
+      React.createElement(CustomerJobTrackingSetupModal, {
+        client: mockClient,
+        schemas: [],
+        initialError: "failed to save installation record to workspace_modules",
+        initialCreatedDatasets: ["customers", "jobs"],
+        isOpen: true,
+        onClose: () => {},
+      }),
+    );
+
+    const cleanHtml = html.replace(/<!-- -->/g, "");
+    expect(cleanHtml).toContain("⚠️ Setup Interrupted");
+    expect(cleanHtml).toContain("Why setup stopped:");
+    expect(cleanHtml).toContain("failed to save installation record to workspace_modules");
+    expect(cleanHtml).toContain("Datasets preserved in workspace:");
+    expect(cleanHtml).toContain("<code>customers</code> (created and ready)");
+    expect(cleanHtml).toContain("<code>jobs</code> (created and ready)");
+    expect(cleanHtml).toContain("Safe to retry:</strong> Existing datasets will be reused without creating duplicates.");
+    expect(cleanHtml).toContain("🔄 Retry Setup");
+  });
+
   it("renders SchemaNavigation with Jobs & Customers tab when enabled", () => {
     const htmlEnabled = renderToString(
       React.createElement(SchemaNavigation, {
@@ -1062,7 +1283,100 @@ describe("schema navigation and validation", () => {
     expect(cleanHtml).toContain("+ New Job");
   });
 
-  it("renders WorkspaceMembersModal with Customer & Job Tracking preset button", () => {
+  it("renders WorkspaceMembersModal with member list, status chips, permissions summary, and active invitations", () => {
+    const mockClient = {
+      isOwner: true,
+      isOwnerOrAdmin: true,
+      getWorkspaceUsers: async () => [],
+      getWorkspaceInvitations: async () => [],
+    } as unknown as Parameters<typeof WorkspaceMembersModal>[0]["client"];
+
+    const sampleUsers = [
+      {
+        id: "owner_1",
+        name: "Alice Owner",
+        email: "owner@example.com",
+        role: "owner" as const,
+        disabled: false,
+      },
+      {
+        id: "tech_1",
+        name: "Tech One",
+        email: "tech1@example.com",
+        role: "member" as const,
+        disabled: false,
+        permissions: {
+          customers: { read: true, create: false, update: false, delete: false, scope: "all" as const },
+          jobs: { read: true, create: true, update: true, delete: false, scope: "assigned" as const },
+        },
+      },
+      {
+        id: "tech_2",
+        name: "Tech Two",
+        email: "tech2@example.com",
+        role: "member" as const,
+        disabled: true,
+        permissions: {
+          customers: { read: true, create: false, update: false, delete: false, scope: "all" as const },
+          jobs: { read: true, create: true, update: true, delete: false, scope: "assigned" as const },
+        },
+      },
+    ];
+
+    const sampleInvitations = [
+      {
+        id: "inv_pending_1",
+        email: "tech3@example.com",
+        role: "member" as const,
+        expires_at: "2026-12-31T23:59:59Z",
+      },
+    ];
+
+    const html = renderToString(
+      React.createElement(WorkspaceMembersModal, {
+        client: mockClient,
+        schemas: [
+          { schema_id: "customers", name: "Customers", fields: [{ name: "name", type: "text" }] },
+          { schema_id: "jobs", name: "Jobs", assignee_field: "assignee", fields: [{ name: "title", type: "text" }] },
+        ],
+        isOpen: true,
+        onClose: () => {},
+        initialUsers: sampleUsers,
+        initialPendingInvitations: sampleInvitations,
+        initialGeneratedInviteToken: "inv_tok_secret_pilot_999",
+      }),
+    );
+
+    const cleanHtml = html.replace(/<!-- -->/g, "");
+    expect(cleanHtml).toContain("Workspace Team &amp; Access Control");
+    expect(cleanHtml).toContain("Invitation Token Ready");
+    expect(cleanHtml).toContain("inv_tok_secret_pilot_999");
+    expect(cleanHtml).toContain("Copy Token");
+
+    // Owner protection
+    expect(cleanHtml).toContain("Alice Owner");
+    expect(cleanHtml).toContain("Full Access");
+    expect(cleanHtml).toContain("Protected");
+
+    // Member 1 active and permissions
+    expect(cleanHtml).toContain("Tech One");
+    expect(cleanHtml).toContain("Active");
+    expect(cleanHtml).toContain("customers:");
+    expect(cleanHtml).toContain("jobs:");
+    expect(cleanHtml).toContain("(assigned)");
+
+    // Member 2 disabled
+    expect(cleanHtml).toContain("Tech Two");
+    expect(cleanHtml).toContain("Disabled");
+    expect(cleanHtml).toContain(">Enable</button>");
+
+    // Pending invitation
+    expect(cleanHtml).toContain("tech3@example.com");
+    expect(cleanHtml).toContain("Reissue");
+    expect(cleanHtml).toContain("Revoke");
+  });
+
+  it("renders WorkspaceMembersModal invite form with Customer & Job Tracking preset and permissions matrix", () => {
     const mockClient = {
       isOwner: true,
       isOwnerOrAdmin: true,
@@ -1079,10 +1393,40 @@ describe("schema navigation and validation", () => {
         ],
         isOpen: true,
         onClose: () => {},
+        initialShowInviteForm: true,
       }),
     );
 
-    expect(html).toContain("Workspace Team &amp; Access Control");
+    const cleanHtml = html.replace(/<!-- -->/g, "");
+    expect(cleanHtml).toContain("Invite New Member or Admin");
+    expect(cleanHtml).toContain("Member Email");
+    expect(cleanHtml).toContain("Customer &amp; Job Tracking Member Preset");
+    expect(cleanHtml).toContain("Effective Access:</strong> Members with assigned scope can only view and update records assigned to their user ID.");
+    expect(cleanHtml).toContain("Assignee: assignee");
+  });
+
+  it("renders AcceptInviteForm with token, name and password fields", () => {
+    const mockClient = {
+      config: { tenant_id: "tenant_pilot" },
+      acceptInvitation: async () => ({ email: "tech1@example.com" }),
+      login: async () => {},
+    } as unknown as Parameters<typeof AcceptInviteForm>[0]["client"];
+
+    const html = renderToString(
+      React.createElement(AcceptInviteForm, {
+        client: mockClient,
+        initialToken: "inv_tok_pilot_123",
+      }),
+    );
+
+    const cleanHtml = html.replace(/<!-- -->/g, "");
+    expect(cleanHtml).toContain("Accept Invitation");
+    expect(cleanHtml).toContain("tenant_pilot");
+    expect(cleanHtml).toContain("value=\"inv_tok_pilot_123\"");
+    expect(cleanHtml).toContain("Your Full Name");
+    expect(cleanHtml).toContain("Password (min 8 chars)");
+    expect(cleanHtml).toContain("Confirm Password");
+    expect(cleanHtml).toContain("Accept &amp; Sign In");
   });
 
   it("CustomerJobTrackingView renders server-side search input, pagination controls and assignee picker for owners", () => {
@@ -1333,6 +1677,53 @@ describe("schema navigation and validation", () => {
     expect(cleanHtml).toContain("Done");
   });
 
+  it("CustomerJobTrackingView renders expanded customer relation name and tel link", () => {
+    const mockClient = {
+      isOwnerOrAdmin: false,
+      currentUserId: "member_1",
+      currentUserEmail: "member@example.com",
+      getWorkspaceModule: async () => null,
+      collection: () => ({
+        getList: async () => ({ items: [], totalPages: 1, totalItems: 0 }),
+        subscribe: () => Promise.resolve(() => {}),
+        unsubscribe: () => Promise.resolve(),
+      }),
+    } as unknown as Parameters<typeof CustomerJobTrackingView>[0]["client"];
+
+    const sampleJobs = [
+      {
+        id: "job_1",
+        title: "Emergency Pipe Repair",
+        status: "In progress",
+        customer: "cust_100",
+        assignee: "member_1",
+        expand: {
+          customer: {
+            id: "cust_100",
+            name: "Apex Hospital",
+            phone: "+1-555-0199",
+          },
+        },
+      },
+    ];
+
+    const html = renderToString(
+      React.createElement(CustomerJobTrackingView, {
+        client: mockClient,
+        schemas: [],
+        initialLoadingJobs: false,
+        initialJobs: sampleJobs,
+        initialCustomerPhoneField: "phone",
+      }),
+    );
+
+    const cleanHtml = html.replace(/<!-- -->/g, "");
+    expect(cleanHtml).toContain("Emergency Pipe Repair");
+    expect(cleanHtml).toContain("👤 Apex Hospital");
+    expect(cleanHtml).toContain('href="tel:+1-555-0199"');
+    expect(cleanHtml).toContain("📞 +1-555-0199");
+  });
+
   it("CustomerJobTrackingView renders empty state and loading state correctly", () => {
     const mockClient = {
       isOwnerOrAdmin: false,
@@ -1415,6 +1806,206 @@ describe("schema navigation and validation", () => {
     expect(cleanHtml).toContain("Assignee:");
     expect(cleanHtml).toContain("Automatically assigned");
     expect(cleanHtml).not.toContain('<select value="member_1">');
+  });
+
+  it("CustomerJobTrackingView renders typed controls for extra optional fields (select, bool, date, relation, number, file)", () => {
+    const jobSchemaWithTypedExtras: SchemaDefinition = {
+      schema_id: "jobs",
+      name: "Jobs",
+      assignee_field: "assignee",
+      fields: [
+        { name: "title", label: "Title", type: "text", required: true },
+        { name: "customer", label: "Customer", type: "relation", required: true, target: "customers" },
+        { name: "status", label: "Status", type: "select", required: true, options: ["Open", "In progress", "Done"] },
+        { name: "assignee", label: "Assignee", type: "relation", required: true, target: "users" },
+        { name: "priority", label: "Priority", type: "select", required: false, options: ["Low", "Medium", "High"] },
+        { name: "urgent", label: "Is Urgent", type: "bool", required: false },
+        { name: "due_date", label: "Due Date", type: "date", required: false },
+        { name: "estimated_hours", label: "Estimated Hours", type: "number", required: false },
+        { name: "attachment", label: "Work Order PDF", type: "file", required: false },
+      ],
+    };
+
+    const mockClient = {
+      isOwnerOrAdmin: false,
+      currentUserId: "member_1",
+      currentUserEmail: "member1@example.com",
+      getWorkspaceModule: async () => null,
+      collection: () => ({
+        getList: async () => ({ items: [], totalPages: 1, totalItems: 0 }),
+        subscribe: () => Promise.resolve(() => {}),
+        unsubscribe: () => Promise.resolve(),
+      }),
+    } as unknown as Parameters<typeof CustomerJobTrackingView>[0]["client"];
+
+    const html = renderToString(
+      React.createElement(CustomerJobTrackingView, {
+        client: mockClient,
+        schemas: [jobSchemaWithTypedExtras],
+        initialCreateJobModalOpen: true,
+        initialJobs: [
+          {
+            id: "job_1",
+            title: "Emergency Pipe Fix",
+            customer: "cust_1",
+            status: "Open",
+            assignee: "member_1",
+            priority: "High",
+            urgent: true,
+            estimated_hours: 4.5,
+            attachment: "work_order_123.pdf",
+          },
+        ],
+      }),
+    );
+
+    const cleanHtml = html.replace(/<!-- -->/g, "");
+    // Check select dropdown rendered for priority
+    expect(cleanHtml).toContain('id="cjt-field-priority"');
+    expect(cleanHtml).toContain('<option value="High">High</option>');
+    // Check checkbox rendered for urgent
+    expect(cleanHtml).toContain('id="cjt-field-urgent"');
+    expect(cleanHtml).toContain('type="checkbox"');
+    // Check date input rendered for due_date
+    expect(cleanHtml).toContain('id="cjt-field-due_date"');
+    expect(cleanHtml).toContain('type="date"');
+    // Check number input rendered for estimated_hours
+    expect(cleanHtml).toContain('id="cjt-field-estimated_hours"');
+    expect(cleanHtml).toContain('type="number"');
+    // Check file input rendered for attachment
+    expect(cleanHtml).toContain('id="cjt-field-attachment"');
+    expect(cleanHtml).toContain('type="file"');
+    // Check job card renders boolean as "Yes" and file with paperclip icon
+    expect(cleanHtml).toContain("Is Urgent:</strong> Yes");
+    expect(cleanHtml).toContain("Priority:</strong> High");
+    expect(cleanHtml).toContain("Work Order PDF:</strong> 📎 work_order_123.pdf");
+  });
+
+  it("clears draft values and attached files when create-job modal is cancelled/closed and reopened, preventing leaked attachments on next submission", () => {
+    const extraJobFields = [
+      { name: "priority", label: "Priority", type: "select" as const, required: false },
+      { name: "attachment", label: "Work Order File", type: "file" as const, required: false },
+    ];
+
+    // Initial state
+    let state: JobModalDraftState = {
+      isOpen: false,
+      title: "",
+      customerId: "cust_1",
+      status: "Open",
+      assigneeId: "member_1",
+      extraFieldValues: {},
+      error: null,
+      pending: false,
+    };
+
+    // 1. Member opens the modal
+    state = jobModalDraftReducer(state, { type: "OPEN", customerId: "cust_1" });
+    expect(state.isOpen).toBe(true);
+    expect(state.title).toBe("");
+    expect(state.extraFieldValues).toEqual({});
+
+    // 2. Member enters title and selects a draft file attachment
+    state = jobModalDraftReducer(state, { type: "SET_TITLE", title: "Pipe repair draft" });
+    const mockFile = new File(["sample content"], "blueprint.pdf", { type: "application/pdf" });
+    state = jobModalDraftReducer(state, { type: "SET_EXTRA_FIELD", fieldName: "attachment", value: mockFile });
+    expect(state.title).toBe("Pipe repair draft");
+    expect(state.extraFieldValues.attachment).toBe(mockFile);
+
+    // 3. Member decides to cancel and closes the modal
+    state = jobModalDraftReducer(state, { type: "CLOSE" });
+    expect(state.isOpen).toBe(false);
+    expect(state.title).toBe("");
+    expect(state.extraFieldValues).toEqual({});
+    expect(state.extraFieldValues.attachment).toBeUndefined();
+
+    // 4. Member re-opens the modal for a different job
+    state = jobModalDraftReducer(state, { type: "OPEN", customerId: "cust_1" });
+    expect(state.isOpen).toBe(true);
+    expect(state.title).toBe("");
+    expect(state.extraFieldValues).toEqual({});
+    expect(state.extraFieldValues.attachment).toBeUndefined();
+
+    // 5. Member enters title without selecting any file attachment and submits
+    state = jobModalDraftReducer(state, { type: "SET_TITLE", title: "Routine Sink Inspection" });
+    const payloadWithoutAttachment = buildJobCreatePayload({
+      title: state.title,
+      customerId: state.customerId,
+      status: state.status,
+      assigneeId: state.assigneeId,
+      extraJobFields,
+      extraFieldValues: state.extraFieldValues,
+    });
+
+    expect(payloadWithoutAttachment.title).toBe("Routine Sink Inspection");
+    expect(payloadWithoutAttachment.customer).toBe("cust_1");
+    expect(payloadWithoutAttachment.status).toBe("Open");
+    expect(payloadWithoutAttachment.assignee).toBe("member_1");
+    // Verify crucial invariant: previously cancelled attachment is NOT present in submission payload
+    expect(payloadWithoutAttachment.attachment).toBeUndefined();
+
+    // 6. When member explicitly selects a file on submission attempt, it IS included
+    state = jobModalDraftReducer(state, { type: "SET_EXTRA_FIELD", fieldName: "attachment", value: mockFile });
+    const payloadWithAttachment = buildJobCreatePayload({
+      title: state.title,
+      customerId: state.customerId,
+      status: state.status,
+      assigneeId: state.assigneeId,
+      extraJobFields,
+      extraFieldValues: state.extraFieldValues,
+    });
+    expect(payloadWithAttachment.attachment).toBe(mockFile);
+  });
+
+  it("CustomerJobTrackingView renders selected file label only when file is currently attached in draft", () => {
+    const jobSchemaWithAttachment: SchemaDefinition = {
+      schema_id: "jobs",
+      name: "Jobs",
+      assignee_field: "assignee",
+      fields: [
+        { name: "title", label: "Title", type: "text", required: true },
+        { name: "customer", label: "Customer", type: "relation", required: true, target: "customers" },
+        { name: "status", label: "Status", type: "select", required: true, options: ["Open", "In progress", "Done"] },
+        { name: "assignee", label: "Assignee", type: "relation", required: true, target: "users" },
+        { name: "attachment", label: "Work Order File", type: "file", required: false },
+      ],
+    };
+
+    const mockClient = {
+      isOwnerOrAdmin: false,
+      currentUserId: "member_1",
+      currentUserEmail: "member1@example.com",
+      getWorkspaceModule: async () => null,
+      collection: () => ({
+        getList: async () => ({ items: [], totalPages: 1, totalItems: 0 }),
+        subscribe: () => Promise.resolve(() => {}),
+        unsubscribe: () => Promise.resolve(),
+      }),
+    } as unknown as Parameters<typeof CustomerJobTrackingView>[0]["client"];
+
+    const mockFile = new File(["content"], "invoice-scan.pdf", { type: "application/pdf" });
+
+    // Render with file in draft
+    const htmlWithFile = renderToString(
+      React.createElement(CustomerJobTrackingView, {
+        client: mockClient,
+        schemas: [jobSchemaWithAttachment],
+        initialCreateJobModalOpen: true,
+        initialExtraFieldValues: { attachment: mockFile },
+      }),
+    ).replace(/<!-- -->/g, "");
+    expect(htmlWithFile).toContain("Selected: invoice-scan.pdf");
+
+    // Render fresh modal without file in draft
+    const htmlWithoutFile = renderToString(
+      React.createElement(CustomerJobTrackingView, {
+        client: mockClient,
+        schemas: [jobSchemaWithAttachment],
+        initialCreateJobModalOpen: true,
+      }),
+    ).replace(/<!-- -->/g, "");
+    expect(htmlWithoutFile).not.toContain("Selected: invoice-scan.pdf");
+    expect(htmlWithoutFile).not.toContain("Selected:");
   });
 });
 

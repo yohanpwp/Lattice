@@ -1,6 +1,7 @@
-import { useCallback, useEffect, useRef, useState } from "react";
-import type { SchemaDefinition, WorkspaceUser } from "@lattice/types";
+import { useCallback, useEffect, useReducer, useRef, useState } from "react";
+import type { FieldDefinition, SchemaDefinition, WorkspaceUser } from "@lattice/types";
 import type { ProductClient } from "@lattice/sdk";
+import { RelationPicker } from "./SchemaRecordModal";
 
 type RecordModel = { id: string; [key: string]: any };
 
@@ -13,6 +14,130 @@ export const CJT_JOBS_REQUEST_KEY = "cjt_jobs_list";
 export const CJT_CUSTOMER_LIST_REQUEST_KEY = "cjt_customer_list";
 export const CJT_PICKER_REQUEST_KEY = "cjt_picker_customers";
 
+export interface JobModalDraftState {
+  isOpen: boolean;
+  title: string;
+  customerId: string;
+  status: string;
+  assigneeId: string;
+  extraFieldValues: Record<string, any>;
+  error: string | null;
+  pending: boolean;
+}
+
+export type JobModalDraftAction =
+  | { type: "OPEN"; customerId?: string }
+  | { type: "CLOSE" }
+  | { type: "SET_TITLE"; title: string }
+  | { type: "SET_CUSTOMER"; customerId: string }
+  | { type: "SET_STATUS"; status: string }
+  | { type: "SET_ASSIGNEE"; assigneeId: string }
+  | { type: "SET_EXTRA_FIELD"; fieldName: string; value: any }
+  | { type: "SET_ERROR"; error: string | null }
+  | { type: "SET_PENDING"; pending: boolean }
+  | { type: "RESET" };
+
+export function jobModalDraftReducer(state: JobModalDraftState, action: JobModalDraftAction): JobModalDraftState {
+  switch (action.type) {
+    case "OPEN":
+      return {
+        ...state,
+        isOpen: true,
+        title: "",
+        extraFieldValues: {},
+        error: null,
+        customerId: action.customerId !== undefined ? action.customerId : state.customerId,
+      };
+    case "CLOSE":
+    case "RESET":
+      return {
+        ...state,
+        isOpen: false,
+        title: "",
+        extraFieldValues: {},
+        error: null,
+        pending: false,
+      };
+    case "SET_TITLE":
+      return { ...state, title: action.title };
+    case "SET_CUSTOMER":
+      return { ...state, customerId: action.customerId };
+    case "SET_STATUS":
+      return { ...state, status: action.status };
+    case "SET_ASSIGNEE":
+      return { ...state, assigneeId: action.assigneeId };
+    case "SET_EXTRA_FIELD":
+      return {
+        ...state,
+        extraFieldValues: { ...state.extraFieldValues, [action.fieldName]: action.value },
+      };
+    case "SET_ERROR":
+      return { ...state, error: action.error };
+    case "SET_PENDING":
+      return { ...state, pending: action.pending };
+    default:
+      return state;
+  }
+}
+
+export function buildJobCreatePayload({
+  title,
+  customerId,
+  status,
+  assigneeId,
+  extraJobFields,
+  extraFieldValues,
+  jobTitleField = "title",
+  jobCustomerField = "customer",
+  jobStatusField = "status",
+  jobAssigneeField = "assignee",
+}: {
+  title: string;
+  customerId: string;
+  status: string;
+  assigneeId: string;
+  extraJobFields: FieldDefinition[];
+  extraFieldValues: Record<string, any>;
+  jobTitleField?: string;
+  jobCustomerField?: string;
+  jobStatusField?: string;
+  jobAssigneeField?: string;
+}): Record<string, any> {
+  const payload: Record<string, any> = {
+    [jobTitleField]: title.trim(),
+    [jobCustomerField]: customerId,
+    [jobStatusField]: status,
+    [jobAssigneeField]: assigneeId,
+  };
+
+  for (const f of extraJobFields) {
+    const val = extraFieldValues[f.name];
+    if (val !== undefined && val !== "" && val !== null) {
+      if (f.type === "number") {
+        payload[f.name] = Number(val);
+      } else if (f.type === "bool") {
+        payload[f.name] = Boolean(val);
+      } else if (f.type === "json" && typeof val === "string" && val.trim() !== "") {
+        try {
+          payload[f.name] = JSON.parse(val);
+        } catch {
+          throw new Error(`Field "${f.label || f.name}" must be valid JSON`);
+        }
+      } else if (f.type === "file") {
+        if (val instanceof File || (typeof Blob !== "undefined" && val instanceof Blob)) {
+          payload[f.name] = val;
+        } else if (typeof val === "string" && val.trim() !== "") {
+          payload[f.name] = val;
+        }
+      } else {
+        payload[f.name] = val;
+      }
+    }
+  }
+
+  return payload;
+}
+
 export interface CustomerJobTrackingViewProps {
   client: ProductClient;
   schemas?: SchemaDefinition[];
@@ -23,6 +148,8 @@ export interface CustomerJobTrackingViewProps {
   initialJobs?: RecordModel[];
   initialError?: string;
   initialCreateJobModalOpen?: boolean;
+  initialExtraFieldValues?: Record<string, any>;
+  onModalDraftChange?: (draft: JobModalDraftState) => void;
 }
 
 export function CustomerJobTrackingView({
@@ -35,6 +162,8 @@ export function CustomerJobTrackingView({
   initialJobs,
   initialError,
   initialCreateJobModalOpen = false,
+  initialExtraFieldValues,
+  onModalDraftChange,
 }: CustomerJobTrackingViewProps) {
   const [activeSegment, setActiveSegment] = useState<"jobs" | "customers">(initialSegment);
   const [statusFilter, setStatusFilter] = useState<string>("all");
@@ -84,14 +213,42 @@ export function CustomerJobTrackingView({
   const [jobStatusField, setJobStatusField] = useState("status");
   const [jobAssigneeField, setJobAssigneeField] = useState("assignee");
 
-  // Job creation modal state
-  const [createJobModalOpen, setCreateJobModalOpen] = useState(initialCreateJobModalOpen ?? false);
-  const [newJobTitle, setNewJobTitle] = useState("");
-  const [newJobCustomerId, setNewJobCustomerId] = useState("");
-  const [newJobStatus, setNewJobStatus] = useState("Open");
-  const [newJobAssigneeId, setNewJobAssigneeId] = useState("");
-  const [createJobPending, setCreateJobPending] = useState(false);
-  const [createJobError, setCreateJobError] = useState<string | null>(null);
+  // Job creation modal state (managed via reducer to guarantee clean draft reset)
+  const [jobDraft, dispatchJobDraft] = useReducer(jobModalDraftReducer, {
+    isOpen: initialCreateJobModalOpen ?? false,
+    title: "",
+    customerId: "",
+    status: "Open",
+    assigneeId: "",
+    extraFieldValues: initialExtraFieldValues ?? {},
+    error: null,
+    pending: false,
+  });
+
+  const handleOpenCreateJobModal = useCallback((customerId?: string) => {
+    dispatchJobDraft({ type: "OPEN", customerId });
+  }, []);
+
+  const handleCloseCreateJobModal = useCallback(() => {
+    dispatchJobDraft({ type: "CLOSE" });
+  }, []);
+
+  useEffect(() => {
+    if (!jobDraft.isOpen) {
+      dispatchJobDraft({ type: "RESET" });
+    }
+  }, [jobDraft.isOpen]);
+
+  useEffect(() => {
+    onModalDraftChange?.(jobDraft);
+  }, [jobDraft, onModalDraftChange]);
+
+  const jobSchema = schemas.find((s) => s.schema_id === jobDataset);
+  const extraJobFields = (jobSchema?.fields || []).filter(
+    (f) =>
+      !f.system &&
+      !["id", "created", "updated", jobTitleField, jobCustomerField, jobStatusField, jobAssigneeField].includes(f.name)
+  );
 
   // Customer picker in Job modal (server-side search & pagination)
   const [pickerSearch, setPickerSearch] = useState("");
@@ -108,6 +265,28 @@ export function CustomerJobTrackingView({
   const [newCustPhone, setNewCustPhone] = useState("");
   const [createCustPending, setCreateCustPending] = useState(false);
   const [createCustError, setCreateCustError] = useState<string | null>(null);
+
+  const resetCreateCustDraft = useCallback(() => {
+    setNewCustName("");
+    setNewCustPhone("");
+    setCreateCustError(null);
+  }, []);
+
+  const handleOpenCreateCustModal = useCallback(() => {
+    resetCreateCustDraft();
+    setCreateCustModalOpen(true);
+  }, [resetCreateCustDraft]);
+
+  const handleCloseCreateCustModal = useCallback(() => {
+    resetCreateCustDraft();
+    setCreateCustModalOpen(false);
+  }, [resetCreateCustDraft]);
+
+  useEffect(() => {
+    if (!createCustModalOpen) {
+      resetCreateCustDraft();
+    }
+  }, [createCustModalOpen, resetCreateCustDraft]);
 
   const [selectedCustomerIdFilter, setSelectedCustomerIdFilter] = useState<string | null>(null);
 
@@ -165,8 +344,11 @@ export function CustomerJobTrackingView({
           if (!ignore && Array.isArray(list)) {
             const activeUsers = list.filter((u) => !u.disabled);
             setWorkspaceUsers(activeUsers);
-            if (!newJobAssigneeId) {
-              setNewJobAssigneeId(client.currentUserId || activeUsers[0]?.id || "");
+            if (!jobDraft.assigneeId) {
+              dispatchJobDraft({
+                type: "SET_ASSIGNEE",
+                assigneeId: client.currentUserId || activeUsers[0]?.id || "",
+              });
             }
           }
         })
@@ -175,7 +357,7 @@ export function CustomerJobTrackingView({
     return () => {
       ignore = true;
     };
-  }, [client, client.isOwnerOrAdmin, client.currentUserId, newJobAssigneeId]);
+  }, [client, client.isOwnerOrAdmin, client.currentUserId, jobDraft.assigneeId]);
 
   // Build PocketBase filter expression for jobs
   const buildJobFilter = useCallback(() => {
@@ -301,8 +483,8 @@ export function CustomerJobTrackingView({
       setCustomerCache((prev) => ({ ...prev, ...cacheUpdates }));
 
       // Default job customer id if empty
-      if (!newJobCustomerId && res.items.length > 0 && res.items[0]) {
-        setNewJobCustomerId(res.items[0].id);
+      if (!jobDraft.customerId && res.items.length > 0 && res.items[0]) {
+        dispatchJobDraft({ type: "SET_CUSTOMER", customerId: res.items[0].id });
       }
     } catch (err: unknown) {
       if (seq !== customerReqSeq.current) return;
@@ -315,7 +497,7 @@ export function CustomerJobTrackingView({
         setLoadingCustomers(false);
       }
     }
-  }, [client, customerDataset, customerNameField, customerPhoneField, customersPage, customersPerPage, customerSearch, newJobCustomerId]);
+  }, [client, customerDataset, customerNameField, customerPhoneField, customersPage, customersPerPage, customerSearch, jobDraft.customerId]);
 
   // Load Customer Picker records (for the modal dropdown)
   const loadPickerCustomers = useCallback(async () => {
@@ -346,9 +528,9 @@ export function CustomerJobTrackingView({
 
       let items = [...res.items];
       // Ensure currently selected customer is present in list
-      if (newJobCustomerId && !items.some((c) => c.id === newJobCustomerId)) {
+      if (jobDraft.customerId && !items.some((c) => c.id === jobDraft.customerId)) {
         try {
-          const selected = await client.collection(customerDataset).getOne(newJobCustomerId, { requestKey: null });
+          const selected = await client.collection(customerDataset).getOne(jobDraft.customerId, { requestKey: null });
           if (seq !== pickerReqSeq.current) return;
           if (selected) {
             items = [selected, ...items];
@@ -364,21 +546,24 @@ export function CustomerJobTrackingView({
       setPickerTotalPages(res.totalPages || 1);
       setPickerTotalItems(res.totalItems || 0);
 
-      if (!newJobCustomerId && items[0]) {
-        setNewJobCustomerId(items[0].id);
+      if (!jobDraft.customerId && items[0]) {
+        dispatchJobDraft({ type: "SET_CUSTOMER", customerId: items[0].id });
       }
     } catch (err: unknown) {
       if (seq !== pickerReqSeq.current) return;
       if (isAbortError(err)) {
         return;
       }
-      setCreateJobError(err instanceof Error ? err.message : "Failed to load customers");
+      dispatchJobDraft({
+        type: "SET_ERROR",
+        error: err instanceof Error ? err.message : "Failed to load customers",
+      });
     } finally {
       if (seq === pickerReqSeq.current) {
         setPickerLoading(false);
       }
     }
-  }, [client, customerDataset, customerNameField, customerPhoneField, pickerSearch, pickerPage, pickerPerPage, newJobCustomerId]);
+  }, [client, customerDataset, customerNameField, customerPhoneField, pickerSearch, pickerPage, pickerPerPage, jobDraft.customerId]);
 
   // Effects to trigger loads
   useEffect(() => {
@@ -390,10 +575,10 @@ export function CustomerJobTrackingView({
   }, [loadCustomers]);
 
   useEffect(() => {
-    if (createJobModalOpen) {
+    if (jobDraft.isOpen) {
       loadPickerCustomers();
     }
-  }, [createJobModalOpen, loadPickerCustomers]);
+  }, [jobDraft.isOpen, loadPickerCustomers]);
 
   // Realtime subscriptions
   useEffect(() => {
@@ -412,7 +597,7 @@ export function CustomerJobTrackingView({
       .subscribe("*", () => {
         if (!unsubscribed) {
           loadCustomers();
-          if (createJobModalOpen) {
+          if (jobDraft.isOpen) {
             loadPickerCustomers();
           }
         }
@@ -426,7 +611,7 @@ export function CustomerJobTrackingView({
         client.collection(customerDataset).unsubscribe("*").catch(() => {});
       } catch {}
     };
-  }, [client, jobDataset, customerDataset, loadJobs, loadCustomers, loadPickerCustomers, createJobModalOpen]);
+  }, [client, jobDataset, customerDataset, loadJobs, loadCustomers, loadPickerCustomers, jobDraft.isOpen]);
 
   // Quick status transition
   async function handleCycleStatus(job: RecordModel) {
@@ -454,31 +639,39 @@ export function CustomerJobTrackingView({
   // Handle create job
   async function handleCreateJob(e: React.FormEvent) {
     e.preventDefault();
-    if (!newJobTitle.trim()) return;
+    if (!jobDraft.title.trim()) return;
 
-    setCreateJobPending(true);
-    setCreateJobError(null);
+    dispatchJobDraft({ type: "SET_PENDING", pending: true });
+    dispatchJobDraft({ type: "SET_ERROR", error: null });
 
     try {
       const assigneeId = client.isOwnerOrAdmin
-        ? newJobAssigneeId || client.currentUserId || workspaceUsers[0]?.id || ""
+        ? jobDraft.assigneeId || client.currentUserId || workspaceUsers[0]?.id || ""
         : client.currentUserId || "";
 
-      const payload: Record<string, any> = {
-        [jobTitleField]: newJobTitle.trim(),
-        [jobCustomerField]: newJobCustomerId,
-        [jobStatusField]: newJobStatus,
-        [jobAssigneeField]: assigneeId,
-      };
+      const payload = buildJobCreatePayload({
+        title: jobDraft.title,
+        customerId: jobDraft.customerId,
+        status: jobDraft.status,
+        assigneeId,
+        extraJobFields,
+        extraFieldValues: jobDraft.extraFieldValues,
+        jobTitleField,
+        jobCustomerField,
+        jobStatusField,
+        jobAssigneeField,
+      });
 
       await client.collection(jobDataset).create(payload);
-      setNewJobTitle("");
-      setCreateJobModalOpen(false);
+      dispatchJobDraft({ type: "RESET" });
       await loadJobs();
     } catch (err: unknown) {
-      setCreateJobError(err instanceof Error ? err.message : "Failed to create job");
+      dispatchJobDraft({
+        type: "SET_ERROR",
+        error: err instanceof Error ? err.message : "Failed to create job",
+      });
     } finally {
-      setCreateJobPending(false);
+      dispatchJobDraft({ type: "SET_PENDING", pending: false });
     }
   }
 
@@ -503,12 +696,11 @@ export function CustomerJobTrackingView({
       }
 
       const created = await client.collection(customerDataset).create(payload);
-      setNewCustName("");
-      setNewCustPhone("");
+      resetCreateCustDraft();
       setCreateCustModalOpen(false);
       await loadCustomers();
       if (created?.id) {
-        setNewJobCustomerId(created.id);
+        dispatchJobDraft({ type: "SET_CUSTOMER", customerId: created.id });
       }
     } catch (err: unknown) {
       setCreateCustError(err instanceof Error ? err.message : "Failed to create customer");
@@ -546,10 +738,7 @@ export function CustomerJobTrackingView({
               type="button"
               className="lattice-btn-primary"
               style={{ padding: "0.45rem 0.85rem", fontSize: "0.85rem" }}
-              onClick={() => {
-                setCreateJobError(null);
-                setCreateJobModalOpen(true);
-              }}
+              onClick={() => handleOpenCreateJobModal()}
             >
               + New Job
             </button>
@@ -558,10 +747,7 @@ export function CustomerJobTrackingView({
               type="button"
               className="lattice-btn-primary"
               style={{ padding: "0.45rem 0.85rem", fontSize: "0.85rem" }}
-              onClick={() => {
-                setCreateCustError(null);
-                setCreateCustModalOpen(true);
-              }}
+              onClick={handleOpenCreateCustModal}
             >
               + New Customer
             </button>
@@ -780,7 +966,7 @@ export function CustomerJobTrackingView({
                 type="button"
                 className="lattice-btn-secondary"
                 style={{ marginTop: "1rem" }}
-                onClick={() => setCreateJobModalOpen(true)}
+                onClick={() => handleOpenCreateJobModal()}
               >
                 + Create First Job
               </button>
@@ -865,6 +1051,26 @@ export function CustomerJobTrackingView({
                       ) : null}
                     </div>
 
+                    {extraJobFields.map((f) => {
+                      const val = job[f.name];
+                      if (val === undefined || val === null || val === "") return null;
+                      const displayVal =
+                        f.type === "bool"
+                          ? val
+                            ? "Yes"
+                            : "No"
+                          : f.type === "file"
+                          ? `📎 ${val}`
+                          : typeof val === "object"
+                          ? JSON.stringify(val)
+                          : String(val);
+                      return (
+                        <div key={f.name} style={{ fontSize: "0.8rem", color: "var(--lattice-muted)" }}>
+                          <strong>{f.label || f.name}:</strong> {displayVal}
+                        </div>
+                      );
+                    })}
+
                     <div
                       style={{
                         display: "flex",
@@ -948,7 +1154,7 @@ export function CustomerJobTrackingView({
                 type="button"
                 className="lattice-btn-secondary"
                 style={{ marginTop: "1rem" }}
-                onClick={() => setCreateCustModalOpen(true)}
+                onClick={handleOpenCreateCustModal}
               >
                 + Add Customer
               </button>
@@ -1009,10 +1215,7 @@ export function CustomerJobTrackingView({
                         type="button"
                         className="lattice-btn-primary"
                         style={{ padding: "0.35rem 0.65rem", fontSize: "0.8rem" }}
-                        onClick={() => {
-                          setNewJobCustomerId(cust.id);
-                          setCreateJobModalOpen(true);
-                        }}
+                        onClick={() => handleOpenCreateJobModal(cust.id)}
                       >
                         + Job
                       </button>
@@ -1051,7 +1254,7 @@ export function CustomerJobTrackingView({
       )}
 
       {/* CREATE JOB MODAL */}
-      {createJobModalOpen && (
+      {jobDraft.isOpen && (
         <div className="lattice-modal-overlay" role="dialog" aria-modal="true">
           <div className="lattice-modal" style={{ maxWidth: "500px" }}>
             <div className="lattice-modal-header">
@@ -1059,16 +1262,16 @@ export function CustomerJobTrackingView({
               <button
                 type="button"
                 className="lattice-modal-close"
-                onClick={() => setCreateJobModalOpen(false)}
+                onClick={handleCloseCreateJobModal}
               >
                 ✕
               </button>
             </div>
             <form onSubmit={handleCreateJob}>
               <div className="lattice-modal-body" style={{ display: "flex", flexDirection: "column", gap: "0.85rem" }}>
-                {createJobError && (
+                {jobDraft.error && (
                   <div className="lattice-alert-error" role="alert">
-                    {createJobError}
+                    {jobDraft.error}
                   </div>
                 )}
 
@@ -1078,8 +1281,8 @@ export function CustomerJobTrackingView({
                     type="text"
                     required
                     placeholder="e.g. Repair water pump"
-                    value={newJobTitle}
-                    onChange={(e) => setNewJobTitle(e.target.value)}
+                    value={jobDraft.title}
+                    onChange={(e) => dispatchJobDraft({ type: "SET_TITLE", title: e.target.value })}
                     style={{ width: "100%", boxSizing: "border-box", padding: "0.5rem", borderRadius: "4px" }}
                   />
                 </div>
@@ -1107,8 +1310,8 @@ export function CustomerJobTrackingView({
                   />
                   <select
                     required
-                    value={newJobCustomerId}
-                    onChange={(e) => setNewJobCustomerId(e.target.value)}
+                    value={jobDraft.customerId}
+                    onChange={(e) => dispatchJobDraft({ type: "SET_CUSTOMER", customerId: e.target.value })}
                     style={{ width: "100%", boxSizing: "border-box", padding: "0.5rem", borderRadius: "4px" }}
                   >
                     {pickerCustomers.length === 0 && <option value="">No customers found</option>}
@@ -1159,8 +1362,8 @@ export function CustomerJobTrackingView({
                 <div>
                   <label style={{ fontSize: "0.85rem", fontWeight: 600 }}>Initial Status</label>
                   <select
-                    value={newJobStatus}
-                    onChange={(e) => setNewJobStatus(e.target.value)}
+                    value={jobDraft.status}
+                    onChange={(e) => dispatchJobDraft({ type: "SET_STATUS", status: e.target.value })}
                     style={{ width: "100%", boxSizing: "border-box", padding: "0.5rem", borderRadius: "4px" }}
                   >
                     <option value="Open">Open</option>
@@ -1175,8 +1378,8 @@ export function CustomerJobTrackingView({
                     <label style={{ fontSize: "0.85rem", fontWeight: 600 }}>Assignee</label>
                     <select
                       required
-                      value={newJobAssigneeId || client.currentUserId || ""}
-                      onChange={(e) => setNewJobAssigneeId(e.target.value)}
+                      value={jobDraft.assigneeId || client.currentUserId || ""}
+                      onChange={(e) => dispatchJobDraft({ type: "SET_ASSIGNEE", assigneeId: e.target.value })}
                       style={{ width: "100%", boxSizing: "border-box", padding: "0.5rem", borderRadius: "4px" }}
                     >
                       {workspaceUsers.map((u) => (
@@ -1206,29 +1409,150 @@ export function CustomerJobTrackingView({
                     <span>You ({client.currentUserEmail || "Current Member"}) - Automatically assigned</span>
                   </div>
                 )}
+
+                {extraJobFields.map((f) => {
+                  const id = `cjt-field-${f.name}`;
+                  return (
+                    <div key={f.name}>
+                      <label htmlFor={id} style={{ fontSize: "0.85rem", fontWeight: 600, display: "block", marginBottom: "0.25rem" }}>
+                        {f.label || f.name} {f.required && <span className="lattice-req">*</span>}
+                        {f.type === "relation" && f.target && (
+                          <span className="lattice-field-hint" style={{ fontSize: "0.75rem", color: "var(--lattice-muted)", fontWeight: "normal" }}> → {f.target}</span>
+                        )}
+                      </label>
+
+                      {f.type === "select" ? (
+                        <select
+                          id={id}
+                          className="lattice-input"
+                          value={String(jobDraft.extraFieldValues[f.name] ?? "")}
+                          onChange={(e) => dispatchJobDraft({ type: "SET_EXTRA_FIELD", fieldName: f.name, value: e.target.value })}
+                          required={Boolean(f.required)}
+                          style={{ width: "100%", boxSizing: "border-box" }}
+                        >
+                          <option value="">-- Select {f.label || f.name} --</option>
+                          {(f.options || []).map((opt) => (
+                            <option key={opt} value={opt}>
+                              {opt}
+                            </option>
+                          ))}
+                        </select>
+                      ) : f.type === "relation" ? (
+                        <RelationPicker
+                          id={id}
+                          field={f}
+                          client={client}
+                          value={String(jobDraft.extraFieldValues[f.name] ?? "")}
+                          onChange={(val) => dispatchJobDraft({ type: "SET_EXTRA_FIELD", fieldName: f.name, value: val })}
+                          required={Boolean(f.required)}
+                          schemas={schemas}
+                        />
+                      ) : f.type === "bool" ? (
+                        <div className="lattice-checkbox-wrapper" style={{ marginTop: "0.25rem" }}>
+                          <input
+                            id={id}
+                            type="checkbox"
+                            checked={Boolean(jobDraft.extraFieldValues[f.name])}
+                            onChange={(e) => dispatchJobDraft({ type: "SET_EXTRA_FIELD", fieldName: f.name, value: e.target.checked })}
+                          />
+                          <label htmlFor={id} style={{ fontSize: "0.85rem", marginLeft: "0.5rem", cursor: "pointer" }}>
+                            {Boolean(jobDraft.extraFieldValues[f.name]) ? "Yes / Enabled" : "No / Disabled"}
+                          </label>
+                        </div>
+                      ) : f.type === "date" ? (
+                        <input
+                          id={id}
+                          type="date"
+                          required={Boolean(f.required)}
+                          value={String(jobDraft.extraFieldValues[f.name] ?? "")}
+                          onChange={(e) => dispatchJobDraft({ type: "SET_EXTRA_FIELD", fieldName: f.name, value: e.target.value })}
+                          className="lattice-input"
+                          style={{ width: "100%", boxSizing: "border-box" }}
+                        >
+                        </input>
+                      ) : f.type === "number" ? (
+                        <input
+                          id={id}
+                          type="number"
+                          step="any"
+                          required={Boolean(f.required)}
+                          placeholder={`Enter ${f.label || f.name}…`}
+                          value={jobDraft.extraFieldValues[f.name] !== undefined ? String(jobDraft.extraFieldValues[f.name]) : ""}
+                          onChange={(e) => dispatchJobDraft({ type: "SET_EXTRA_FIELD", fieldName: f.name, value: e.target.value })}
+                          className="lattice-input"
+                          style={{ width: "100%", boxSizing: "border-box" }}
+                        />
+                      ) : f.type === "json" ? (
+                        <textarea
+                          id={id}
+                          rows={3}
+                          required={Boolean(f.required)}
+                          placeholder="{}"
+                          value={
+                            typeof jobDraft.extraFieldValues[f.name] === "object"
+                              ? JSON.stringify(jobDraft.extraFieldValues[f.name], null, 2)
+                              : String(jobDraft.extraFieldValues[f.name] ?? "")
+                          }
+                          onChange={(e) => dispatchJobDraft({ type: "SET_EXTRA_FIELD", fieldName: f.name, value: e.target.value })}
+                          className="lattice-input lattice-textarea"
+                          style={{ width: "100%", boxSizing: "border-box" }}
+                        />
+                      ) : f.type === "file" ? (
+                        <div>
+                          <input
+                            id={id}
+                            type="file"
+                            required={Boolean(f.required)}
+                            onChange={(e) => {
+                              const file = e.target.files?.[0] || null;
+                              dispatchJobDraft({ type: "SET_EXTRA_FIELD", fieldName: f.name, value: file });
+                            }}
+                            className="lattice-input"
+                            style={{ width: "100%", boxSizing: "border-box", padding: "0.35rem 0.5rem" }}
+                          />
+                          {Boolean(jobDraft.extraFieldValues[f.name]) && (
+                            <span style={{ fontSize: "0.75rem", color: "var(--lattice-muted)", display: "block", marginTop: "0.25rem" }}>
+                              Selected: {jobDraft.extraFieldValues[f.name] instanceof File ? (jobDraft.extraFieldValues[f.name] as File).name : String(jobDraft.extraFieldValues[f.name])}
+                            </span>
+                          )}
+                        </div>
+                      ) : (
+                        <input
+                          id={id}
+                          type={f.type === "email" ? "email" : f.type === "url" ? "url" : "text"}
+                          required={Boolean(f.required)}
+                          placeholder={`Enter ${f.label || f.name}…`}
+                          value={String(jobDraft.extraFieldValues[f.name] ?? "")}
+                          onChange={(e) => dispatchJobDraft({ type: "SET_EXTRA_FIELD", fieldName: f.name, value: e.target.value })}
+                          className="lattice-input"
+                          style={{ width: "100%", boxSizing: "border-box" }}
+                        />
+                      )}
+                    </div>
+                  );
+                })}
               </div>
 
               <div className="lattice-modal-footer" style={{ display: "flex", justifyContent: "space-between" }}>
                 <button
                   type="button"
                   className="lattice-btn-secondary"
-                  onClick={() => setCreateJobModalOpen(false)}
+                  onClick={handleCloseCreateJobModal}
                 >
                   Cancel
                 </button>
                 <button
                   type="submit"
                   className="lattice-btn-primary"
-                  disabled={createJobPending}
+                  disabled={jobDraft.pending}
                 >
-                  {createJobPending ? "Creating…" : "Create Job"}
+                  {jobDraft.pending ? "Creating…" : "Create Job"}
                 </button>
               </div>
             </form>
           </div>
         </div>
       )}
-
       {/* CREATE CUSTOMER MODAL */}
       {createCustModalOpen && (
         <div className="lattice-modal-overlay" role="dialog" aria-modal="true">
@@ -1238,7 +1562,7 @@ export function CustomerJobTrackingView({
               <button
                 type="button"
                 className="lattice-modal-close"
-                onClick={() => setCreateCustModalOpen(false)}
+                onClick={handleCloseCreateCustModal}
               >
                 ✕
               </button>
@@ -1284,7 +1608,7 @@ export function CustomerJobTrackingView({
                 <button
                   type="button"
                   className="lattice-btn-secondary"
-                  onClick={() => setCreateCustModalOpen(false)}
+                  onClick={handleCloseCreateCustModal}
                 >
                   Cancel
                 </button>

@@ -7,21 +7,43 @@ export interface WorkspaceMembersModalProps {
   onClose: () => void;
   client: ProductClient;
   schemas: SchemaDefinition[];
+  initialUsers?: WorkspaceUser[];
+  initialPendingInvitations?: WorkspaceInvitation[];
+  initialShowInviteForm?: boolean;
+  initialGeneratedInviteToken?: string;
 }
 
-export function WorkspaceMembersModal({ isOpen, onClose, client, schemas }: WorkspaceMembersModalProps) {
-  const [users, setUsers] = useState<WorkspaceUser[]>([]);
-  const [pendingInvitations, setPendingInvitations] = useState<WorkspaceInvitation[]>([]);
+export function WorkspaceMembersModal({
+  isOpen,
+  onClose,
+  client,
+  schemas,
+  initialUsers,
+  initialPendingInvitations,
+  initialShowInviteForm = false,
+  initialGeneratedInviteToken,
+}: WorkspaceMembersModalProps) {
+  const [users, setUsers] = useState<WorkspaceUser[]>(initialUsers ?? []);
+  const [pendingInvitations, setPendingInvitations] = useState<WorkspaceInvitation[]>(initialPendingInvitations ?? []);
+  const [modalSchemas, setModalSchemas] = useState<SchemaDefinition[]>(schemas ?? []);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
+  useEffect(() => {
+    if (schemas && schemas.length > 0) {
+      setModalSchemas(schemas);
+    }
+  }, [schemas]);
+
+  const activeSchemas = modalSchemas.length > 0 ? modalSchemas : schemas;
+
   // Invite state
-  const [showInviteForm, setShowInviteForm] = useState(false);
+  const [showInviteForm, setShowInviteForm] = useState(initialShowInviteForm);
   const [inviteEmail, setInviteEmail] = useState("");
   const [inviteRole, setInviteRole] = useState<"admin" | "member">("member");
   const [invitePermissions, setInvitePermissions] = useState<Record<string, DatasetPermission>>({});
   const [invitePending, setInvitePending] = useState(false);
-  const [generatedInviteToken, setGeneratedInviteToken] = useState<string | null>(null);
+  const [generatedInviteToken, setGeneratedInviteToken] = useState<string | null>(initialGeneratedInviteToken ?? null);
 
   // Editing state
   const [editingUser, setEditingUser] = useState<WorkspaceUser | null>(null);
@@ -31,12 +53,16 @@ export function WorkspaceMembersModal({ isOpen, onClose, client, schemas }: Work
     setLoading(true);
     setError(null);
     try {
-      const [userList, invList] = await Promise.all([
+      const [userList, invList, fetchedSchemas] = await Promise.all([
         client.getWorkspaceUsers(),
         client.getWorkspaceInvitations().catch(() => []),
+        client.getSchemas().catch(() => [] as SchemaDefinition[]),
       ]);
       setUsers(userList);
       setPendingInvitations(invList);
+      if (fetchedSchemas && fetchedSchemas.length > 0) {
+        setModalSchemas(fetchedSchemas);
+      }
     } catch (err: unknown) {
       setError(err instanceof Error ? err.message : "Failed to load team data");
     } finally {
@@ -414,12 +440,18 @@ export function WorkspaceMembersModal({ isOpen, onClose, client, schemas }: Work
                       style={{ padding: "0.25rem 0.6rem", fontSize: "0.78rem" }}
                       onClick={() => {
                         const perms: Record<string, DatasetPermission> = {};
-                        for (const s of schemas) {
+                        for (const s of activeSchemas) {
                           if (s.schema_id === "customers" || s.schema_id.includes("customer")) {
                             perms[s.schema_id] = { read: true, create: false, update: false, delete: false, scope: "all" };
                           } else if (s.schema_id === "jobs" || s.schema_id.includes("job") || s.assignee_field) {
                             perms[s.schema_id] = { read: true, create: true, update: true, delete: false, scope: "assigned" };
                           }
+                        }
+                        if (!perms["customers"]) {
+                          perms["customers"] = { read: true, create: false, update: false, delete: false, scope: "all" };
+                        }
+                        if (!perms["jobs"]) {
+                          perms["jobs"] = { read: true, create: true, update: true, delete: false, scope: "assigned" };
                         }
                         setInvitePermissions(perms);
                       }}
@@ -443,7 +475,7 @@ export function WorkspaceMembersModal({ isOpen, onClose, client, schemas }: Work
                         </tr>
                       </thead>
                       <tbody>
-                        {schemas.map((s) => {
+                        {activeSchemas.map((s) => {
                           const p = invitePermissions[s.schema_id] || { read: false, create: false, update: false, delete: false, scope: "all" };
                           const hasAssignee = Boolean(s.assignee_field);
                           return (
@@ -536,7 +568,7 @@ export function WorkspaceMembersModal({ isOpen, onClose, client, schemas }: Work
                     </tr>
                   </thead>
                   <tbody>
-                    {schemas.map((s) => {
+                    {activeSchemas.map((s) => {
                       const p = editingPermissions[s.schema_id] || { read: false, create: false, update: false, delete: false, scope: "all" };
                       const hasAssignee = Boolean(s.assignee_field);
                       return (

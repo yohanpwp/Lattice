@@ -1,7 +1,7 @@
 export { ProductClient, RealtimeURLMismatchError, assertModuleEntry, type ClientOptions, type ConnectOptions, type WorkspaceModuleEntry } from "./client";
 export { fetchAppConfig } from "./config";
 export { AuthPersistenceError, createAuthStore, type PersistentAuthStore } from "./authStore";
-export { ClientTooOldError, ConfigFetchError, IncompatibleModuleError } from "./errors";
+export { ClientTooOldError, ConfigFetchError, IncompatibleModuleError, ModuleSetupError } from "./errors";
 export { createMemoryStorage, type HostStorageApi, type PlatformAdapters, type StorageAdapter } from "./platform";
 export { createWebStorage } from "./platforms/web";
 export { createDesktopStorage, type DesktopStorageApi } from "./platforms/desktop";

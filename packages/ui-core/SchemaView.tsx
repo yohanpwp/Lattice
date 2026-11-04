@@ -230,6 +230,24 @@ export function SchemaView({ client, schema, schemas, onSchemaUpdated }: SchemaV
     setCurrentSchema(schema);
   }, [schema]);
 
+  useEffect(() => {
+    if (typeof client?.getSchema === "function") {
+      let active = true;
+      client
+        .getSchema(schema.schema_id)
+        .then((latest) => {
+          if (active && latest) {
+            setCurrentSchema(latest);
+            onSchemaUpdated?.(latest);
+          }
+        })
+        .catch(() => {});
+      return () => {
+        active = false;
+      };
+    }
+  }, [client, schema.schema_id, onSchemaUpdated]);
+
   const [records, setRecords] = useState<Array<Record<string, unknown>>>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -642,6 +660,10 @@ function renderCellValue(value: unknown, field: FieldDefinition) {
 
   if (field.type === "relation") {
     return <span className="lattice-badge lattice-badge--relation">{String(value)}</span>;
+  }
+
+  if (field.type === "file") {
+    return <span className="lattice-badge lattice-badge--pill">📎 {String(value)}</span>;
   }
 
   if (field.type === "number") {

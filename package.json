@@ -9,6 +9,8 @@
     "gen:check": "node tools/codegen/gen.mjs --check",
     "typecheck": "pnpm -r typecheck",
     "test": "pnpm -r test",
+    "test:e2e": "node scripts/e2e-owner-member-journey.mjs",
+    "test:e2e:sync": "node scripts/e2e-milestone3-sync-phone-recovery.mjs",
     "check:openapi": "node tools/codegen/check-openapi.mjs",
     "check:browser": "node tools/codegen/check-browser-bundle.mjs",
     "check:licenses": "node tools/license-scan/scan.mjs --check"

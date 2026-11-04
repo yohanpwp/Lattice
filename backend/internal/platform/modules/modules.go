@@ -431,10 +431,22 @@ func isFieldRequired(f core.Field) bool {
 	}
 }
 
-// ProvisionSuggestedDatasets provisions the suggested "customers" and "jobs" collections
-// and catalog metadata if they do not already exist. It is safe to call repeatedly.
-func ProvisionSuggestedDatasets(ctx context.Context, app core.App) (ModuleMapping, error) {
+// ProvisionError reports a failure during dataset provisioning and details
+// any datasets that were created prior to the failure.
+type ProvisionError struct {
+	Message string   `json:"message"`
+	Created []string `json:"created,omitempty"`
+}
+
+func (e *ProvisionError) Error() string {
+	return e.Message
+}
+
+// ProvisionSuggestedDatasetsWithTracking provisions the suggested "customers" and "jobs" collections
+// and catalog metadata if they do not already exist, tracking which datasets were newly created in this run.
+func ProvisionSuggestedDatasetsWithTracking(ctx context.Context, app core.App) (ModuleMapping, []string, error) {
 	schemasSvc := schemas.NewService(app)
+	var created []string
 
 	// 1. Ensure "customers" dataset exists
 	custCol, _ := app.FindCollectionByNameOrId("customers")
@@ -461,8 +473,12 @@ func ProvisionSuggestedDatasets(ctx context.Context, app core.App) (ModuleMappin
 		}
 		_, err := schemasSvc.CreateSchema(ctx, custDef)
 		if err != nil && !errors.Is(err, schemas.ErrSchemaAlreadyExists) {
-			return ModuleMapping{}, fmt.Errorf("failed to provision customers dataset: %w", err)
+			return ModuleMapping{}, created, &ProvisionError{
+				Message: fmt.Sprintf("failed to provision customers dataset: %v", err),
+				Created: created,
+			}
 		}
+		created = append(created, "customers")
 	}
 
 	// 2. Ensure "jobs" dataset exists
@@ -506,8 +522,12 @@ func ProvisionSuggestedDatasets(ctx context.Context, app core.App) (ModuleMappin
 		}
 		_, err := schemasSvc.CreateSchema(ctx, jobDef)
 		if err != nil && !errors.Is(err, schemas.ErrSchemaAlreadyExists) {
-			return ModuleMapping{}, fmt.Errorf("failed to provision jobs dataset: %w", err)
+			return ModuleMapping{}, created, &ProvisionError{
+				Message: fmt.Sprintf("failed to provision jobs dataset: %v", err),
+				Created: created,
+			}
 		}
+		created = append(created, "jobs")
 	}
 
 	defaultMapping := ModuleMapping{
@@ -521,7 +541,14 @@ func ProvisionSuggestedDatasets(ctx context.Context, app core.App) (ModuleMappin
 		JobAssigneeField:   "assignee",
 	}
 
-	return defaultMapping, nil
+	return defaultMapping, created, nil
+}
+
+// ProvisionSuggestedDatasets provisions the suggested "customers" and "jobs" collections
+// and catalog metadata if they do not already exist. It is safe to call repeatedly.
+func ProvisionSuggestedDatasets(ctx context.Context, app core.App) (ModuleMapping, error) {
+	mapping, _, err := ProvisionSuggestedDatasetsWithTracking(ctx, app)
+	return mapping, err
 }
 
 // IncompatibleRulesError reports when a dataset has collection rules that

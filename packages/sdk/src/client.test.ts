@@ -5,6 +5,7 @@ import {
   ClientTooOldError,
   ConfigFetchError,
   IncompatibleModuleError,
+  ModuleSetupError,
   ProductClient,
   RealtimeURLMismatchError,
   SUPPORTED_MODULE_MAJOR_VERSION,
@@ -1051,6 +1052,198 @@ describe("schema management", () => {
     unsub();
   });
 
+  it("surfaces ModuleSetupError with partial created datasets when setup fails during provisioning", async () => {
+    const customFetch = (async (input: RequestInfo | URL, init?: RequestInit) => {
+      const url = String(input);
+      if (url.endsWith("/v1/config")) return json(config);
+      if (url.includes("/v1/workspace/modules/customer_job_tracking/setup") && init?.method === "POST") {
+        return new Response(
+          JSON.stringify({
+            error: "provision_failed",
+            message: "failed to provision jobs dataset: disk full",
+            created: ["customers"],
+          }),
+          { status: 400, headers: { "Content-Type": "application/json" } },
+        );
+      }
+      if (url.includes("auth-with-password")) {
+        return json({
+          token: `e30.${btoa(JSON.stringify({ exp: Math.floor(Date.now() / 1000) + 3600 }))}.sig`,
+          record: { id: "owner_1", collectionName: "users", role: "owner" },
+        });
+      }
+      return json({});
+    }) as typeof fetch;
+
+    const client = await ProductClient.connect({
+      backendUrl: "https://acme.app.example.com/",
+      clientVersion: "1.0.0",
+      platform: { storage: createMemoryStorage(), fetch: customFetch },
+    });
+    await client.login("owner@example.com", "Password123!");
+
+    let caught: any = null;
+    try {
+      await client.setupWorkspaceModule("customer_job_tracking", { use_suggested: true });
+    } catch (err) {
+      caught = err;
+    }
+
+    expect(caught).toBeInstanceOf(ModuleSetupError);
+    expect(caught.code).toBe("provision_failed");
+    expect(caught.message).toContain("failed to provision jobs dataset");
+    expect(caught.created).toEqual(["customers"]);
+  });
+
+  it("synchronizes module enablement across separate web and mobile sessions with retained records", async () => {
+    const originalEventSource = globalThis.EventSource;
+    class FakeEventSource {
+      closed = false;
+      readonly url: string;
+      constructor(url: string | URL) { this.url = String(url); }
+      addEventListener(type: string, callback: EventListener): void {
+        if (type === "PB_CONNECT") queueMicrotask(() => callback({ lastEventId: "fake", data: "" } as MessageEvent));
+      }
+      removeEventListener(): void {}
+      close(): void { this.closed = true; }
+      onerror: ((event: Event) => void) | null = null;
+      onmessage: ((event: MessageEvent) => void) | null = null;
+    }
+    Object.defineProperty(globalThis, "EventSource", { configurable: true, value: FakeEventSource });
+
+    try {
+      let installed = true;
+      let enabled = true;
+      const moduleSubscribers = new Set<(event: any) => void>();
+
+      const customerRecords = [
+        { id: "cust_1", name: "Acme Industrial", phone: "555-0199" },
+      ];
+      const jobRecords = [
+        { id: "job_1", title: "Boiler Maintenance", customer: "cust_1", status: "Open", assignee: "tech_1" },
+      ];
+
+      const customFetch = (async (input: RequestInfo | URL, init?: RequestInit) => {
+        const url = String(input);
+        if (url.endsWith("/v1/config")) return json(config);
+        if (url.includes("/v1/workspace/modules/customer_job_tracking") && init?.method === "PUT") {
+          const body = JSON.parse(String(init?.body || "{}"));
+          enabled = body.enabled;
+          const mod = { ...validCatalogModule, installed, enabled };
+          for (const cb of moduleSubscribers) {
+            cb({ action: "update", record: mod });
+          }
+          return json(mod);
+        }
+        if (url.includes("/v1/workspace/modules/customer_job_tracking") && (!init?.method || init.method === "GET")) {
+          return json({ ...validCatalogModule, installed, enabled });
+        }
+        if (url.includes("/v1/workspace/modules") && (!init?.method || init.method === "GET")) {
+          return json([{ ...validCatalogModule, installed, enabled }]);
+        }
+        if (url.includes("/api/collections/customers/records")) {
+          return json({ items: customerRecords, totalItems: customerRecords.length });
+        }
+        if (url.includes("/api/collections/jobs/records")) {
+          return json({ items: jobRecords, totalItems: jobRecords.length });
+        }
+        if (url.includes("auth-with-password")) {
+          const body = JSON.parse(String(init?.body || "{}"));
+          const isOwner = body.identity === "owner@example.com";
+          const token = `e30.${btoa(JSON.stringify({ exp: Math.floor(Date.now() / 1000) + 3600 }))}.sig`;
+          return json({
+            token,
+            record: {
+              id: isOwner ? "owner_1" : "tech_1",
+              collectionName: "users",
+              role: isOwner ? "owner" : "member",
+              permissions: isOwner
+                ? {}
+                : {
+                    customers: { read: true, scope: "all" },
+                    jobs: { read: true, create: true, update: true, delete: false, scope: "assigned" },
+                  },
+            },
+          });
+        }
+        return json({});
+      }) as typeof fetch;
+
+      // Web Owner session
+      const ownerStorage = createMemoryStorage();
+      const ownerClient = await ProductClient.connect({
+        backendUrl: "https://acme.app.example.com/",
+        clientVersion: "1.0.0",
+        platform: { storage: ownerStorage, fetch: customFetch },
+      });
+      await ownerClient.login("owner@example.com", "Password123!");
+
+      // Mobile Member session
+      const mobileStorage = createMemoryStorage();
+      const mobileClient = await ProductClient.connect({
+        backendUrl: "https://acme.app.example.com/",
+        clientVersion: "1.0.0",
+        platform: { storage: mobileStorage, fetch: customFetch },
+      });
+      await mobileClient.login("tech1@example.com", "Password123!");
+
+      // Mobile client subscribes to module updates
+      let mobileObservedEvent: any = null;
+      (mobileClient.pb as any).collection = (name: string) => ({
+        subscribe: async (_topic: string, cb: (e: any) => void) => {
+          if (name === "workspace_modules") moduleSubscribers.add(cb);
+          return () => moduleSubscribers.delete(cb);
+        },
+        unsubscribe: async () => {},
+        getList: async () => ({ items: name === "customers" ? customerRecords : jobRecords, totalItems: 1 }),
+      });
+
+      const unsubMobile = mobileClient.subscribeWorkspaceModules((event) => {
+        mobileObservedEvent = event;
+      });
+
+      // 1. Initially enabled on both clients
+      expect(await ownerClient.isModuleEnabled("customer_job_tracking")).toBe(true);
+      expect(await mobileClient.isModuleEnabled("customer_job_tracking")).toBe(true);
+
+      // 2. Owner disables module in Web session
+      await ownerClient.setModuleEnabled("customer_job_tracking", false);
+      expect(await ownerClient.isModuleEnabled("customer_job_tracking")).toBe(false);
+
+      // 3. Mobile session observes disabled state via realtime event delivery
+      expect(mobileObservedEvent).not.toBeNull();
+      expect(mobileObservedEvent.action).toBe("update");
+      expect(mobileObservedEvent.record.enabled).toBe(false);
+      expect(mobileObservedEvent.record.module_id).toBe("customer_job_tracking");
+      expect(await mobileClient.isModuleEnabled("customer_job_tracking")).toBe(false);
+
+      // 4. Customer and Job records remain completely intact and queryable while module is disabled
+      const custRes = await mobileClient.collection("customers").getList();
+      expect(custRes.items).toHaveLength(1);
+      expect(custRes.items[0]?.name).toBe("Acme Industrial");
+
+      const jobRes = await mobileClient.collection("jobs").getList();
+      expect(jobRes.items).toHaveLength(1);
+      expect(jobRes.items[0]?.title).toBe("Boiler Maintenance");
+
+      // 5. Owner re-enables module in Web session
+      mobileObservedEvent = null;
+      await ownerClient.setModuleEnabled("customer_job_tracking", true);
+      expect(await ownerClient.isModuleEnabled("customer_job_tracking")).toBe(true);
+
+      // Assert realtime event delivery on re-enable
+      expect(mobileObservedEvent).not.toBeNull();
+      expect(mobileObservedEvent.action).toBe("update");
+      expect(mobileObservedEvent.record.enabled).toBe(true);
+      expect(mobileObservedEvent.record.module_id).toBe("customer_job_tracking");
+      expect(await mobileClient.isModuleEnabled("customer_job_tracking")).toBe(true);
+
+      unsubMobile();
+    } finally {
+      Object.defineProperty(globalThis, "EventSource", { configurable: true, value: originalEventSource });
+    }
+  });
+
   it("surfaces server errors on setModuleEnabled and preserves local state", async () => {
     let serverFails = false;
     let installed = true;
@@ -1333,7 +1526,7 @@ describe("managed module contract and version compatibility", () => {
         });
       }
       const singleMatch = url.match(/\/v1\/workspace\/modules\/([^/?#]+)$/);
-      if (singleMatch) {
+      if (singleMatch && singleMatch[1]) {
         const id = decodeURIComponent(singleMatch[1]);
         const found = modulePayload.find((m: any) => m.module_id === id);
         if (found) return json(found);

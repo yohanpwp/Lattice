@@ -4,15 +4,18 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"errors"
 	"io"
 	"net/http"
 	"net/http/httptest"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/pocketbase/pocketbase/apis"
 	"github.com/pocketbase/pocketbase/core"
 	"github.com/pocketbase/pocketbase/tests"
+	"github.com/pocketbase/pocketbase/tools/subscriptions"
 
 	_ "github.com/Lattice/backend/internal/migrations"
 	"github.com/Lattice/backend/internal/api"
@@ -529,12 +532,43 @@ func TestPilotAcceptanceScenario_EndToEndAndRecovery(t *testing.T) {
 		t.Fatal("disabled member should NOT be able to create jobs")
 	}
 
-	// Step 17: Module disable and re-enable (data retention verification)
+	// Step 17: Module disable and re-enable (realtime SSE delivery & data retention verification)
+	// Register a realtime subscription client for Tech 2 (representing an active mobile session)
+	tech2Record, err := app.FindRecordById("users", tech2Id)
+	if err != nil {
+		t.Fatalf("failed to find tech2 record: %v", err)
+	}
+
+	rtClient := subscriptions.NewDefaultClient()
+	rtClient.Set(apis.RealtimeClientAuthKey, tech2Record)
+	rtClient.Subscribe("workspace_modules/*")
+	app.SubscriptionsBroker().Register(rtClient)
+	defer app.SubscriptionsBroker().Unregister(rtClient.Id())
+
+	waitForMsg := func(timeout time.Duration) *subscriptions.Message {
+		select {
+		case msg := <-rtClient.Channel():
+			return &msg
+		case <-time.After(timeout):
+			return nil
+		}
+	}
+
+	// Owner disables module via HTTP PUT /v1/workspace/modules/customer_job_tracking
 	disableModRes := httpReq(t, http.MethodPut, server.URL+"/v1/workspace/modules/customer_job_tracking", map[string]any{
 		"enabled": false,
 	}, ownerToken)
 	if disableModRes.StatusCode != http.StatusOK {
 		t.Fatalf("disable module failed (%d)", disableModRes.StatusCode)
+	}
+
+	// Realtime SSE event must be delivered to subscriber
+	disableMsg := waitForMsg(1 * time.Second)
+	if disableMsg == nil {
+		t.Fatal("expected realtime SSE event on workspace_modules disable, got none")
+	}
+	if !strings.Contains(string(disableMsg.Data), `"enabled":false`) {
+		t.Fatalf("expected realtime event to contain '\"enabled\":false', got %s", string(disableMsg.Data))
 	}
 
 	// Check module list reports enabled: false
@@ -553,7 +587,7 @@ func TestPilotAcceptanceScenario_EndToEndAndRecovery(t *testing.T) {
 		t.Fatalf("job record missing after module disable: %d", jobCheck.StatusCode)
 	}
 
-	// Re-enable module
+	// Re-enable module via HTTP PUT /v1/workspace/modules/customer_job_tracking
 	enableModRes := httpReq(t, http.MethodPut, server.URL+"/v1/workspace/modules/customer_job_tracking", map[string]any{
 		"enabled": true,
 	}, ownerToken)
@@ -561,27 +595,34 @@ func TestPilotAcceptanceScenario_EndToEndAndRecovery(t *testing.T) {
 		t.Fatalf("re-enable module failed (%d)", enableModRes.StatusCode)
 	}
 
-	// Step 18: Add optional dataset field to jobs
-	// Add optional text field "notes" to jobs collection and schema definition
-	notesField := &core.TextField{Name: "notes", Required: false}
-	jobCol.Fields.Add(notesField)
-	if err := app.Save(jobCol); err != nil {
-		t.Fatalf("failed to add notes field to jobs collection: %v", err)
+	// Realtime SSE event must be delivered to subscriber on re-enable
+	enableMsg := waitForMsg(1 * time.Second)
+	if enableMsg == nil {
+		t.Fatal("expected realtime SSE event on workspace_modules re-enable, got none")
+	}
+	if !strings.Contains(string(enableMsg.Data), `"enabled":true`) {
+		t.Fatalf("expected realtime event to contain '\"enabled\":true', got %s", string(enableMsg.Data))
 	}
 
-	schemaRec, err := app.FindFirstRecordByFilter("schema_definitions", "schema_id = {:id}", map[string]any{"id": "jobs"})
-	if err != nil || schemaRec == nil {
-		t.Fatalf("failed to find jobs schema definition: %v", err)
+	// Step 18: Add optional dataset field to jobs through the product API (PATCH /v1/schemas/jobs)
+	getSchemaRes := httpReq(t, http.MethodGet, server.URL+"/v1/schemas/jobs", nil, ownerToken)
+	if getSchemaRes.StatusCode != http.StatusOK {
+		t.Fatalf("failed to get jobs schema: %d", getSchemaRes.StatusCode)
 	}
-	var existingFields []schemas.FieldDefinition
-	if err := json.Unmarshal([]byte(schemaRec.GetString("fields")), &existingFields); err == nil {
-		existingFields = append(existingFields, schemas.FieldDefinition{
-			Name: "notes", Label: "Notes", Type: "text", Required: false,
-		})
-		schemaRec.Set("fields", existingFields)
-		if err := app.Save(schemaRec); err != nil {
-			t.Fatalf("failed to update schema definition with notes: %v", err)
-		}
+	jobsSchemaDef := parseJSON(t, getSchemaRes)
+	existingFields, _ := jobsSchemaDef["fields"].([]any)
+	newFields := append(existingFields, map[string]any{
+		"name":     "notes",
+		"label":    "Notes",
+		"type":     "text",
+		"required": false,
+	})
+	patchSchemaRes := httpReq(t, http.MethodPatch, server.URL+"/v1/schemas/jobs", map[string]any{
+		"fields": newFields,
+	}, ownerToken)
+	if patchSchemaRes.StatusCode != http.StatusOK {
+		body, _ := io.ReadAll(patchSchemaRes.Body)
+		t.Fatalf("PATCH /v1/schemas/jobs failed (%d): %s", patchSchemaRes.StatusCode, string(body))
 	}
 
 	// Tech 2 updates job 2 with notes
@@ -716,5 +757,363 @@ func TestModuleSetup_CustomMapping_CompatibleAndIncompatible(t *testing.T) {
 	}
 	if inst.Mapping.JobDataset != "work_orders" || inst.Mapping.CustomerDataset != "client_directory" {
 		t.Fatalf("unexpected mapping in installed module: %+v", inst.Mapping)
+	}
+}
+
+func TestModuleSetup_Suggested_RecoveryAfterPartialProvisioning(t *testing.T) {
+	app, server := createTestServer(t)
+
+	// Setup owner
+	setupToken, _ := authz.GetOrCreateSetupToken(app)
+	httpReq(t, http.MethodPost, server.URL+"/v1/workspace/setup", map[string]string{
+		"token":    setupToken,
+		"name":     "Retry Owner",
+		"email":    "owner@example.com",
+		"password": "Password123!",
+	}, "")
+	ownerToken, _ := loginUser(t, server.URL, "owner@example.com", "Password123!")
+
+	// Inject a failure hook when creating "jobs" collection
+	var failJobsCreate = true
+	app.OnCollectionCreate().BindFunc(func(e *core.CollectionEvent) error {
+		if failJobsCreate && e.Collection != nil && e.Collection.Name == "jobs" {
+			return errors.New("simulated disk/db error creating jobs collection")
+		}
+		return e.Next()
+	})
+
+	// 1. Initial suggested setup attempt: fails during jobs dataset creation after customers is created
+	setupRes := httpReq(t, http.MethodPost, server.URL+"/v1/workspace/modules/customer_job_tracking/setup", map[string]any{
+		"use_suggested": true,
+	}, ownerToken)
+
+	if setupRes.StatusCode != http.StatusBadRequest {
+		body, _ := io.ReadAll(setupRes.Body)
+		t.Fatalf("expected 400 Bad Request on partial provisioning failure, got %d: %s", setupRes.StatusCode, string(body))
+	}
+
+	errData := parseJSON(t, setupRes)
+	if errData["error"] != "provision_failed" {
+		t.Fatalf("expected error 'provision_failed', got %v", errData["error"])
+	}
+	createdList, ok := errData["created"].([]any)
+	if !ok || len(createdList) != 1 || createdList[0] != "customers" {
+		t.Fatalf("expected created datasets to report ['customers'], got: %v", errData["created"])
+	}
+
+	// 2. Verify reported state after partial failure:
+	// Customers collection exists
+	custCol, err := app.FindCollectionByNameOrId("customers")
+	if err != nil || custCol == nil {
+		t.Fatalf("expected customers collection to exist after partial provisioning: %v", err)
+	}
+
+	// Jobs collection does not exist
+	jobCol, _ := app.FindCollectionByNameOrId("jobs")
+	if jobCol != nil {
+		t.Fatal("jobs collection should NOT exist after failure")
+	}
+
+	// Module is NOT installed (no orphaned module state)
+	inst, _ := modules.GetInstalledModule(app, "customer_job_tracking")
+	if inst != nil {
+		t.Fatalf("customer_job_tracking module should not be installed after partial failure: %+v", inst)
+	}
+
+	// 3. Resolve the failure condition and retry suggested setup
+	failJobsCreate = false
+	retryRes := httpReq(t, http.MethodPost, server.URL+"/v1/workspace/modules/customer_job_tracking/setup", map[string]any{
+		"use_suggested": true,
+	}, ownerToken)
+
+	if retryRes.StatusCode != http.StatusOK {
+		body, _ := io.ReadAll(retryRes.Body)
+		t.Fatalf("expected 200 OK on retry after partial failure, got %d: %s", retryRes.StatusCode, string(body))
+	}
+
+	// 4. Verify state after successful retry
+	// Both collections exist without duplicates
+	custCol2, err := app.FindCollectionByNameOrId("customers")
+	if err != nil || custCol2 == nil {
+		t.Fatalf("customers collection missing after retry: %v", err)
+	}
+	jobCol2, err := app.FindCollectionByNameOrId("jobs")
+	if err != nil || jobCol2 == nil {
+		t.Fatalf("jobs collection missing after retry: %v", err)
+	}
+
+	// Module installation is saved and enabled
+	instAfterRetry, err := modules.GetInstalledModule(app, "customer_job_tracking")
+	if err != nil || instAfterRetry == nil {
+		t.Fatalf("expected module to be installed after successful retry: %v", err)
+	}
+	if !instAfterRetry.Enabled {
+		t.Fatalf("expected module to be enabled after retry")
+	}
+	if instAfterRetry.Mapping.CustomerDataset != "customers" || instAfterRetry.Mapping.JobDataset != "jobs" {
+		t.Fatalf("unexpected mapping after retry: %+v", instAfterRetry.Mapping)
+	}
+}
+
+func TestModuleSetup_RecoveryAfterRuleProtectionFailure(t *testing.T) {
+	app, server := createTestServer(t)
+
+	// Setup owner
+	setupToken, _ := authz.GetOrCreateSetupToken(app)
+	httpReq(t, http.MethodPost, server.URL+"/v1/workspace/setup", map[string]string{
+		"token":    setupToken,
+		"name":     "Rule Failure Owner",
+		"email":    "owner@example.com",
+		"password": "Password123!",
+	}, "")
+	ownerToken, _ := loginUser(t, server.URL, "owner@example.com", "Password123!")
+
+	// Pre-create customers dataset with a restricted ViewRule that blocks regular members
+	schemasSvc := schemas.NewService(app)
+	ctx := context.Background()
+	_, err := schemasSvc.CreateSchema(ctx, schemas.SchemaDefinition{
+		SchemaID: "customers",
+		Name:     "Customers",
+		Fields: []schemas.FieldDefinition{
+			{Name: "name", Label: "Name", Type: "text", Required: true},
+			{Name: "phone", Label: "Phone", Type: "text", Required: false},
+		},
+	})
+	if err != nil {
+		t.Fatalf("failed to create customers schema: %v", err)
+	}
+
+	// Lock the view rule on customers collection so regular members are blocked
+	custCol, err := app.FindCollectionByNameOrId("customers")
+	if err != nil || custCol == nil {
+		t.Fatalf("customers collection not found: %v", err)
+	}
+	custCol.ViewRule = nil // locked to superusers only
+	if err := app.Save(custCol); err != nil {
+		t.Fatalf("failed to lock customers view rule: %v", err)
+	}
+
+	// 1. Run suggested setup: provisioning creates jobs, but rule protection validation on customers fails
+	setupRes := httpReq(t, http.MethodPost, server.URL+"/v1/workspace/modules/customer_job_tracking/setup", map[string]any{
+		"use_suggested": true,
+	}, ownerToken)
+
+	if setupRes.StatusCode != http.StatusBadRequest {
+		body, _ := io.ReadAll(setupRes.Body)
+		t.Fatalf("expected 400 Bad Request for rule protection failure, got %d: %s", setupRes.StatusCode, string(body))
+	}
+
+	errData := parseJSON(t, setupRes)
+	if errData["error"] != "incompatible_rules" {
+		t.Fatalf("expected error 'incompatible_rules', got %v", errData["error"])
+	}
+	if errData["dataset"] != "customers" {
+		t.Fatalf("expected dataset 'customers', got %v", errData["dataset"])
+	}
+	blockedOps, ok := errData["blocked_operations"].([]any)
+	if !ok || len(blockedOps) == 0 {
+		t.Fatalf("expected blocked_operations list, got %v", errData["blocked_operations"])
+	}
+	createdList, ok := errData["created"].([]any)
+	if !ok || len(createdList) != 1 || createdList[0] != "jobs" {
+		t.Fatalf("expected created datasets to report exactly ['jobs'] (customers pre-existed), got: %v", errData["created"])
+	}
+
+	// 2. Establish database state after rule protection failure:
+	// Both customers and jobs datasets exist in SQLite
+	custColAfter, err := app.FindCollectionByNameOrId("customers")
+	if err != nil || custColAfter == nil {
+		t.Fatalf("customers collection should exist in DB: %v", err)
+	}
+	jobColAfter, err := app.FindCollectionByNameOrId("jobs")
+	if err != nil || jobColAfter == nil {
+		t.Fatalf("jobs collection should exist in DB: %v", err)
+	}
+
+	// Module is NOT installed (no orphaned installation state)
+	inst, _ := modules.GetInstalledModule(app, "customer_job_tracking")
+	if inst != nil {
+		t.Fatalf("module should not be installed after rule protection failure: %+v", inst)
+	}
+
+	// 3. Owner removes the failure: restore valid member view access on customers
+	validViewRule := "@request.auth.id != '' && @request.auth.disabled != true"
+	custColAfter.ViewRule = &validViewRule
+	if err := app.Save(custColAfter); err != nil {
+		t.Fatalf("failed to update customers view rule: %v", err)
+	}
+
+	// 4. Retry setup: existing datasets are reused, no duplicates, installation succeeds
+	retryRes := httpReq(t, http.MethodPost, server.URL+"/v1/workspace/modules/customer_job_tracking/setup", map[string]any{
+		"use_suggested": true,
+	}, ownerToken)
+
+	if retryRes.StatusCode != http.StatusOK {
+		body, _ := io.ReadAll(retryRes.Body)
+		t.Fatalf("expected 200 OK on retry after rule fix, got %d: %s", retryRes.StatusCode, string(body))
+	}
+
+	instAfterRetry, err := modules.GetInstalledModule(app, "customer_job_tracking")
+	if err != nil || instAfterRetry == nil {
+		t.Fatalf("expected module to be installed after successful retry: %v", err)
+	}
+	if !instAfterRetry.Enabled {
+		t.Fatalf("expected module to be enabled after retry")
+	}
+}
+
+func TestModuleSetup_RecoveryAfterInstallationSaveFailure(t *testing.T) {
+	app, server := createTestServer(t)
+
+	// Setup owner
+	setupToken, _ := authz.GetOrCreateSetupToken(app)
+	httpReq(t, http.MethodPost, server.URL+"/v1/workspace/setup", map[string]string{
+		"token":    setupToken,
+		"name":     "Save Failure Owner",
+		"email":    "owner@example.com",
+		"password": "Password123!",
+	}, "")
+	ownerToken, _ := loginUser(t, server.URL, "owner@example.com", "Password123!")
+
+	// Inject a hook failing record creation on workspace_modules
+	var failSave = true
+	app.OnRecordCreate().BindFunc(func(e *core.RecordEvent) error {
+		if failSave && e.Record != nil && e.Record.Collection() != nil && e.Record.Collection().Name == "workspace_modules" {
+			return errors.New("simulated disk/lock failure saving workspace_modules")
+		}
+		return e.Next()
+	})
+
+	// 1. Run suggested setup: provisioning and rule checks succeed, but installation state saving fails
+	setupRes := httpReq(t, http.MethodPost, server.URL+"/v1/workspace/modules/customer_job_tracking/setup", map[string]any{
+		"use_suggested": true,
+	}, ownerToken)
+
+	if setupRes.StatusCode != http.StatusInternalServerError {
+		body, _ := io.ReadAll(setupRes.Body)
+		t.Fatalf("expected 500 Internal Server Error on save failure, got %d: %s", setupRes.StatusCode, string(body))
+	}
+
+	errData := parseJSON(t, setupRes)
+	if errData["error"] != "save_failed" {
+		t.Fatalf("expected error 'save_failed', got %v", errData["error"])
+	}
+	saveCreatedList, ok := errData["created"].([]any)
+	if !ok || len(saveCreatedList) != 2 || saveCreatedList[0] != "customers" || saveCreatedList[1] != "jobs" {
+		t.Fatalf("expected created datasets to report exactly ['customers', 'jobs'], got: %v", errData["created"])
+	}
+
+	// 2. Establish database state after save failure:
+	// Customers and jobs datasets exist in SQLite
+	custCol, err := app.FindCollectionByNameOrId("customers")
+	if err != nil || custCol == nil {
+		t.Fatalf("customers collection should exist in DB: %v", err)
+	}
+	jobCol, err := app.FindCollectionByNameOrId("jobs")
+	if err != nil || jobCol == nil {
+		t.Fatalf("jobs collection should exist in DB: %v", err)
+	}
+
+	// No record exists in workspace_modules
+	inst, _ := modules.GetInstalledModule(app, "customer_job_tracking")
+	if inst != nil {
+		t.Fatalf("workspace_modules should not contain installation after save failure: %+v", inst)
+	}
+
+	// 3. Remove the failure condition and retry setup
+	failSave = false
+	retryRes := httpReq(t, http.MethodPost, server.URL+"/v1/workspace/modules/customer_job_tracking/setup", map[string]any{
+		"use_suggested": true,
+	}, ownerToken)
+
+	if retryRes.StatusCode != http.StatusOK {
+		body, _ := io.ReadAll(retryRes.Body)
+		t.Fatalf("expected 200 OK on retry after resolving save failure, got %d: %s", retryRes.StatusCode, string(body))
+	}
+
+	// 4. Verify state after successful retry
+	instAfterRetry, err := modules.GetInstalledModule(app, "customer_job_tracking")
+	if err != nil || instAfterRetry == nil {
+		t.Fatalf("expected module to be installed after successful retry: %v", err)
+	}
+	if !instAfterRetry.Enabled {
+		t.Fatalf("expected module to be enabled after retry")
+	}
+	if instAfterRetry.Mapping.CustomerDataset != "customers" || instAfterRetry.Mapping.JobDataset != "jobs" {
+		t.Fatalf("unexpected mapping after retry: %+v", instAfterRetry.Mapping)
+	}
+}
+
+func TestModuleSetup_RecoveryWhenBothDatasetsPreExist(t *testing.T) {
+	app, server := createTestServer(t)
+
+	// Setup owner
+	setupToken, _ := authz.GetOrCreateSetupToken(app)
+	httpReq(t, http.MethodPost, server.URL+"/v1/workspace/setup", map[string]string{
+		"token":    setupToken,
+		"name":     "Preexist Owner",
+		"email":    "owner@example.com",
+		"password": "Password123!",
+	}, "")
+	ownerToken, _ := loginUser(t, server.URL, "owner@example.com", "Password123!")
+
+	// Pre-create BOTH customers and jobs
+	schemasSvc := schemas.NewService(app)
+	ctx := context.Background()
+	_, err := schemasSvc.CreateSchema(ctx, schemas.SchemaDefinition{
+		SchemaID: "customers",
+		Name:     "Customers",
+		Fields: []schemas.FieldDefinition{
+			{Name: "name", Label: "Name", Type: "text", Required: true},
+			{Name: "phone", Label: "Phone", Type: "text", Required: false},
+		},
+	})
+	if err != nil {
+		t.Fatalf("failed to create customers schema: %v", err)
+	}
+	_, err = schemasSvc.CreateSchema(ctx, schemas.SchemaDefinition{
+		SchemaID:      "jobs",
+		Name:          "Jobs",
+		AssigneeField: "assignee",
+		Fields: []schemas.FieldDefinition{
+			{Name: "title", Label: "Title", Type: "text", Required: true},
+			{Name: "customer", Label: "Customer", Type: "relation", Required: true, Target: "customers"},
+			{Name: "status", Label: "Status", Type: "select", Required: true, Options: []string{"Open", "In progress", "Done"}},
+			{Name: "assignee", Label: "Assignee", Type: "relation", Required: true, Target: "users"},
+		},
+	})
+	if err != nil {
+		t.Fatalf("failed to create jobs schema: %v", err)
+	}
+
+	// Lock customer view rule to superusers only
+	custCol, err := app.FindCollectionByNameOrId("customers")
+	if err != nil || custCol == nil {
+		t.Fatalf("customers collection not found: %v", err)
+	}
+	custCol.ViewRule = nil
+	if err := app.Save(custCol); err != nil {
+		t.Fatalf("failed to lock customers view rule: %v", err)
+	}
+
+	// Run suggested setup: both datasets pre-existed, rule protection fails
+	setupRes := httpReq(t, http.MethodPost, server.URL+"/v1/workspace/modules/customer_job_tracking/setup", map[string]any{
+		"use_suggested": true,
+	}, ownerToken)
+
+	if setupRes.StatusCode != http.StatusBadRequest {
+		body, _ := io.ReadAll(setupRes.Body)
+		t.Fatalf("expected 400 Bad Request, got %d: %s", setupRes.StatusCode, string(body))
+	}
+
+	errData := parseJSON(t, setupRes)
+	if errData["error"] != "incompatible_rules" {
+		t.Fatalf("expected error 'incompatible_rules', got %v", errData["error"])
+	}
+	// Because both datasets already existed before setup, created list must be empty or omitted
+	if createdVal, exists := errData["created"]; exists && createdVal != nil {
+		if cList, ok := createdVal.([]any); ok && len(cList) > 0 {
+			t.Fatalf("expected NO created datasets reported when both pre-existed, got: %v", createdVal)
+		}
 	}
 }

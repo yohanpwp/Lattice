@@ -79,6 +79,17 @@ export function App({
         return connect(result.url, false);
       }
 
+      if (typeof window !== "undefined") {
+        const params = new URLSearchParams(window.location.search);
+        const queryWorkspace = params.get("workspace");
+        if (queryWorkspace) {
+          const result = normalizeWorkspaceUrl(queryWorkspace);
+          if (result.ok) {
+            return connect(result.url, true);
+          }
+        }
+      }
+
       const saved = await loadSavedWorkspace(storage);
       if (!saved) return { name: "workspace" } as Phase;
       return connect(saved, false);

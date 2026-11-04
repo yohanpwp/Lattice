@@ -180,6 +180,76 @@ func TestProvisionSuggestedDatasets_Idempotent(t *testing.T) {
 	}
 }
 
+func TestProvisionSuggestedDatasets_RecoveryAfterPartialFailure(t *testing.T) {
+	app, err := tests.NewTestApp(t.TempDir())
+	if err != nil {
+		t.Fatalf("failed to create test app: %v", err)
+	}
+	t.Cleanup(app.Cleanup)
+
+	ctx := context.Background()
+
+	// Inject failure specifically when creating "jobs" collection
+	var failJobsCreate = true
+	app.OnCollectionCreate().BindFunc(func(e *core.CollectionEvent) error {
+		if failJobsCreate && e.Collection != nil && e.Collection.Name == "jobs" {
+			return errors.New("simulated disk error creating jobs")
+		}
+		return e.Next()
+	})
+
+	// 1. First provision attempt fails during jobs creation
+	_, err = modules.ProvisionSuggestedDatasets(ctx, app)
+	if err == nil {
+		t.Fatal("expected ProvisionSuggestedDatasets to fail when jobs creation fails")
+	}
+
+	var provErr *modules.ProvisionError
+	if !errors.As(err, &provErr) {
+		t.Fatalf("expected *ProvisionError, got %T: %v", err, err)
+	}
+	if len(provErr.Created) != 1 || provErr.Created[0] != "customers" {
+		t.Fatalf("expected Created to report ['customers'], got: %v", provErr.Created)
+	}
+
+	// Reported database state:
+	// "customers" was created
+	custCol, err := app.FindCollectionByNameOrId("customers")
+	if err != nil || custCol == nil {
+		t.Fatalf("expected customers collection to exist after partial provisioning: %v", err)
+	}
+	// "jobs" was NOT created
+	jobCol, _ := app.FindCollectionByNameOrId("jobs")
+	if jobCol != nil {
+		t.Fatal("jobs collection should NOT exist after failure")
+	}
+
+	// 2. Resolve failure condition and retry
+	failJobsCreate = false
+	mapping, err := modules.ProvisionSuggestedDatasets(ctx, app)
+	if err != nil {
+		t.Fatalf("retry ProvisionSuggestedDatasets failed: %v", err)
+	}
+
+	if mapping.CustomerDataset != "customers" || mapping.JobDataset != "jobs" {
+		t.Fatalf("unexpected mapping after retry: %+v", mapping)
+	}
+
+	// Both collections exist cleanly without duplicate
+	custCol2, err := app.FindCollectionByNameOrId("customers")
+	if err != nil || custCol2 == nil {
+		t.Fatalf("customers collection missing after retry: %v", err)
+	}
+	jobCol2, err := app.FindCollectionByNameOrId("jobs")
+	if err != nil || jobCol2 == nil {
+		t.Fatalf("jobs collection missing after retry: %v", err)
+	}
+
+	if err := modules.ValidateModuleMapping(app, mapping); err != nil {
+		t.Fatalf("ValidateModuleMapping failed after retry: %v", err)
+	}
+}
+
 func TestValidateModuleMapping_Invalid(t *testing.T) {
 	app, err := tests.NewTestApp(t.TempDir())
 	if err != nil {

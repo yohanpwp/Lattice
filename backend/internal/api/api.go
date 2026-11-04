@@ -1059,37 +1059,72 @@ func Register(se *core.ServeEvent, cfg *tenant.Config, flags *features.Flags) {
 		}
 
 		var mapping modules.ModuleMapping
+		var createdDatasets []string
 		if req.UseSuggested {
-			m, err := modules.ProvisionSuggestedDatasets(e.Request.Context(), se.App)
+			m, created, err := modules.ProvisionSuggestedDatasetsWithTracking(e.Request.Context(), se.App)
 			if err != nil {
+				var provErr *modules.ProvisionError
+				if errors.As(err, &provErr) {
+					resp := map[string]any{
+						"error":   "provision_failed",
+						"message": provErr.Message,
+					}
+					if len(provErr.Created) > 0 {
+						resp["created"] = provErr.Created
+					}
+					return e.JSON(http.StatusBadRequest, resp)
+				}
 				return e.JSON(http.StatusBadRequest, map[string]string{"error": "provision_failed", "message": err.Error()})
 			}
+
+			createdDatasets = created
+
 			if err := modules.ValidateModuleMapping(se.App, m); err != nil {
-				return e.JSON(http.StatusBadRequest, map[string]string{"error": "invalid_mapping", "message": err.Error()})
+				resp := map[string]any{"error": "invalid_mapping", "message": err.Error()}
+				if len(createdDatasets) > 0 {
+					resp["created"] = createdDatasets
+				}
+				return e.JSON(http.StatusBadRequest, resp)
 			}
 			if err := modules.ValidateCustomerDatasetAccess(e.Request.Context(), se.App, m.CustomerDataset); err != nil {
 				var incompErr *modules.IncompatibleRulesError
 				if errors.As(err, &incompErr) {
-					return e.JSON(http.StatusBadRequest, map[string]any{
+					resp := map[string]any{
 						"error":              "incompatible_rules",
 						"message":            err.Error(),
 						"dataset":            incompErr.Dataset,
 						"blocked_operations": incompErr.BlockedOps,
-					})
+					}
+					if len(createdDatasets) > 0 {
+						resp["created"] = createdDatasets
+					}
+					return e.JSON(http.StatusBadRequest, resp)
 				}
-				return e.JSON(http.StatusBadRequest, map[string]string{"error": "customer_validation_failed", "message": err.Error()})
+				resp := map[string]any{"error": "customer_validation_failed", "message": err.Error()}
+				if len(createdDatasets) > 0 {
+					resp["created"] = createdDatasets
+				}
+				return e.JSON(http.StatusBadRequest, resp)
 			}
 			if err := modules.EnsureJobDatasetAssigneeProtection(e.Request.Context(), se.App, m.JobDataset, m.JobAssigneeField); err != nil {
 				var incompErr *modules.IncompatibleRulesError
 				if errors.As(err, &incompErr) {
-					return e.JSON(http.StatusBadRequest, map[string]any{
+					resp := map[string]any{
 						"error":              "incompatible_rules",
 						"message":            err.Error(),
 						"dataset":            incompErr.Dataset,
 						"blocked_operations": incompErr.BlockedOps,
-					})
+					}
+					if len(createdDatasets) > 0 {
+						resp["created"] = createdDatasets
+					}
+					return e.JSON(http.StatusBadRequest, resp)
 				}
-				return e.JSON(http.StatusBadRequest, map[string]string{"error": "protection_failed", "message": err.Error()})
+				resp := map[string]any{"error": "protection_failed", "message": err.Error()}
+				if len(createdDatasets) > 0 {
+					resp["created"] = createdDatasets
+				}
+				return e.JSON(http.StatusBadRequest, resp)
 			}
 			mapping = m
 		} else {
@@ -1135,7 +1170,11 @@ func Register(se *core.ServeEvent, cfg *tenant.Config, flags *features.Flags) {
 
 		saved, err := modules.SaveModuleInstallation(se.App, inst)
 		if err != nil {
-			return e.JSON(http.StatusInternalServerError, map[string]string{"error": "save_failed", "message": err.Error()})
+			resp := map[string]any{"error": "save_failed", "message": err.Error()}
+			if req.UseSuggested && len(createdDatasets) > 0 {
+				resp["created"] = createdDatasets
+			}
+			return e.JSON(http.StatusInternalServerError, resp)
 		}
 
 		return e.JSON(http.StatusOK, saved)

@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { FieldDefinition, SchemaDefinition } from "@lattice/types";
 import type { ProductClient } from "@lattice/sdk";
 
@@ -334,12 +334,19 @@ export function SchemaRecordModal({
     setError(null);
   }, [record, editableFields]);
 
-  // Reset form whenever opening modal or when record/schema changes
+  // Reset form only when modal opens or when target record changes, avoiding clobbering input on schema updates
+  const prevIsOpenRef = useRef(false);
+  const prevRecordIdRef = useRef<unknown>(undefined);
+
   useEffect(() => {
-    if (isOpen) {
+    const justOpened = isOpen && !prevIsOpenRef.current;
+    const recordChanged = record?.id !== prevRecordIdRef.current;
+    if (isOpen && (justOpened || recordChanged)) {
       resetForm();
     }
-  }, [isOpen, resetForm]);
+    prevIsOpenRef.current = isOpen;
+    prevRecordIdRef.current = record?.id;
+  }, [isOpen, record, resetForm]);
 
   if (!isOpen) return null;
 
@@ -380,6 +387,12 @@ export function SchemaRecordModal({
           } catch {
             throw new Error(`Field "${field.label || field.name}" must be valid JSON`);
           }
+        } else if (field.type === "file") {
+          if (val instanceof File || (typeof Blob !== "undefined" && val instanceof Blob)) {
+            payload[field.name] = val;
+          } else if (typeof val === "string" && val.trim() !== "") {
+            payload[field.name] = val;
+          }
         } else if (val !== undefined && val !== null) {
           payload[field.name] = val;
         }
@@ -412,7 +425,7 @@ export function SchemaRecordModal({
           </div>
         )}
 
-        <form onSubmit={handleSubmit} className="lattice-form">
+        <form onSubmit={handleSubmit} className="lattice-form" noValidate>
           <div className="lattice-form-grid">
             {editableFields.map((field) => {
               const id = `field-${field.name}`;
@@ -460,7 +473,7 @@ export function SchemaRecordModal({
                       id={id}
                       className="lattice-input"
                       value={String(formData[field.name] ?? "")}
-                      onChange={(e) => setFormData({ ...formData, [field.name]: e.target.value })}
+                      onChange={(e) => setFormData((prev) => ({ ...prev, [field.name]: e.target.value }))}
                       required={field.required}
                     >
                       <option value="">-- Select {field.label || field.name} --</option>
@@ -476,7 +489,7 @@ export function SchemaRecordModal({
                       field={field}
                       client={client}
                       value={String(formData[field.name] ?? "")}
-                      onChange={(val) => setFormData({ ...formData, [field.name]: val })}
+                      onChange={(val) => setFormData((prev) => ({ ...prev, [field.name]: val }))}
                       required={field.required}
                       schemas={schemas}
                     />
@@ -486,7 +499,7 @@ export function SchemaRecordModal({
                         id={id}
                         type="checkbox"
                         checked={Boolean(formData[field.name])}
-                        onChange={(e) => setFormData({ ...formData, [field.name]: e.target.checked })}
+                        onChange={(e) => setFormData((prev) => ({ ...prev, [field.name]: e.target.checked }))}
                       />
                       <span className="lattice-checkbox-label">
                         {Boolean(formData[field.name]) ? "Yes / Enabled" : "No / Disabled"}
@@ -499,7 +512,7 @@ export function SchemaRecordModal({
                       step="any"
                       className="lattice-input"
                       value={formData[field.name] !== undefined ? String(formData[field.name]) : ""}
-                      onChange={(e) => setFormData({ ...formData, [field.name]: e.target.value })}
+                      onChange={(e) => setFormData((prev) => ({ ...prev, [field.name]: e.target.value }))}
                       required={field.required}
                     />
                   ) : field.type === "date" ? (
@@ -508,7 +521,7 @@ export function SchemaRecordModal({
                       type="date"
                       className="lattice-input"
                       value={String(formData[field.name] ?? "")}
-                      onChange={(e) => setFormData({ ...formData, [field.name]: e.target.value })}
+                      onChange={(e) => setFormData((prev) => ({ ...prev, [field.name]: e.target.value }))}
                       required={field.required}
                     />
                   ) : field.type === "json" ? (
@@ -521,17 +534,35 @@ export function SchemaRecordModal({
                           ? JSON.stringify(formData[field.name], null, 2)
                           : String(formData[field.name] ?? "")
                       }
-                      onChange={(e) => setFormData({ ...formData, [field.name]: e.target.value })}
+                      onChange={(e) => setFormData((prev) => ({ ...prev, [field.name]: e.target.value }))}
                       placeholder="{}"
                       required={field.required}
                     />
+                  ) : field.type === "file" ? (
+                    <div>
+                      <input
+                        id={id}
+                        type="file"
+                        className="lattice-input"
+                        required={field.required && !record?.[field.name]}
+                        onChange={(e) => {
+                          const file = e.target.files?.[0] || null;
+                          setFormData((prev) => ({ ...prev, [field.name]: file }));
+                        }}
+                      />
+                      {Boolean(formData[field.name]) && (
+                        <span style={{ fontSize: "0.75rem", color: "var(--lattice-muted)", display: "block", marginTop: "0.25rem" }}>
+                          Selected: {formData[field.name] instanceof File ? (formData[field.name] as File).name : String(formData[field.name])}
+                        </span>
+                      )}
+                    </div>
                   ) : (
                     <input
                       id={id}
                       type={field.type === "email" ? "email" : field.type === "url" ? "url" : "text"}
                       className="lattice-input"
                       value={String(formData[field.name] ?? "")}
-                      onChange={(e) => setFormData({ ...formData, [field.name]: e.target.value })}
+                      onChange={(e) => setFormData((prev) => ({ ...prev, [field.name]: e.target.value }))}
                       required={field.required}
                     />
                   )}

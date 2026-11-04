@@ -39,3 +39,24 @@ export class IncompatibleModuleError extends Error {
     this.version = version;
   }
 }
+
+/** A module setup or configuration request failed on the server. */
+export class ModuleSetupError extends Error {
+  readonly code: string;
+  readonly created?: string[];
+  readonly blockedOperations?: string[];
+  readonly dataset?: string;
+
+  constructor(
+    message: string,
+    code: string,
+    options?: { created?: string[]; blockedOperations?: string[]; dataset?: string },
+  ) {
+    super(message);
+    this.name = "ModuleSetupError";
+    this.code = code;
+    this.created = options?.created;
+    this.blockedOperations = options?.blockedOperations;
+    this.dataset = options?.dataset;
+  }
+}

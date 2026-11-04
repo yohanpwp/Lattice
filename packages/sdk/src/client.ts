@@ -25,7 +25,7 @@ import {
 } from "@lattice/types";
 import { AuthPersistenceError, createAuthStore, type PersistentAuthStore } from "./authStore";
 import { fetchAppConfig } from "./config";
-import { ClientTooOldError, IncompatibleModuleError } from "./errors";
+import { ClientTooOldError, IncompatibleModuleError, ModuleSetupError } from "./errors";
 import { createMemoryStorage, type PlatformAdapters } from "./platform";
 import { isClientCompatible, isModuleVersionCompatible } from "./version";
 
@@ -112,27 +112,34 @@ export function assertModuleEntry(value: unknown): WorkspaceModuleEntry {
   }
   return {
     ...contract,
-    installed,
-    enabled,
+    installed: installed as boolean,
+    enabled: enabled as boolean,
     ...(mapping !== undefined ? { mapping } : {}),
-    ...(installed_at !== undefined ? { installed_at } : {}),
-    ...(updated_at !== undefined ? { updated_at } : {}),
+    ...(installed_at !== undefined ? { installed_at: installed_at as string } : {}),
+    ...(updated_at !== undefined ? { updated_at: updated_at as string } : {}),
     compatible: true,
   };
 }
 
 /**
- * Maps backend HTTP 400 incompatible_module_contract errors to IncompatibleModuleError.
+ * Maps backend HTTP errors to specific domain errors like IncompatibleModuleError and ModuleSetupError.
  */
 function mapBackendModuleError(err: any, moduleId?: string): Error {
-  if (
-    (err?.status === 400 || err?.response?.status === 400) &&
-    (err?.response?.error === "incompatible_module_contract" || err?.data?.error === "incompatible_module_contract")
-  ) {
-    const msg = err?.response?.message || err?.data?.message || err?.message;
-    const versionMatch = typeof msg === "string" ? /version\s+"([^"]+)"/.exec(msg) : null;
-    const version = versionMatch ? versionMatch[1] : undefined;
-    return new IncompatibleModuleError(moduleId ?? "unknown", version, msg);
+  const data = err?.response || err?.data;
+  if (data && typeof data === "object") {
+    if (data.error === "incompatible_module_contract") {
+      const msg = data.message || err.message;
+      const versionMatch = typeof msg === "string" ? /version\s+"([^"]+)"/.exec(msg) : null;
+      const version = versionMatch ? versionMatch[1] : undefined;
+      return new IncompatibleModuleError(moduleId ?? "unknown", version, msg);
+    }
+    if (typeof data.error === "string") {
+      return new ModuleSetupError(data.message || err.message || "Failed to configure module", data.error, {
+        created: Array.isArray(data.created) ? data.created : undefined,
+        blockedOperations: Array.isArray(data.blocked_operations) ? data.blocked_operations : undefined,
+        dataset: typeof data.dataset === "string" ? data.dataset : undefined,
+      });
+    }
   }
   if (err?.originalError instanceof Error) {
     return err.originalError;
@@ -209,8 +216,16 @@ export class ProductClient {
    * Requires a signed-in user.
    */
   async getSchemas(): Promise<SchemaDefinition[]> {
-    const list = await this.pb.send<SchemaDefinition[]>("/v1/schemas", { method: "GET" });
-    return (list ?? []).map((item) => assertSchemaDefinition(item));
+    const list = await this.pb.send<SchemaDefinition[]>("/v1/schemas", { method: "GET", requestKey: null });
+    const results: SchemaDefinition[] = [];
+    for (const item of list ?? []) {
+      try {
+        results.push(assertSchemaDefinition(item));
+      } catch (err) {
+        console.warn("[getSchemas] Skipping invalid schema definition:", item?.schema_id, err);
+      }
+    }
+    return results;
   }
 
   /**
@@ -218,7 +233,7 @@ export class ProductClient {
    * Requires a signed-in user.
    */
   async getSchema(id: string): Promise<SchemaDefinition> {
-    const data = await this.pb.send<SchemaDefinition>(`/v1/schemas/${encodeURIComponent(id)}`, { method: "GET" });
+    const data = await this.pb.send<SchemaDefinition>(`/v1/schemas/${encodeURIComponent(id)}`, { method: "GET", requestKey: null });
     return assertSchemaDefinition(data);
   }
 
@@ -232,6 +247,7 @@ export class ProductClient {
     const created = await this.pb.send<SchemaDefinition>("/v1/schemas", {
       method: "POST",
       body: valid,
+      requestKey: null,
     });
     return assertSchemaDefinition(created);
   }
@@ -244,6 +260,7 @@ export class ProductClient {
     const updated = await this.pb.send<SchemaDefinition>(`/v1/schemas/${encodeURIComponent(id)}`, {
       method: "PATCH",
       body: update,
+      requestKey: null,
     });
     return assertSchemaDefinition(updated);
   }
@@ -253,7 +270,7 @@ export class ProductClient {
    * Requires a signed-in user.
    */
   async deleteSchema(id: string): Promise<void> {
-    await this.pb.send(`/v1/schemas/${encodeURIComponent(id)}`, { method: "DELETE" });
+    await this.pb.send(`/v1/schemas/${encodeURIComponent(id)}`, { method: "DELETE", requestKey: null });
   }
 
   /**
@@ -366,6 +383,7 @@ export class ProductClient {
     const created = await this.pb.send<WorkspaceUser>("/v1/workspace/setup", {
       method: "POST",
       body: valid,
+      requestKey: null,
     });
     return assertWorkspaceUser(created);
   }
@@ -374,7 +392,7 @@ export class ProductClient {
    * Lists all workspace users (requires Owner or Admin).
    */
   async getWorkspaceUsers(): Promise<WorkspaceUser[]> {
-    const list = await this.pb.send<WorkspaceUser[]>("/v1/workspace/users", { method: "GET" });
+    const list = await this.pb.send<WorkspaceUser[]>("/v1/workspace/users", { method: "GET", requestKey: null });
     return (list ?? []).map((u) => assertWorkspaceUser(u));
   }
 
@@ -388,6 +406,7 @@ export class ProductClient {
     const updated = await this.pb.send<WorkspaceUser>(`/v1/workspace/users/${encodeURIComponent(id)}`, {
       method: "PATCH",
       body: update,
+      requestKey: null,
     });
     return assertWorkspaceUser(updated);
   }
@@ -399,6 +418,7 @@ export class ProductClient {
     const created = await this.pb.send<WorkspaceInvitation>("/v1/workspace/invitations", {
       method: "POST",
       body: input,
+      requestKey: null,
     });
     return assertWorkspaceInvitation(created);
   }
@@ -407,7 +427,7 @@ export class ProductClient {
    * Lists all pending invitations (requires Owner or Admin).
    */
   async getWorkspaceInvitations(): Promise<WorkspaceInvitation[]> {
-    const list = await this.pb.send<WorkspaceInvitation[]>("/v1/workspace/invitations", { method: "GET" });
+    const list = await this.pb.send<WorkspaceInvitation[]>("/v1/workspace/invitations", { method: "GET", requestKey: null });
     return (list ?? []).map((inv) => assertWorkspaceInvitation(inv));
   }
 
@@ -418,6 +438,7 @@ export class ProductClient {
     const user = await this.pb.send<WorkspaceUser>("/v1/workspace/invitations/accept", {
       method: "POST",
       body: input,
+      requestKey: null,
     });
     return assertWorkspaceUser(user);
   }
@@ -426,7 +447,7 @@ export class ProductClient {
    * Revokes an existing invitation (requires Owner or Admin).
    */
   async revokeInvitation(id: string): Promise<void> {
-    await this.pb.send(`/v1/workspace/invitations/${encodeURIComponent(id)}`, { method: "DELETE" });
+    await this.pb.send(`/v1/workspace/invitations/${encodeURIComponent(id)}`, { method: "DELETE", requestKey: null });
   }
 
   /**
@@ -435,7 +456,7 @@ export class ProductClient {
   async reissueInvitation(id: string): Promise<WorkspaceInvitation> {
     const reissued = await this.pb.send<WorkspaceInvitation>(
       `/v1/workspace/invitations/${encodeURIComponent(id)}/reissue`,
-      { method: "POST" },
+      { method: "POST", requestKey: null },
     );
     return assertWorkspaceInvitation(reissued);
   }
@@ -444,7 +465,7 @@ export class ProductClient {
    * Fetches the current authenticated user's role and effective permissions.
    */
   async getMyPermissions(): Promise<{ user_id: string; role: string; permissions: Record<string, DatasetPermission> }> {
-    return this.pb.send("/v1/workspace/permissions", { method: "GET" });
+    return this.pb.send("/v1/workspace/permissions", { method: "GET", requestKey: null });
   }
 
   get currentUserRole(): "owner" | "admin" | "member" | null {
@@ -503,7 +524,7 @@ export class ProductClient {
   async getWorkspaceModules(): Promise<WorkspaceModuleEntry[]> {
     let res: any[];
     try {
-      res = await this.pb.send<any[]>("/v1/workspace/modules", { method: "GET" });
+      res = await this.pb.send<any[]>("/v1/workspace/modules", { method: "GET", requestKey: null });
     } catch (err: any) {
       if (err?.status === 404 || err?.response?.status === 404) {
         return [];
@@ -579,7 +600,7 @@ export class ProductClient {
   async getWorkspaceModule(id: string): Promise<WorkspaceModuleEntry | null> {
     let res: any;
     try {
-      res = await this.pb.send<any>(`/v1/workspace/modules/${encodeURIComponent(id)}`, { method: "GET" });
+      res = await this.pb.send<any>(`/v1/workspace/modules/${encodeURIComponent(id)}`, { method: "GET", requestKey: null });
     } catch (err: any) {
       if (err?.status === 404 || err?.response?.status === 404) {
         return null;
@@ -605,6 +626,7 @@ export class ProductClient {
       res = await this.pb.send<WorkspaceModuleInstallation>(`/v1/workspace/modules/${encodeURIComponent(id)}/setup`, {
         method: "POST",
         body: payload,
+        requestKey: null,
       });
     } catch (err: any) {
       throw mapBackendModuleError(err, id);
@@ -785,6 +807,7 @@ export class ProductClient {
       await this.pb.send<WorkspaceModuleInstallation>(`/v1/workspace/modules/${encodeURIComponent(moduleId)}`, {
         method: "PUT",
         body: { enabled },
+        requestKey: null,
       });
     }
 

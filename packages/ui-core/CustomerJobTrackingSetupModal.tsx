@@ -1,12 +1,19 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import type { SchemaDefinition } from "@lattice/types";
-import type { ProductClient } from "@lattice/sdk";
+import { ModuleSetupError, type ProductClient } from "@lattice/sdk";
 
 export interface CustomerJobTrackingSetupModalProps {
   isOpen: boolean;
   onClose: () => void;
   client: ProductClient;
   schemas: SchemaDefinition[];
+  initialMode?: "suggested" | "custom";
+  initialError?: string;
+  initialSuccess?: string;
+  initialCustomerDataset?: string;
+  initialJobDataset?: string;
+  initialCreatedDatasets?: string[];
+  initialBlockedOperations?: string[];
   onConfigured?: () => void;
 }
 
@@ -15,21 +22,48 @@ export function CustomerJobTrackingSetupModal({
   onClose,
   client,
   schemas,
+  initialMode = "suggested",
+  initialError,
+  initialSuccess,
+  initialCustomerDataset,
+  initialJobDataset,
+  initialCreatedDatasets,
+  initialBlockedOperations,
   onConfigured,
 }: CustomerJobTrackingSetupModalProps) {
-  const [mode, setMode] = useState<"suggested" | "custom">("suggested");
+  const [mode, setMode] = useState<"suggested" | "custom">(initialMode);
   const [loading, setLoading] = useState(false);
-  const [error, setError] = useState<string | null>(null);
-  const [success, setSuccess] = useState<string | null>(null);
+  const [error, setError] = useState<string | null>(initialError ?? null);
+  const [createdDatasets, setCreatedDatasets] = useState<string[]>(initialCreatedDatasets ?? []);
+  const [blockedOperations, setBlockedOperations] = useState<string[]>(initialBlockedOperations ?? []);
+  const [success, setSuccess] = useState<string | null>(initialSuccess ?? null);
+
+  const [modalSchemas, setModalSchemas] = useState<SchemaDefinition[]>(schemas ?? []);
+
+  useEffect(() => {
+    if (schemas && schemas.length > 0) {
+      setModalSchemas(schemas);
+    }
+  }, [schemas]);
+
+  useEffect(() => {
+    if (isOpen) {
+      client.getSchemas().then((list) => {
+        if (list && list.length > 0) setModalSchemas(list);
+      }).catch(() => {});
+    }
+  }, [isOpen, client]);
+
+  const activeSchemas = modalSchemas.length > 0 ? modalSchemas : schemas;
 
   // Custom mapping state
   const [customerDataset, setCustomerDataset] = useState(
-    schemas.find((s) => s.schema_id.includes("customer"))?.schema_id || ""
+    initialCustomerDataset ?? (activeSchemas.find((s) => s.schema_id.includes("customer"))?.schema_id || "")
   );
   const [customerNameField, setCustomerNameField] = useState("name");
   const [customerPhoneField, setCustomerPhoneField] = useState("phone");
   const [jobDataset, setJobDataset] = useState(
-    schemas.find((s) => s.schema_id.includes("job"))?.schema_id || ""
+    initialJobDataset ?? (activeSchemas.find((s) => s.schema_id.includes("job"))?.schema_id || "")
   );
   const [jobTitleField, setJobTitleField] = useState("title");
   const [jobCustomerField, setJobCustomerField] = useState("customer");
@@ -38,8 +72,8 @@ export function CustomerJobTrackingSetupModal({
 
   if (!isOpen) return null;
 
-  const selectedCustSchema = schemas.find((s) => s.schema_id === customerDataset);
-  const selectedJobSchema = schemas.find((s) => s.schema_id === jobDataset);
+  const selectedCustSchema = activeSchemas.find((s) => s.schema_id === customerDataset);
+  const selectedJobSchema = activeSchemas.find((s) => s.schema_id === jobDataset);
 
   async function handleSetup() {
     setLoading(true);
@@ -73,12 +107,23 @@ export function CustomerJobTrackingSetupModal({
         });
       }
 
+      setCreatedDatasets([]);
+      setBlockedOperations([]);
       setSuccess("Customer & Job Tracking module configured and enabled successfully!");
       onConfigured?.();
       setTimeout(() => {
         onClose();
       }, 1000);
     } catch (err: unknown) {
+      if (err instanceof ModuleSetupError || (typeof err === "object" && err !== null && "created" in err)) {
+        const setupErr = err as { created?: string[]; blockedOperations?: string[] };
+        if (Array.isArray(setupErr.created) && setupErr.created.length > 0) {
+          setCreatedDatasets(setupErr.created);
+        }
+        if (Array.isArray(setupErr.blockedOperations) && setupErr.blockedOperations.length > 0) {
+          setBlockedOperations(setupErr.blockedOperations);
+        }
+      }
       setError(err instanceof Error ? err.message : "Failed to configure module");
     } finally {
       setLoading(false);
@@ -102,8 +147,79 @@ export function CustomerJobTrackingSetupModal({
 
         <div className="lattice-modal-body" style={{ padding: "1.25rem 1.5rem" }}>
           {error && (
-            <div className="lattice-alert-error" role="alert" style={{ marginBottom: "1rem" }}>
-              {error}
+            <div
+              className="lattice-alert-error"
+              role="alert"
+              style={{
+                marginBottom: "1rem",
+                padding: "1rem",
+                borderRadius: "6px",
+                border: "1px solid #fca5a5",
+                background: "#fef2f2",
+              }}
+            >
+              <div style={{ fontWeight: 600, color: "#991b1b", marginBottom: "0.35rem" }}>
+                ⚠️ Setup Interrupted
+              </div>
+              <div style={{ color: "#7f1d1d", fontSize: "0.875rem", marginBottom: createdDatasets.length > 0 ? "0.5rem" : "0" }}>
+                <strong>Why setup stopped:</strong> {error}
+              </div>
+
+              {createdDatasets.length > 0 && (
+                <div
+                  style={{
+                    marginTop: "0.75rem",
+                    padding: "0.75rem",
+                    background: "#ffffff",
+                    borderRadius: "4px",
+                    border: "1px solid #fecaca",
+                  }}
+                >
+                  <div style={{ fontWeight: 600, fontSize: "0.85rem", marginBottom: "0.35rem", color: "#1f2937" }}>
+                    Datasets preserved in workspace:
+                  </div>
+                  <ul style={{ margin: "0 0 0.5rem 0", paddingLeft: "1.25rem", fontSize: "0.85rem", color: "#374151" }}>
+                    {createdDatasets.map((ds) => (
+                      <li key={ds}>
+                        <code>{ds}</code> (created and ready)
+                      </li>
+                    ))}
+                  </ul>
+                  <div
+                    style={{
+                      fontSize: "0.825rem",
+                      color: "#065f46",
+                      background: "#ecfdf5",
+                      padding: "0.5rem",
+                      borderRadius: "4px",
+                      border: "1px solid #a7f3d0",
+                    }}
+                  >
+                    ✓ <strong>Safe to retry:</strong> Existing datasets will be reused without creating duplicates.
+                  </div>
+                </div>
+              )}
+
+              {blockedOperations.length > 0 && (
+                <div style={{ marginTop: "0.5rem", fontSize: "0.8rem", color: "#b91c1c" }}>
+                  <strong>Blocked operations:</strong> {blockedOperations.join(", ")}
+                </div>
+              )}
+
+              <div style={{ marginTop: "0.75rem", display: "flex", alignItems: "center", gap: "0.75rem" }}>
+                <button
+                  type="button"
+                  className="lattice-btn-primary"
+                  style={{ fontSize: "0.825rem", padding: "0.4rem 0.8rem" }}
+                  onClick={handleSetup}
+                  disabled={loading}
+                >
+                  {loading ? "Retrying…" : "🔄 Retry Setup"}
+                </button>
+                <span style={{ fontSize: "0.8rem", color: "#6b7280" }}>
+                  You can retry directly or adjust configuration.
+                </span>
+              </div>
             </div>
           )}
 
@@ -215,7 +331,7 @@ export function CustomerJobTrackingSetupModal({
                       style={{ width: "100%", padding: "0.4rem", borderRadius: "4px" }}
                     >
                       <option value="">Select dataset…</option>
-                      {schemas.map((s) => (
+                      {activeSchemas.map((s) => (
                         <option key={s.schema_id} value={s.schema_id}>
                           {s.name} ({s.schema_id})
                         </option>
@@ -273,7 +389,7 @@ export function CustomerJobTrackingSetupModal({
                       style={{ width: "100%", padding: "0.4rem", borderRadius: "4px" }}
                     >
                       <option value="">Select dataset…</option>
-                      {schemas.map((s) => (
+                      {activeSchemas.map((s) => (
                         <option key={s.schema_id} value={s.schema_id}>
                           {s.name} ({s.schema_id})
                         </option>

@@ -74,9 +74,11 @@ export function DashboardPage({ client, onSignOut, onChangeWorkspace }: Dashboar
       if (typeof client.getWorkspaceModules === "function") {
         const list = await client.getWorkspaceModules();
         setManagedModules(list);
+      } else {
+        console.warn("[DashboardPage] client.getWorkspaceModules is NOT a function");
       }
-    } catch {
-      // Fallback gracefully if offline
+    } catch (err) {
+      console.error("[DashboardPage] fetchWorkspaceModules error:", err);
     }
   }, [client]);
 
@@ -119,10 +121,18 @@ export function DashboardPage({ client, onSignOut, onChangeWorkspace }: Dashboar
     };
   }, [client, fetchSchemas, fetchPages, fetchDisabledModules, fetchWorkspaceModules]);
 
+  // Re-fetch schema definitions on tab navigation so updated fields/forms synchronize across clients
+  useEffect(() => {
+    if (!loadingInitial) {
+      void fetchSchemas();
+    }
+  }, [activeTab, fetchSchemas, loadingInitial]);
+
   const isOwnerOrAdmin = client.isOwnerOrAdmin;
   const isDashboardEnabled = !disabledModules.includes("dashboard");
   const cjtMod = managedModules.find((m) => m.module_id === "customer_job_tracking");
   const isCustomerJobTrackingEnabled = Boolean(cjtMod?.installed && cjtMod?.enabled);
+
 
   const baseSchemas = isOwnerOrAdmin
     ? schemas
@@ -183,7 +193,14 @@ export function DashboardPage({ client, onSignOut, onChangeWorkspace }: Dashboar
               <button type="button" className="lattice-btn-secondary" onClick={() => setModulesModalOpen(true)}>
                 Modules
               </button>
-              <button type="button" className="lattice-btn-secondary" onClick={() => setMembersModalOpen(true)}>
+              <button
+                type="button"
+                className="lattice-btn-secondary"
+                onClick={() => {
+                  fetchSchemas();
+                  setMembersModalOpen(true);
+                }}
+              >
                 Manage Team
               </button>
             </>
@@ -290,13 +307,19 @@ export function DashboardPage({ client, onSignOut, onChangeWorkspace }: Dashboar
 
       <WorkspaceModulesModal
         isOpen={modulesModalOpen}
-        onClose={() => setModulesModalOpen(false)}
+        onClose={() => {
+          setModulesModalOpen(false);
+          fetchDisabledModules();
+          fetchWorkspaceModules();
+          fetchSchemas();
+        }}
         client={client}
         schemas={schemas}
         pages={pages}
         onModulesChanged={() => {
           fetchDisabledModules();
           fetchWorkspaceModules();
+          fetchSchemas();
         }}
       />
     </div>
