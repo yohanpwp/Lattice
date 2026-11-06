@@ -8,6 +8,8 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"sort"
+	"strings"
 
 	"github.com/pocketbase/pocketbase/apis"
 	"github.com/pocketbase/pocketbase/core"
@@ -20,6 +22,29 @@ import (
 	"github.com/Lattice/backend/internal/plugins/payments"
 )
 
+// isAppPagesRecordsListRequest matches GET requests to the app_pages records list endpoint,
+// resolving either by collection name ("app_pages") or by its PocketBase collection ID.
+func isAppPagesRecordsListRequest(e *core.RequestEvent) bool {
+	if e.Request.Method != http.MethodGet {
+		return false
+	}
+	path := strings.TrimSuffix(e.Request.URL.Path, "/")
+	if !strings.HasPrefix(path, "/api/collections/") {
+		return false
+	}
+	trimmed := strings.TrimPrefix(path, "/api/collections/")
+	parts := strings.Split(trimmed, "/")
+	if len(parts) != 2 || parts[1] != "records" {
+		return false
+	}
+	colParam := parts[0]
+	if colParam == "app_pages" {
+		return true
+	}
+	col, err := e.App.FindCachedCollectionByNameOrId(colParam)
+	return err == nil && col != nil && col.Name == "app_pages"
+}
+
 // Register adds the /v1 routes. Call it from the app.OnServe() hook.
 func Register(se *core.ServeEvent, cfg *tenant.Config, flags *features.Flags) {
 	if flags == nil {
@@ -30,6 +55,54 @@ func Register(se *core.ServeEvent, cfg *tenant.Config, flags *features.Flags) {
 	if cfg != nil {
 		tenantID = cfg.TenantID
 	}
+
+	// Pre-pagination dataset-aware visibility filter for app_pages list requests.
+	// Injects dataset permissions into query filter BEFORE pagination runs in SQLite.
+	// Matches either literal collection name "app_pages" or its unique collection ID.
+	se.Router.BindFunc(func(e *core.RequestEvent) error {
+		if isAppPagesRecordsListRequest(e) {
+			if e.Auth != nil && !authz.IsOwnerOrAdmin(e.Auth) && !e.HasSuperuserAuth() {
+				if err := authz.CheckActiveAccount(e.Auth); err != nil {
+					return err
+				}
+				perms := authz.GetUserPermissions(e.Auth)
+				var readable []string
+				for ds, p := range perms {
+					if p.Read {
+						readable = append(readable, ds)
+					}
+				}
+				sort.Strings(readable)
+
+				var visFilter string
+				if len(readable) == 0 {
+					visFilter = "(published = true && collection = '__no_access__')"
+				} else {
+					var parts []string
+					for _, ds := range readable {
+						escaped := strings.ReplaceAll(ds, "'", "\\'")
+						parts = append(parts, fmt.Sprintf("collection = '%s'", escaped))
+					}
+					visFilter = fmt.Sprintf("(published = true && (%s))", strings.Join(parts, " || "))
+				}
+
+				q := e.Request.URL.Query()
+				existingFilter := q.Get("filter")
+				if existingFilter != "" {
+					q.Set("filter", fmt.Sprintf("(%s) && (%s)", existingFilter, visFilter))
+				} else {
+					q.Set("filter", visFilter)
+				}
+				e.Request.URL.RawQuery = q.Encode()
+
+				reqInfo, _ := e.RequestInfo()
+				if reqInfo != nil {
+					reqInfo.Query["filter"] = q.Get("filter")
+				}
+			}
+		}
+		return e.Next()
+	})
 
 	paySvc := payments.InitService(se.App)
 

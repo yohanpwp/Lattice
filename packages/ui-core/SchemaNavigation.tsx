@@ -7,6 +7,8 @@ export interface SchemaNavigationProps {
   onSelectTab: (tabId: string) => void;
   canCreateSchema?: boolean;
   onCreateSchemaClick?: () => void;
+  canCreatePage?: boolean;
+  onCreatePageClick?: () => void;
   showDashboard?: boolean;
   showCustomerJobTracking?: boolean;
 }
@@ -18,6 +20,8 @@ export function SchemaNavigation({
   onSelectTab,
   canCreateSchema = false,
   onCreateSchemaClick,
+  canCreatePage = false,
+  onCreatePageClick,
   showDashboard = true,
   showCustomerJobTracking = false,
 }: SchemaNavigationProps) {
@@ -75,7 +79,14 @@ export function SchemaNavigation({
             onClick={() => onSelectTab(page.page_id)}
           >
             <span className="lattice-tab-icon">{getPageIcon(page)}</span>
-            <span className="lattice-tab-label">{page.name}</span>
+            <span className="lattice-tab-label">
+              {page.name}
+              {page.published === false && (
+                <span className="lattice-badge lattice-badge--pill" style={{ marginLeft: "0.35rem", fontSize: "0.7rem", opacity: 0.8 }}>
+                  Draft
+                </span>
+              )}
+            </span>
           </button>
         ))}
 
@@ -93,17 +104,31 @@ export function SchemaNavigation({
           </button>
         ))}
 
-        {canCreateSchema && onCreateSchemaClick && (
-          <button
-            type="button"
-            className="lattice-tab lattice-tab--action"
-            style={{ marginLeft: "auto", border: "1px dashed var(--yp-border, #cbd5e1)", borderRadius: "4px" }}
-            onClick={onCreateSchemaClick}
-          >
-            <span className="lattice-tab-icon">➕</span>
-            <span className="lattice-tab-label">New Dataset</span>
-          </button>
-        )}
+        <div style={{ marginLeft: "auto", display: "flex", gap: "0.5rem" }}>
+          {canCreatePage && onCreatePageClick && (
+            <button
+              type="button"
+              className="lattice-tab lattice-tab--action"
+              style={{ border: "1px dashed var(--yp-border, #cbd5e1)", borderRadius: "4px" }}
+              onClick={onCreatePageClick}
+            >
+              <span className="lattice-tab-icon">➕</span>
+              <span className="lattice-tab-label">New Page</span>
+            </button>
+          )}
+
+          {canCreateSchema && onCreateSchemaClick && (
+            <button
+              type="button"
+              className="lattice-tab lattice-tab--action"
+              style={{ border: "1px dashed var(--yp-border, #cbd5e1)", borderRadius: "4px" }}
+              onClick={onCreateSchemaClick}
+            >
+              <span className="lattice-tab-icon">➕</span>
+              <span className="lattice-tab-label">New Dataset</span>
+            </button>
+          )}
+        </div>
       </div>
     </nav>
   );

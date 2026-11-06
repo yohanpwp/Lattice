@@ -89,6 +89,7 @@ Lattice/
 │   ├── openapi.yaml    # OpenAPI spec สำหรับ /v1/*
 │   ├── schemas/        # JSON Schema (app-config, features, layout, plugin-manifest)
 │   └── collections/    # นิยาม schema/collections เริ่มต้น
+├── docs/               # คู่มือสถาปัตยกรรมและการ Deployment (docs/deployments.md)
 ├── packages/           # TypeScript Packages ใช้ร่วมกันทุก Platform
 │   ├── types/          # Types ที่ gen จาก contracts/
 │   ├── sdk/            # SDK ครอบ PocketBase JS SDK + platform adapters

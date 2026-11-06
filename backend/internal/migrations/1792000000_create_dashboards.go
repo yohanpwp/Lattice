@@ -21,6 +21,7 @@ func init() {
 		collection.Fields.Add(
 			&core.TextField{Name: "name", Required: true},
 			&core.JSONField{Name: "layout", Required: true, MaxSize: 1 << 20},
+			&core.NumberField{Name: "revision"},
 		)
 
 		usersCol, err := app.FindCollectionByNameOrId("users")
@@ -35,7 +36,7 @@ func init() {
 			collection.Fields.Add(&core.TextField{Name: "user_id"})
 		}
 
-		collection.AddIndex("idx_dashboards_name", false, "name", "")
+		collection.AddIndex("idx_dashboards_name", true, "name", "")
 
 		return app.Save(collection)
 	}, func(app core.App) error {

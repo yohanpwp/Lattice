@@ -11,6 +11,7 @@ import (
 	"github.com/ganigeorgiev/fexpr"
 	"github.com/pocketbase/pocketbase/core"
 
+	"github.com/Lattice/backend/internal/platform/authz"
 	"github.com/Lattice/backend/internal/platform/schemas"
 	"github.com/Lattice/backend/internal/platform/tenant"
 )
@@ -229,6 +230,7 @@ func RegisterCatalogModule(contract ModuleContract) error {
 		return fmt.Errorf("cannot register module contract %q: %w", contract.ModuleID, err)
 	}
 	Catalog[contract.ModuleID] = contract
+	authz.RegisterManagedModule(contract.ModuleID)
 	return nil
 }
 
@@ -236,6 +238,7 @@ func init() {
 	if err := ValidateModuleContract(CustomerJobTrackingContract); err != nil {
 		panic(fmt.Sprintf("invalid built-in customer_job_tracking module contract: %v", err))
 	}
+	authz.RegisterManagedModule(CustomerJobTrackingContract.ModuleID)
 }
 
 // ValidateModuleMapping verifies that the mapped collections and fields exist,

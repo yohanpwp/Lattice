@@ -752,9 +752,22 @@ func RegisterSyncHooks(app core.App) {
 			return e.Next()
 		}
 
+		// Ensure any file fields on imported or externally created business collections are protected
+		for _, f := range e.Collection.Fields {
+			if ff, ok := f.(*core.FileField); ok {
+				if !ff.Protected {
+					ff.Protected = true
+				}
+			}
+		}
+
+		if err := e.Next(); err != nil {
+			return err
+		}
+
 		schemaDefsCol, err := e.App.FindCollectionByNameOrId("schema_definitions")
 		if err != nil || schemaDefsCol == nil {
-			return e.Next()
+			return nil
 		}
 
 		existing, _ := e.App.FindFirstRecordByFilter("schema_definitions", "schema_id = {:id}", map[string]any{"id": e.Collection.Name})
@@ -769,7 +782,7 @@ func RegisterSyncHooks(app core.App) {
 			rec.Set("collection_id", e.Collection.Id)
 			_ = e.App.Save(rec)
 		}
-		return e.Next()
+		return nil
 	})
 
 	app.OnCollectionDelete().BindFunc(func(e *core.CollectionEvent) error {
@@ -903,7 +916,7 @@ func createPocketBaseField(app core.App, f FieldDefinition) (core.Field, error) 
 	case "json":
 		return &core.JSONField{Name: f.Name, Required: f.Required}, nil
 	case "file":
-		return &core.FileField{Name: f.Name, Required: f.Required}, nil
+		return &core.FileField{Name: f.Name, Required: f.Required, Protected: true}, nil
 	case "relation":
 		rf := &core.RelationField{Name: f.Name, Required: f.Required, MaxSelect: 1}
 		if f.Target != "" {

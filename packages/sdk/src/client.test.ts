@@ -742,6 +742,184 @@ describe("schema management", () => {
     const single = await client.getPage("orders-board");
     expect(single?.name).toBe("Orders Board");
     expect(single?.collection).toBe("orders");
+    expect(single?.published).toBe(true);
+  });
+
+  it("creates, updates, and deletes pages with publishing and nav_order support", async () => {
+    let storedPage: any = null;
+    const customFetch = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+      const url = String(input);
+      const method = init?.method || "GET";
+      if (url.endsWith("/v1/config")) return json(config);
+      if (url.includes("auth-with-password")) {
+        const token = `e30.${btoa(JSON.stringify({ exp: Math.floor(Date.now() / 1000) + 3600 }))}.sig`;
+        return json({ token, record: { id: "u1", role: "admin", collectionName: "users" } });
+      }
+      if (url.includes("/api/collections/app_pages/records")) {
+        if (method === "GET") {
+          if (storedPage) {
+            return json({ items: [storedPage], totalItems: 1, totalPages: 1 });
+          }
+          return json({ items: [], totalItems: 0, totalPages: 0 });
+        }
+        if (method === "POST") {
+          const body = JSON.parse(String(init?.body || "{}"));
+          storedPage = {
+            id: "pb_rec_9999999",
+            ...body,
+            created: "2026-11-04T12:00:00Z",
+            updated: "2026-11-04T12:00:00Z",
+          };
+          return json(storedPage);
+        }
+        if (method === "PATCH") {
+          const body = JSON.parse(String(init?.body || "{}"));
+          storedPage = { ...storedPage, ...body, updated: "2026-11-04T12:30:00Z" };
+          return json(storedPage);
+        }
+        if (method === "DELETE") {
+          storedPage = null;
+          return new Response(null, { status: 204 });
+        }
+      }
+      return json({});
+    }) as typeof fetch;
+
+    const client = await ProductClient.connect({
+      backendUrl: "https://acme.app.example.com/",
+      clientVersion: "0.1.0",
+      platform: { storage: createMemoryStorage(), fetch: customFetch },
+    });
+    await client.login("admin@example.com", "secret");
+
+    const created = await client.createPage({
+      page_id: "projects-table",
+      name: "Projects Table",
+      view_type: "table",
+      collection: "projects",
+      published: true,
+      nav_order: 1,
+    });
+    expect(created.page_id).toBe("projects-table");
+    expect(created.published).toBe(true);
+    expect(created.nav_order).toBe(1);
+
+    // Update using 15-character page_id slug to ensure it resolves page_id without mistaking it for record ID
+    const updated = await client.updatePage("projects-table", {
+      published: false,
+    });
+    expect(updated.published).toBe(false);
+    expect(updated.id).toBe("pb_rec_9999999");
+
+    // Delete using page_id slug
+    await client.deletePage("projects-table");
+    expect(storedPage).toBeNull();
+  });
+
+  it("loads and saves shared dashboard layouts via getDashboardLayout() and saveDashboardLayout()", async () => {
+    let savedLayoutDoc: any = null;
+    const customFetch = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+      const url = String(input);
+      const method = init?.method || "GET";
+      if (url.endsWith("/v1/config")) return json(config);
+      if (url.includes("auth-with-password")) {
+        const token = `e30.${btoa(JSON.stringify({ exp: Math.floor(Date.now() / 1000) + 3600 }))}.sig`;
+        return json({ token, record: { id: "u1", role: "admin", collectionName: "users" } });
+      }
+      if (url.includes("/api/collections/dashboards/records")) {
+        if (method === "GET") {
+          if (!savedLayoutDoc) {
+            return json({ items: [], totalItems: 0, totalPages: 0 });
+          }
+          return json({ items: [savedLayoutDoc], totalItems: 1, totalPages: 1 });
+        }
+        if (method === "POST") {
+          const body = JSON.parse(String(init?.body || "{}"));
+          if (savedLayoutDoc && savedLayoutDoc.name === body.name) {
+            return new Response(JSON.stringify({ message: "Dashboard already exists" }), { status: 409 });
+          }
+          savedLayoutDoc = {
+            id: "dash_main_rec",
+            name: body.name,
+            layout: body.layout,
+            revision: 1,
+            created: "2026-11-04T12:00:00Z",
+            updated: "2026-11-04T12:00:00Z",
+          };
+          return json(savedLayoutDoc);
+        }
+        if (method === "PATCH") {
+          const body = JSON.parse(String(init?.body || "{}"));
+          if (!body.expected_revision) {
+            return new Response(JSON.stringify({ message: "expected_revision is required" }), { status: 400 });
+          }
+          if (body.expected_revision !== (savedLayoutDoc?.revision ?? 1)) {
+            return new Response(JSON.stringify({ message: "conflict" }), { status: 409 });
+          }
+          savedLayoutDoc = {
+            ...savedLayoutDoc,
+            name: body.name || savedLayoutDoc.name,
+            layout: body.layout,
+            revision: (savedLayoutDoc?.revision ?? 1) + 1,
+            updated: new Date().toISOString(),
+          };
+          return json(savedLayoutDoc);
+        }
+      }
+      return json({});
+    }) as typeof fetch;
+
+    const client = await ProductClient.connect({
+      backendUrl: "https://acme.app.example.com/",
+      clientVersion: "0.1.0",
+      platform: { storage: createMemoryStorage(), fetch: customFetch },
+    });
+    await client.login("admin@example.com", "secret");
+
+    const initial = await client.getDashboardLayout("main");
+    expect(initial).toBeNull();
+
+    const layoutToSave = {
+      id: "main",
+      name: "Workspace Overview",
+      layout: [
+        {
+          id: "w1",
+          type: "kpi" as const,
+          collection: "projects",
+          x: 0,
+          y: 0,
+          w: 4,
+          h: 2,
+          props: { metric: "count" },
+        },
+      ],
+    };
+
+    const saved = await client.saveDashboardLayout(layoutToSave, "main");
+    expect(saved.id).toBe("main");
+    expect(saved.layout).toHaveLength(1);
+    expect(saved.layout[0]?.type).toBe("kpi");
+    expect(saved.revision).toBe(1);
+
+    const loaded = await client.getDashboardLayout("main");
+    expect(loaded?.layout).toHaveLength(1);
+    expect(loaded?.layout[0]?.collection).toBe("projects");
+    expect(loaded?.revision).toBe(1);
+
+    // Save with matching expectedRevision advances to 2
+    const updated = await client.saveDashboardLayout(layoutToSave, "main", { expectedRevision: 1 });
+    expect(updated.revision).toBe(2);
+
+    // Concurrent save with stale revision (1) fails with 409 Conflict
+    await expect(
+      client.saveDashboardLayout(layoutToSave, "main", { expectedRevision: 1 })
+    ).rejects.toThrow();
+
+    // First-create assertion (expectedRevision: 0) fails when dashboard already exists
+    await expect(
+      client.saveDashboardLayout(layoutToSave, "main", { expectedRevision: 0 })
+    ).rejects.toThrow();
   });
 
   it("manages workspace setup, users, and role permissions", async () => {
@@ -1864,5 +2042,50 @@ describe("managed module contract and version compatibility", () => {
     await client.setModuleEnabled("customer_job_tracking", true);
     expect(putCalled).toBe(true);
     expect(await client.getDisabledModules()).not.toContain("customer_job_tracking");
+  });
+
+  it("setModuleEnabled surfaces server errors and avoids local update when workspace_modules write fails for unmanaged module", async () => {
+    let writeFails = true;
+    const customFetch = (async (input: RequestInfo | URL, init?: RequestInit) => {
+      const url = String(input);
+      if (url.endsWith("/v1/config")) return json(config);
+      if (url.includes("auth-with-password")) {
+        const token = `e30.${btoa(JSON.stringify({ exp: Math.floor(Date.now() / 1000) + 3600 }))}.sig`;
+        return json({
+          token,
+          record: { id: "owner_1", collectionName: "users", role: "owner" },
+        });
+      }
+      if (url.includes("/v1/workspace/modules")) return json([]);
+      if (url.includes("/api/collections/workspace_modules/records")) {
+        if (init?.method === "GET" || !init?.method) {
+          return new Response(JSON.stringify({ code: 404, message: "Not found." }), { status: 404 });
+        }
+        if (init?.method === "POST" || init?.method === "PATCH") {
+          if (writeFails) {
+            return new Response(JSON.stringify({ code: 500, message: "Disk full or database lock failed" }), { status: 500 });
+          }
+          return json({ id: "wm_1", module_id: "custom_mod", enabled: false });
+        }
+      }
+      return json({});
+    }) as unknown as typeof fetch;
+
+    const storage = createMemoryStorage();
+    const client = await ProductClient.connect({
+      backendUrl: "https://acme.app.example.com/",
+      clientVersion: "1.0.0",
+      platform: { storage, fetch: customFetch },
+    });
+    await client.login("owner@example.com", "Password123!");
+
+    // 1. When server write fails, setModuleEnabled MUST reject and NOT update local storage
+    await expect(client.setModuleEnabled("custom_mod", false)).rejects.toThrow();
+    expect(await client.getDisabledModules()).not.toContain("custom_mod");
+
+    // 2. When server write succeeds, setModuleEnabled succeeds and updates local storage
+    writeFails = false;
+    await client.setModuleEnabled("custom_mod", false);
+    expect(await client.getDisabledModules()).toContain("custom_mod");
   });
 });

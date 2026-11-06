@@ -7,6 +7,8 @@ export interface LoadedLayout {
   source: "saved" | "default";
   /** Set when a saved layout existed but could not be used. */
   warning?: string;
+  revision?: number;
+  recordId?: string;
 }
 
 /**
@@ -35,7 +37,14 @@ export async function loadDashboardLayout(
     if (!record) return { layout: fallback, source: "default" };
 
     try {
-      return { layout: assertDashboardLayout(record.layout), source: "saved" };
+      const rev = typeof record.revision === "number" && record.revision > 0 ? record.revision : 1;
+      const recordId = typeof record.id === "string" ? record.id : undefined;
+      return {
+        layout: assertDashboardLayout(record.layout),
+        source: "saved",
+        revision: rev,
+        recordId,
+      };
     } catch {
       return {
         layout: fallback,

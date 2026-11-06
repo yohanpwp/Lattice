@@ -3,6 +3,7 @@ package authz_test
 import (
 	"context"
 	"errors"
+	"strings"
 	"sync"
 	"sync/atomic"
 	"testing"
@@ -11,6 +12,7 @@ import (
 	"github.com/pocketbase/pocketbase/apis"
 	"github.com/pocketbase/pocketbase/core"
 	"github.com/pocketbase/pocketbase/tests"
+	"github.com/pocketbase/pocketbase/tools/router"
 	"github.com/pocketbase/pocketbase/tools/search"
 	"github.com/pocketbase/pocketbase/tools/subscriptions"
 	"github.com/pocketbase/pocketbase/tools/types"
@@ -1256,6 +1258,13 @@ func TestPageAndSchemaAdministrationAuthorization(t *testing.T) {
 		t.Fatal(err)
 	}
 
+	ordersCol := core.NewBaseCollection("orders")
+	ordersCol.Fields.Add(&core.TextField{Name: "id"})
+	ordersCol.Fields.Add(&core.TextField{Name: "title"})
+	if err := app.Save(ordersCol); err != nil {
+		t.Fatal(err)
+	}
+
 	// 1. Create accounts for each role
 	owner := core.NewRecord(usersCol)
 	owner.Set("email", "page_owner@example.com")
@@ -1309,15 +1318,28 @@ func TestPageAndSchemaAdministrationAuthorization(t *testing.T) {
 	reqDisMember := &core.RequestInfo{Auth: disabledMember}
 	reqUnauth := &core.RequestInfo{Auth: nil}
 
-	// 2. Create sample page record
+	// 2. Create sample page record (published)
 	pageRec := core.NewRecord(appPagesCol)
 	pageRec.Set("page_id", "admin-orders-table")
 	pageRec.Set("name", "Admin Orders")
 	pageRec.Set("view_type", "table")
 	pageRec.Set("collection", "orders")
+	pageRec.Set("published", true)
 	pageRec.Set("config", map[string]any{"columns": []string{"id", "title"}})
 	if err := app.Save(pageRec); err != nil {
 		t.Fatalf("failed to seed pageRec: %v", err)
+	}
+
+	// Create sample draft page record (unpublished)
+	draftPageRec := core.NewRecord(appPagesCol)
+	draftPageRec.Set("page_id", "draft-page")
+	draftPageRec.Set("name", "Draft Page")
+	draftPageRec.Set("view_type", "table")
+	draftPageRec.Set("collection", "orders")
+	draftPageRec.Set("published", false)
+	draftPageRec.Set("config", map[string]any{"columns": []string{"id"}})
+	if err := app.Save(draftPageRec); err != nil {
+		t.Fatalf("failed to seed draftPageRec: %v", err)
 	}
 
 	// ==========================================
@@ -1348,12 +1370,18 @@ func TestPageAndSchemaAdministrationAuthorization(t *testing.T) {
 		}
 	}
 
-	// Member: allowed to List and View, strictly DENIED from Create, Update, Delete
+	// Member: allowed to List and View published pages, strictly DENIED from unpublished drafts
 	if !checkRule("List", appPagesCol.ListRule, reqMember, pageRec) {
-		t.Errorf("expected member to pass ListRule on app_pages")
+		t.Errorf("expected member to pass ListRule on published app_pages")
 	}
 	if !checkRule("View", appPagesCol.ViewRule, reqMember, pageRec) {
-		t.Errorf("expected member to pass ViewRule on app_pages")
+		t.Errorf("expected member to pass ViewRule on published app_pages")
+	}
+	if checkRule("View", appPagesCol.ViewRule, reqMember, draftPageRec) {
+		t.Errorf("security violation: member passed ViewRule on unpublished draft page")
+	}
+	if !checkRule("View", appPagesCol.ViewRule, reqAdmin, draftPageRec) {
+		t.Errorf("expected admin to pass ViewRule on unpublished draft page")
 	}
 	if checkRule("Create", appPagesCol.CreateRule, reqMember, pageRec) {
 		t.Errorf("security violation: member passed CreateRule on app_pages")
@@ -1406,6 +1434,12 @@ func TestPageAndSchemaAdministrationAuthorization(t *testing.T) {
 	// ==========================================
 	triggerCreatePage := func(auth *core.Record) error {
 		dummy := core.NewRecord(appPagesCol)
+		dummy.Set("page_id", "sample-page")
+		dummy.Set("name", "Sample Page")
+		dummy.Set("view_type", "table")
+		dummy.Set("collection", "orders")
+		dummy.Set("published", true)
+		dummy.Set("config", map[string]any{"columns": []string{"id", "title"}})
 		event := &core.RecordRequestEvent{
 			RequestEvent: &core.RequestEvent{App: app, Auth: auth},
 			Record:       dummy,
@@ -1482,6 +1516,552 @@ func TestPageAndSchemaAdministrationAuthorization(t *testing.T) {
 	}
 	if err := triggerDeletePage(nil); err == nil {
 		t.Errorf("security violation: unauthenticated was allowed to delete page via hook")
+	}
+
+	// Content validation checks for app_pages:
+	// 1. Invalid view_type must be rejected
+	invalidViewRec := core.NewRecord(appPagesCol)
+	invalidViewRec.Set("page_id", "bad-view")
+	invalidViewRec.Set("name", "Bad View")
+	invalidViewRec.Set("view_type", "unsupported_view")
+	invalidViewRec.Set("collection", "orders")
+	invalidViewRec.Set("published", true)
+	invalidViewRec.Set("config", map[string]any{})
+	evInvalidView := &core.RecordRequestEvent{
+		RequestEvent: &core.RequestEvent{App: app, Auth: owner},
+		Record:       invalidViewRec,
+	}
+	evInvalidView.Collection = appPagesCol
+	if err := app.OnRecordCreateRequest("app_pages").Trigger(evInvalidView, func(e *core.RecordRequestEvent) error { return nil }); err == nil {
+		t.Errorf("expected rejection for unsupported view_type, but got nil")
+	}
+
+	// 2. Nonexistent collection must be rejected
+	nonexistentColRec := core.NewRecord(appPagesCol)
+	nonexistentColRec.Set("page_id", "bad-col")
+	nonexistentColRec.Set("name", "Bad Col")
+	nonexistentColRec.Set("view_type", "table")
+	nonexistentColRec.Set("collection", "nonexistent_table")
+	nonexistentColRec.Set("published", true)
+	nonexistentColRec.Set("config", map[string]any{})
+	evNonexistentCol := &core.RecordRequestEvent{
+		RequestEvent: &core.RequestEvent{App: app, Auth: owner},
+		Record:       nonexistentColRec,
+	}
+	evNonexistentCol.Collection = appPagesCol
+	if err := app.OnRecordCreateRequest("app_pages").Trigger(evNonexistentCol, func(e *core.RecordRequestEvent) error { return nil }); err == nil {
+		t.Errorf("expected rejection for nonexistent collection, but got nil")
+	}
+
+	// 3. Invalid dashboard widget bounds must be rejected
+	invalidDashRec := core.NewRecord(dashboardsCol)
+	invalidDashRec.Set("name", "bad-dash")
+	invalidDashRec.Set("layout", map[string]any{
+		"id":   "bad-dash",
+		"name": "bad-dash",
+		"layout": []map[string]any{
+			{
+				"id":         "w1",
+				"type":       "kpi",
+				"collection": "orders",
+				"x":          -1, // invalid negative x
+				"y":          0,
+				"w":          15, // invalid width > 12
+				"h":          2,
+			},
+		},
+	})
+	evInvalidDash := &core.RecordRequestEvent{
+		RequestEvent: &core.RequestEvent{App: app, Auth: owner},
+		Record:       invalidDashRec,
+	}
+	evInvalidDash.Collection = dashboardsCol
+	if err := app.OnRecordCreateRequest("dashboards").Trigger(evInvalidDash, func(e *core.RecordRequestEvent) error { return nil }); err == nil {
+		t.Errorf("expected rejection for invalid dashboard widget bounds, but got nil")
+	}
+
+	// 3b. Dashboard layout missing 'layout' array must be rejected (no silent substitution)
+	missingLayoutDashRec := core.NewRecord(dashboardsCol)
+	missingLayoutDashRec.Set("name", "missing-layout-dash")
+	missingLayoutDashRec.Set("layout", map[string]any{
+		"id":   "missing-layout-dash",
+		"name": "Missing Layout Dash",
+	})
+	evMissingLayout := &core.RecordRequestEvent{
+		RequestEvent: &core.RequestEvent{App: app, Auth: owner},
+		Record:       missingLayoutDashRec,
+	}
+	evMissingLayout.Collection = dashboardsCol
+	if err := app.OnRecordCreateRequest("dashboards").Trigger(evMissingLayout, func(e *core.RecordRequestEvent) error { return nil }); err == nil {
+		t.Errorf("expected rejection for dashboard layout object lacking 'layout' array, but got nil")
+	}
+
+	// 3c. Valid dashboard layout object is normalized and persisted
+	validDashRec := core.NewRecord(dashboardsCol)
+	validDashRec.Set("name", "valid-dash")
+	validDashRec.Set("layout", map[string]any{
+		"id":     "valid-dash",
+		"name":   "Valid Dash",
+		"layout": []any{},
+	})
+	evValidDash := &core.RecordRequestEvent{
+		RequestEvent: &core.RequestEvent{App: app, Auth: owner},
+		Record:       validDashRec,
+	}
+	evValidDash.Collection = dashboardsCol
+	if err := app.OnRecordCreateRequest("dashboards").Trigger(evValidDash, func(e *core.RecordRequestEvent) error { return nil }); err != nil {
+		t.Errorf("expected valid dashboard layout to pass, got: %v", err)
+	}
+	if !strings.Contains(validDashRec.GetString("layout"), `"layout":[]`) {
+		t.Errorf("expected normalized layout to be persisted on record, got: %s", validDashRec.GetString("layout"))
+	}
+
+	// 3d. Master-detail page validation against child collection relation target
+	mdParentCol := core.NewBaseCollection("md_parent")
+	mdParentCol.Fields.Add(&core.TextField{Name: "name"})
+	if err := app.Save(mdParentCol); err != nil {
+		t.Fatal(err)
+	}
+	mdChildCol := core.NewBaseCollection("md_child")
+	mdChildCol.Fields.Add(&core.TextField{Name: "title"})
+	mdChildCol.Fields.Add(&core.RelationField{Name: "parent_rel", CollectionId: mdParentCol.Id})
+	mdChildCol.Fields.Add(&core.RelationField{Name: "orders_rel", CollectionId: ordersCol.Id})
+	mdChildCol.Fields.Add(&core.TextField{Name: "not_a_rel"})
+	if err := app.Save(mdChildCol); err != nil {
+		t.Fatal(err)
+	}
+
+	// Master-detail: valid configuration pointing child relation to parent collection -> PASS
+	validMdRec := core.NewRecord(appPagesCol)
+	validMdRec.Set("page_id", "valid-md")
+	validMdRec.Set("name", "Valid Master Detail")
+	validMdRec.Set("view_type", "master_detail")
+	validMdRec.Set("collection", "md_parent")
+	validMdRec.Set("published", true)
+	validMdRec.Set("config", map[string]any{
+		"detailCollection": "md_child",
+		"relationField":    "parent_rel",
+	})
+	evValidMd := &core.RecordRequestEvent{
+		RequestEvent: &core.RequestEvent{App: app, Auth: owner},
+		Record:       validMdRec,
+	}
+	evValidMd.Collection = appPagesCol
+	if err := app.OnRecordCreateRequest("app_pages").Trigger(evValidMd, func(e *core.RecordRequestEvent) error { return nil }); err != nil {
+		t.Errorf("expected valid master-detail configuration to pass, got: %v", err)
+	}
+
+	// Master-detail: invalid child relation pointing to wrong collection (orders instead of md_parent) -> REJECT
+	wrongTargetMdRec := core.NewRecord(appPagesCol)
+	wrongTargetMdRec.Set("page_id", "wrong-target-md")
+	wrongTargetMdRec.Set("name", "Wrong Target MD")
+	wrongTargetMdRec.Set("view_type", "master_detail")
+	wrongTargetMdRec.Set("collection", "md_parent")
+	wrongTargetMdRec.Set("published", true)
+	wrongTargetMdRec.Set("config", map[string]any{
+		"detailCollection": "md_child",
+		"relationField":    "orders_rel",
+	})
+	evWrongTargetMd := &core.RecordRequestEvent{
+		RequestEvent: &core.RequestEvent{App: app, Auth: owner},
+		Record:       wrongTargetMdRec,
+	}
+	evWrongTargetMd.Collection = appPagesCol
+	if err := app.OnRecordCreateRequest("app_pages").Trigger(evWrongTargetMd, func(e *core.RecordRequestEvent) error { return nil }); err == nil {
+		t.Errorf("expected rejection for master-detail relation pointing to wrong collection, but got nil")
+	}
+
+	// Master-detail: child field is not a relation field -> REJECT
+	notRelMdRec := core.NewRecord(appPagesCol)
+	notRelMdRec.Set("page_id", "not-rel-md")
+	notRelMdRec.Set("name", "Not Rel MD")
+	notRelMdRec.Set("view_type", "master_detail")
+	notRelMdRec.Set("collection", "md_parent")
+	notRelMdRec.Set("published", true)
+	notRelMdRec.Set("config", map[string]any{
+		"detailCollection": "md_child",
+		"relationField":    "not_a_rel",
+	})
+	evNotRelMd := &core.RecordRequestEvent{
+		RequestEvent: &core.RequestEvent{App: app, Auth: owner},
+		Record:       notRelMdRec,
+	}
+	evNotRelMd.Collection = appPagesCol
+	if err := app.OnRecordCreateRequest("app_pages").Trigger(evNotRelMd, func(e *core.RecordRequestEvent) error { return nil }); err == nil {
+		t.Errorf("expected rejection for master-detail relation field that is not a relation type, but got nil")
+	}
+
+	// 3e. Direct workspace_modules mutation protection
+	wsModCol, err := app.FindCollectionByNameOrId("workspace_modules")
+	if err == nil && wsModCol != nil {
+		// Attempt direct creation of managed module customer_job_tracking -> MUST BE BLOCKED
+		managedModRec := core.NewRecord(wsModCol)
+		managedModRec.Set("module_id", "customer_job_tracking")
+		managedModRec.Set("enabled", true)
+		managedModRec.Set("version", "1.0.0")
+		managedModRec.Set("mapping", map[string]any{})
+		evManagedModCreate := &core.RecordRequestEvent{
+			RequestEvent: &core.RequestEvent{App: app, Auth: owner},
+			Record:       managedModRec,
+		}
+		evManagedModCreate.Collection = wsModCol
+		if err := app.OnRecordCreateRequest("workspace_modules").Trigger(evManagedModCreate, func(e *core.RecordRequestEvent) error { return nil }); err == nil {
+			t.Errorf("security violation: direct creation of managed module 'customer_job_tracking' was allowed via records API")
+		}
+
+		// Direct creation of unmanaged custom module by owner -> ALLOWED
+		unmanagedModRec := core.NewRecord(wsModCol)
+		unmanagedModRec.Set("module_id", "custom_module_xyz")
+		unmanagedModRec.Set("enabled", true)
+		unmanagedModRec.Set("version", "1.0.0")
+		unmanagedModRec.Set("mapping", map[string]any{})
+		evUnmanagedModCreate := &core.RecordRequestEvent{
+			RequestEvent: &core.RequestEvent{App: app, Auth: owner},
+			Record:       unmanagedModRec,
+		}
+		evUnmanagedModCreate.Collection = wsModCol
+		if err := app.OnRecordCreateRequest("workspace_modules").Trigger(evUnmanagedModCreate, func(e *core.RecordRequestEvent) error { return nil }); err != nil {
+			t.Errorf("expected direct creation of unmanaged module by owner to succeed, got: %v", err)
+		}
+
+		// Direct creation of unmanaged custom module by regular member -> BLOCKED (403)
+		evMemberModCreate := &core.RecordRequestEvent{
+			RequestEvent: &core.RequestEvent{App: app, Auth: member},
+			Record:       unmanagedModRec,
+		}
+		evMemberModCreate.Collection = wsModCol
+		if err := app.OnRecordCreateRequest("workspace_modules").Trigger(evMemberModCreate, func(e *core.RecordRequestEvent) error { return nil }); err == nil {
+			t.Errorf("security violation: regular member was allowed to create workspace_modules record")
+		}
+
+		// 3f. Rename / Update protection on managed modules in workspace_modules
+		// Seed an installed customer_job_tracking record in the database
+		installedManaged := core.NewRecord(wsModCol)
+		installedManaged.Set("module_id", "customer_job_tracking")
+		installedManaged.Set("enabled", true)
+		installedManaged.Set("version", "1.0.0")
+		installedManaged.Set("mapping", map[string]any{"customers": "customers"})
+		if err := app.Save(installedManaged); err != nil {
+			t.Fatal(err)
+		}
+
+		// Attempt updating installed managed module by renaming module_id to unmanaged -> MUST BE REJECTED
+		renameAttempt := core.NewRecord(wsModCol)
+		renameAttempt.Id = installedManaged.Id
+		renameAttempt.Set("module_id", "unmanaged_renamed_id")
+		renameAttempt.Set("enabled", false)
+		renameAttempt.Set("version", "1.0.0")
+		renameAttempt.Set("mapping", map[string]any{"customers": "customers"})
+		evRename := &core.RecordRequestEvent{
+			RequestEvent: &core.RequestEvent{App: app, Auth: owner},
+			Record:       renameAttempt,
+		}
+		evRename.Collection = wsModCol
+		if err := app.OnRecordUpdateRequest("workspace_modules").Trigger(evRename, func(e *core.RecordRequestEvent) error { return nil }); err == nil {
+			t.Errorf("security violation: renaming managed module to bypass guards was allowed")
+		}
+
+		// Attempt updating other fields on installed managed module directly -> MUST BE REJECTED
+		directUpdateAttempt := core.NewRecord(wsModCol)
+		directUpdateAttempt.Id = installedManaged.Id
+		directUpdateAttempt.Set("module_id", "customer_job_tracking")
+		directUpdateAttempt.Set("enabled", false)
+		directUpdateAttempt.Set("version", "1.0.0")
+		directUpdateAttempt.Set("mapping", map[string]any{"customers": "customers"})
+		evDirectUpdate := &core.RecordRequestEvent{
+			RequestEvent: &core.RequestEvent{App: app, Auth: owner},
+			Record:       directUpdateAttempt,
+		}
+		evDirectUpdate.Collection = wsModCol
+		if err := app.OnRecordUpdateRequest("workspace_modules").Trigger(evDirectUpdate, func(e *core.RecordRequestEvent) error { return nil }); err == nil {
+			t.Errorf("security violation: direct update of managed module was allowed")
+		}
+
+		// Attempt direct deletion of installed managed module -> MUST BE REJECTED
+		evDeleteManaged := &core.RecordRequestEvent{
+			RequestEvent: &core.RequestEvent{App: app, Auth: owner},
+			Record:       installedManaged,
+		}
+		evDeleteManaged.Collection = wsModCol
+		if err := app.OnRecordDeleteRequest("workspace_modules").Trigger(evDeleteManaged, func(e *core.RecordRequestEvent) error { return nil }); err == nil {
+			t.Errorf("security violation: direct deletion of managed module was allowed")
+		}
+	}
+
+	// 3g. File download enforcement (Lattice dataset permissions and assigned-record scoping)
+	contractsCol := core.NewBaseCollection("contracts")
+	contractsCol.Fields.Add(&core.TextField{Name: "title"})
+	contractsCol.Fields.Add(&core.TextField{Name: "owner_user"})
+	contractsCol.Fields.Add(&core.FileField{Name: "pdf", Protected: true})
+	// Simulate an imported collection that had a public ViewRule
+	broadRule := "@request.auth.id != ''"
+	contractsCol.ViewRule = &broadRule
+	if err := app.Save(contractsCol); err != nil {
+		t.Fatal(err)
+	}
+
+	// Register schema definition for contracts with assignee_field = "owner_user"
+	schemaDefRec := core.NewRecord(schemaDefsCol)
+	schemaDefRec.Set("schema_id", "contracts")
+	schemaDefRec.Set("name", "Contracts")
+	schemaDefRec.Set("assignee_field", "owner_user")
+	schemaDefRec.Set("fields", []any{
+		map[string]any{"name": "title", "type": "text"},
+		map[string]any{"name": "pdf", "type": "file"},
+	})
+	if err := app.Save(schemaDefRec); err != nil {
+		t.Fatal(err)
+	}
+
+	// Create member User A and User B
+	userA := core.NewRecord(usersCol)
+	userA.Set("email", "usera_files@example.com")
+	userA.Set("role", authz.RoleMember)
+	userA.Set("permissions", map[string]any{
+		"contracts": map[string]any{"read": true, "scope": "assigned"},
+	})
+	userA.SetPassword("Password123!")
+	if err := app.Save(userA); err != nil {
+		t.Fatal(err)
+	}
+
+	userB := core.NewRecord(usersCol)
+	userB.Set("email", "userb_files@example.com")
+	userB.Set("role", authz.RoleMember)
+	userB.Set("permissions", map[string]any{
+		"contracts": map[string]any{"read": true, "scope": "assigned"},
+	})
+	userB.SetPassword("Password123!")
+	if err := app.Save(userB); err != nil {
+		t.Fatal(err)
+	}
+
+	// Seed record 1 (assigned to User A) and record 2 (assigned to User B)
+	contractRec1 := core.NewRecord(contractsCol)
+	contractRec1.Set("title", "Contract 1")
+	contractRec1.Set("owner_user", userA.Id)
+	contractRec1.Set("pdf", "doc1.pdf")
+	if err := app.SaveNoValidate(contractRec1); err != nil {
+		t.Fatal(err)
+	}
+
+	contractRec2 := core.NewRecord(contractsCol)
+	contractRec2.Set("title", "Contract 2")
+	contractRec2.Set("owner_user", userB.Id)
+	contractRec2.Set("pdf", "doc2.pdf")
+	if err := app.SaveNoValidate(contractRec2); err != nil {
+		t.Fatal(err)
+	}
+
+	triggerFileDownload := func(authRec *core.Record, rec *core.Record) error {
+		req := &core.RequestEvent{
+			App:  app,
+			Auth: authRec,
+		}
+		ev := &core.FileDownloadRequestEvent{
+			RequestEvent: req,
+			Collection:   contractsCol,
+			Record:       rec,
+			FileField:    contractsCol.Fields.GetByName("pdf").(*core.FileField),
+		}
+		return app.OnFileDownloadRequest().Trigger(ev, func(e *core.FileDownloadRequestEvent) error {
+			return nil
+		})
+	}
+
+	// 1. Unauthenticated download: MUST BE DENIED
+	if err := triggerFileDownload(nil, contractRec1); err == nil {
+		t.Errorf("security violation: unauthenticated file download was allowed on business dataset")
+	}
+
+	// 2. User A downloads their own assigned record: MUST BE ALLOWED
+	if err := triggerFileDownload(userA, contractRec1); err != nil {
+		t.Errorf("expected User A to be allowed to download their assigned file, got: %v", err)
+	}
+
+	// 3. User A downloads User B's record (assigned scope): MUST BE DENIED
+	if err := triggerFileDownload(userA, contractRec2); err == nil {
+		t.Errorf("security violation: User A was allowed to download User B's file with assigned scope")
+	}
+
+	// 4. User without read permission: MUST BE DENIED
+	userNoRead := core.NewRecord(usersCol)
+	userNoRead.Set("email", "noread_files@example.com")
+	userNoRead.Set("role", authz.RoleMember)
+	userNoRead.Set("permissions", map[string]any{
+		"contracts": map[string]any{"read": false, "scope": "all"},
+	})
+	userNoRead.SetPassword("Password123!")
+	if err := app.Save(userNoRead); err != nil {
+		t.Fatal(err)
+	}
+	if err := triggerFileDownload(userNoRead, contractRec1); err == nil {
+		t.Errorf("security violation: user without read permission was allowed to download file")
+	}
+
+	// 5. Admin downloads any record: MUST BE ALLOWED
+	if err := triggerFileDownload(admin, contractRec1); err != nil {
+		t.Errorf("expected admin to download file, got: %v", err)
+	}
+	if err := triggerFileDownload(admin, contractRec2); err != nil {
+		t.Errorf("expected admin to download file, got: %v", err)
+	}
+
+	// 6. Fail-closed: Assigned-scope download when schema metadata is MISSING
+	reportsCol := core.NewBaseCollection("reports")
+	reportsCol.Fields.Add(&core.TextField{Name: "title"})
+	reportsCol.Fields.Add(&core.FileField{Name: "pdf", Protected: true})
+	reportsCol.ViewRule = &broadRule
+	if err := app.Save(reportsCol); err != nil {
+		t.Fatal(err)
+	}
+
+	reportRec := core.NewRecord(reportsCol)
+	reportRec.Set("title", "Report 1")
+	reportRec.Set("pdf", "report1.pdf")
+	if err := app.SaveNoValidate(reportRec); err != nil {
+		t.Fatal(err)
+	}
+
+	userAssignedReports := core.NewRecord(usersCol)
+	userAssignedReports.Set("email", "assigned_reports@example.com")
+	userAssignedReports.Set("role", authz.RoleMember)
+	userAssignedReports.Set("permissions", map[string]any{
+		"reports": map[string]any{"read": true, "scope": "assigned"},
+	})
+	userAssignedReports.SetPassword("Password123!")
+	if err := app.Save(userAssignedReports); err != nil {
+		t.Fatal(err)
+	}
+
+	triggerReportDownload := func(authRec *core.Record, rec *core.Record) error {
+		req := &core.RequestEvent{App: app, Auth: authRec}
+		var ff *core.FileField
+		if reportsCol.Fields.GetByName("pdf") != nil {
+			ff = reportsCol.Fields.GetByName("pdf").(*core.FileField)
+		}
+		ev := &core.FileDownloadRequestEvent{
+			RequestEvent: req,
+			Collection:   reportsCol,
+			Record:       rec,
+			FileField:    ff,
+		}
+		return app.OnFileDownloadRequest().Trigger(ev, func(e *core.FileDownloadRequestEvent) error { return nil })
+	}
+
+	// Missing metadata: MUST FAIL CLOSED (404 / error)
+	if err := triggerReportDownload(userAssignedReports, reportRec); err == nil {
+		t.Errorf("security violation: assigned scope member was allowed to download file when schema metadata is missing")
+	}
+
+	// 7. Fail-closed: Assigned-scope download when schema metadata has empty assignee_field
+	invoicesCol := core.NewBaseCollection("invoices")
+	invoicesCol.Fields.Add(&core.TextField{Name: "title"})
+	invoicesCol.Fields.Add(&core.FileField{Name: "pdf", Protected: true})
+	invoicesCol.ViewRule = &broadRule
+	if err := app.Save(invoicesCol); err != nil {
+		t.Fatal(err)
+	}
+
+	invoiceRec := core.NewRecord(invoicesCol)
+	invoiceRec.Set("title", "Invoice 1")
+	invoiceRec.Set("pdf", "inv1.pdf")
+	if err := app.SaveNoValidate(invoiceRec); err != nil {
+		t.Fatal(err)
+	}
+
+	schemaDefInvoice := core.NewRecord(schemaDefsCol)
+	schemaDefInvoice.Set("schema_id", "invoices")
+	schemaDefInvoice.Set("name", "Invoices")
+	schemaDefInvoice.Set("assignee_field", "") // EMPTY assignee_field
+	schemaDefInvoice.Set("fields", []any{map[string]any{"name": "title", "type": "text"}})
+	if err := app.Save(schemaDefInvoice); err != nil {
+		t.Fatal(err)
+	}
+
+	userAssignedInvoices := core.NewRecord(usersCol)
+	userAssignedInvoices.Set("email", "assigned_invoices@example.com")
+	userAssignedInvoices.Set("role", authz.RoleMember)
+	userAssignedInvoices.Set("permissions", map[string]any{
+		"invoices": map[string]any{"read": true, "scope": "assigned"},
+	})
+	userAssignedInvoices.SetPassword("Password123!")
+	if err := app.Save(userAssignedInvoices); err != nil {
+		t.Fatal(err)
+	}
+
+	triggerInvoiceDownload := func(authRec *core.Record, rec *core.Record) error {
+		req := &core.RequestEvent{App: app, Auth: authRec}
+		var ff *core.FileField
+		if invoicesCol.Fields.GetByName("pdf") != nil {
+			ff = invoicesCol.Fields.GetByName("pdf").(*core.FileField)
+		}
+		ev := &core.FileDownloadRequestEvent{
+			RequestEvent: req,
+			Collection:   invoicesCol,
+			Record:       rec,
+			FileField:    ff,
+		}
+		return app.OnFileDownloadRequest().Trigger(ev, func(e *core.FileDownloadRequestEvent) error { return nil })
+	}
+
+	// Empty assignee_field in metadata: MUST FAIL CLOSED (404 / error)
+	if err := triggerInvoiceDownload(userAssignedInvoices, invoiceRec); err == nil {
+		t.Errorf("security violation: assigned scope member was allowed to download file when assignee_field is empty")
+	}
+
+	// 8. Fail-closed: nil record passed
+	if err := triggerFileDownload(userA, nil); err == nil {
+		t.Errorf("security violation: assigned scope download succeeded with nil record")
+	}
+
+	// 4. Dataset-aware visibility on app_pages:
+	// Member has no read permission on orders. List and view must hide page.
+	memberNoPerm := core.NewRecord(usersCol)
+	memberNoPerm.Set("email", "noperm@example.com")
+	memberNoPerm.Set("role", authz.RoleMember)
+	memberNoPerm.Set("permissions", map[string]any{
+		"orders": map[string]any{"read": false, "scope": "all"},
+	})
+	memberNoPerm.SetPassword("Password123!")
+	if err := app.Save(memberNoPerm); err != nil {
+		t.Fatal(err)
+	}
+
+	evList := &core.RecordsListRequestEvent{
+		RequestEvent: &core.RequestEvent{App: app, Auth: memberNoPerm},
+		Collection:   appPagesCol,
+		Records:      []*core.Record{pageRec},
+	}
+	if err := app.OnRecordsListRequest("app_pages").Trigger(evList, func(e *core.RecordsListRequestEvent) error {
+		if len(e.Records) != 0 {
+			t.Errorf("security violation: member with read:false on orders saw page in list")
+		}
+		return nil
+	}); err != nil {
+		t.Fatalf("unexpected error on list trigger: %v", err)
+	}
+
+	evView := &core.RecordRequestEvent{
+		RequestEvent: &core.RequestEvent{App: app, Auth: memberNoPerm},
+		Record:       pageRec,
+	}
+	evView.Collection = appPagesCol
+	if err := app.OnRecordViewRequest("app_pages").Trigger(evView, func(e *core.RecordRequestEvent) error {
+		return nil
+	}); err == nil {
+		t.Errorf("security violation: member with read:false on orders was allowed to view page")
+	}
+
+	evEnrich := &core.RecordEnrichEvent{
+		App:         app,
+		Record:      pageRec,
+		RequestInfo: &core.RequestInfo{Auth: memberNoPerm},
+	}
+	if err := app.OnRecordEnrich("app_pages").Trigger(evEnrich, func(e *core.RecordEnrichEvent) error {
+		return nil
+	}); err == nil {
+		t.Errorf("security violation: enrich succeeded for member without dataset permission (would leak over realtime)")
 	}
 
 	// ==========================================
@@ -1597,6 +2177,75 @@ func TestPageAndSchemaAdministrationAuthorization(t *testing.T) {
 	if err := triggerCreateDash(disabledOwner); err == nil {
 		t.Errorf("security violation: disabled owner was allowed to create dashboard")
 	}
+
+	// Verify revision starts at 1 on creation
+	if dashRec.GetInt("revision") != 1 {
+		t.Errorf("expected new dashboard to have revision 1, got %d", dashRec.GetInt("revision"))
+	}
+	if err := app.Save(dashRec); err != nil {
+		t.Fatalf("failed to save test dashboard record: %v", err)
+	}
+
+	// Concurrency control on dashboard updates:
+	// 1. Missing expected_revision -> 400 Bad Request
+	evNoRev := &core.RecordRequestEvent{
+		RequestEvent: &core.RequestEvent{App: app, Auth: owner},
+		Record:       dashRec,
+	}
+	evNoRev.Collection = dashboardsCol
+	if err := app.OnRecordUpdateRequest("dashboards").Trigger(evNoRev, func(e *core.RecordRequestEvent) error { return nil }); err == nil {
+		t.Errorf("expected update without expected_revision to fail")
+	}
+
+	// 2. Mismatched expected_revision -> 409 Conflict
+	evMismatch := &core.RecordRequestEvent{
+		RequestEvent: &core.RequestEvent{App: app, Auth: owner},
+		Record:       dashRec,
+	}
+	evMismatch.Collection = dashboardsCol
+	evMismatch.Set("expected_revision", 99)
+	err = app.OnRecordUpdateRequest("dashboards").Trigger(evMismatch, func(e *core.RecordRequestEvent) error { return nil })
+	if err == nil {
+		t.Errorf("expected mismatched expected_revision to fail with conflict")
+	} else {
+		var apiErr *router.ApiError
+		if errors.As(err, &apiErr) && apiErr.Status != 409 {
+			t.Errorf("expected HTTP 409 Conflict, got status %d", apiErr.Status)
+		}
+	}
+
+	// 3. Matching expected_revision (1) -> succeeds and revision advances to 2
+	evMatching := &core.RecordRequestEvent{
+		RequestEvent: &core.RequestEvent{App: app, Auth: owner},
+		Record:       dashRec,
+	}
+	evMatching.Collection = dashboardsCol
+	evMatching.Set("expected_revision", 1)
+	if err := app.OnRecordUpdateRequest("dashboards").Trigger(evMatching, func(e *core.RecordRequestEvent) error {
+		return app.Save(e.Record)
+	}); err != nil {
+		t.Fatalf("expected update with matching expected_revision=1 to succeed, got: %v", err)
+	}
+	if dashRec.GetInt("revision") != 2 {
+		t.Errorf("expected revision to advance to 2, got %d", dashRec.GetInt("revision"))
+	}
+
+	// 4. Concurrent write with stale revision (1) -> fails with 409 Conflict
+	evStale := &core.RecordRequestEvent{
+		RequestEvent: &core.RequestEvent{App: app, Auth: admin},
+		Record:       dashRec,
+	}
+	evStale.Collection = dashboardsCol
+	evStale.Set("expected_revision", 1)
+	err = app.OnRecordUpdateRequest("dashboards").Trigger(evStale, func(e *core.RecordRequestEvent) error { return nil })
+	if err == nil {
+		t.Errorf("expected concurrent update with stale revision to fail with 409 Conflict")
+	} else {
+		var apiErr *router.ApiError
+		if errors.As(err, &apiErr) && apiErr.Status != 409 {
+			t.Errorf("expected HTTP 409 Conflict, got status %d", apiErr.Status)
+		}
+	}
 }
 
 func TestValidateAssignedScopePermissions_MalformedPermissions(t *testing.T) {
@@ -1697,6 +2346,169 @@ func TestAcceptInvitation_RevokedDuringRace(t *testing.T) {
 	foundUser, _ := app.FindFirstRecordByFilter("users", "email = {:email}", map[string]any{"email": "invitee_race@example.com"})
 	if foundUser != nil {
 		t.Fatal("expected no user account to be created for revoked invitation")
+	}
+}
+
+// TestDashboardRevisionHook_SuperuserWriteAdvancesRevision verifies that
+// RegisterDashboardRevisionHook enforces revision advancement at the model layer,
+// closing the superuser bypass path in OnRecordUpdateRequest.
+//
+// Scenario:
+//  1. Admin creates a dashboard (revision=1).
+//  2. A superuser directly saves the record (bypassing OnRecordUpdateRequest).
+//     The revision must advance to 2 via the OnRecordUpdate hook.
+//  3. An admin who held the stale expected_revision=1 now submits an update via
+//     OnRecordUpdateRequest.  It must be rejected with a 409 Conflict because the
+//     server revision is now 2.
+//  4. An admin who submits with the correct expected_revision=2 succeeds; revision
+//     advances to 3.
+func TestDashboardRevisionHook_SuperuserWriteAdvancesRevision(t *testing.T) {
+	app, err := tests.NewTestApp(t.TempDir())
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer app.Cleanup()
+
+	authz.RegisterAuthnHooks(app)
+	authz.RegisterDashboardRevisionHook(app)
+
+	usersCol, err := app.FindCollectionByNameOrId("users")
+	if err != nil {
+		t.Fatal(err)
+	}
+	dashboardsCol, err := app.FindCollectionByNameOrId("dashboards")
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	// --- Seed an admin user ---
+	admin := core.NewRecord(usersCol)
+	admin.Set("email", "sutest_admin@example.com")
+	admin.Set("role", authz.RoleAdmin)
+	admin.Set("disabled", false)
+	admin.SetPassword("Password123!")
+	if err := app.Save(admin); err != nil {
+		t.Fatal(err)
+	}
+
+	// --- Step 1: Create dashboard (revision must start at 1) ---
+	dashRec := core.NewRecord(dashboardsCol)
+	dashRec.Set("name", "superuser-test-dash")
+	dashRec.Set("layout", map[string]any{
+		"id":     "superuser-test-dash",
+		"name":   "Superuser Test",
+		"layout": []any{},
+	})
+
+	evCreate := &core.RecordRequestEvent{
+		RequestEvent: &core.RequestEvent{App: app, Auth: admin},
+		Record:       dashRec,
+	}
+	evCreate.Collection = dashboardsCol
+	if err := app.OnRecordCreateRequest("dashboards").Trigger(evCreate, func(e *core.RecordRequestEvent) error {
+		return app.Save(e.Record)
+	}); err != nil {
+		t.Fatalf("failed to create dashboard: %v", err)
+	}
+	if dashRec.GetInt("revision") != 1 {
+		t.Fatalf("expected revision=1 after create, got %d", dashRec.GetInt("revision"))
+	}
+	// Persist to DB for findById lookups in hooks
+	savedDash, err := app.FindRecordById("dashboards", dashRec.Id)
+	if err != nil || savedDash == nil {
+		t.Fatalf("dashboard not found in DB after create: %v", err)
+	}
+
+	// --- Step 2: Superuser directly saves the record (no HTTP hook) ---
+	// Simulate: load from DB, mutate, save directly (no OnRecordUpdateRequest).
+	superuserCopy, err := app.FindRecordById("dashboards", dashRec.Id)
+	if err != nil {
+		t.Fatalf("failed to reload dashboard for superuser save: %v", err)
+	}
+	superuserCopy.Set("layout", map[string]any{
+		"id":     "superuser-test-dash",
+		"name":   "Superuser Edit",
+		"layout": []any{},
+	})
+	// Save directly — bypasses OnRecordUpdateRequest, hits OnRecordUpdate hook.
+	if err := app.Save(superuserCopy); err != nil {
+		t.Fatalf("superuser direct save failed: %v", err)
+	}
+
+	// The OnRecordUpdate hook must have incremented revision from 1 → 2.
+	afterSuperuser, err := app.FindRecordById("dashboards", dashRec.Id)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if afterSuperuser.GetInt("revision") != 2 {
+		t.Errorf("expected revision=2 after superuser direct save, got %d", afterSuperuser.GetInt("revision"))
+	}
+
+	// --- Step 3: Admin with stale expected_revision=1 must be rejected (409) ---
+	staleAdminCopy, err := app.FindRecordById("dashboards", dashRec.Id)
+	if err != nil {
+		t.Fatal(err)
+	}
+	staleAdminCopy.Set("layout", map[string]any{
+		"id":     "superuser-test-dash",
+		"name":   "Admin Stale Draft",
+		"layout": []any{},
+	})
+	evStaleUpdate := &core.RecordRequestEvent{
+		RequestEvent: &core.RequestEvent{App: app, Auth: admin},
+		Record:       staleAdminCopy,
+	}
+	// Inject expected_revision=1 (stale) into request body via app.RequestInfo mock
+	evStaleUpdate.Collection = dashboardsCol
+	// We set the expected_revision field directly on the record to simulate what
+	// extractExpectedRevision reads from the request body.
+	staleAdminCopy.Set("expected_revision", 1)
+
+	var staleUpdateErr error
+	triggerErr := app.OnRecordUpdateRequest("dashboards").Trigger(evStaleUpdate, func(e *core.RecordRequestEvent) error {
+		return app.Save(e.Record)
+	})
+	staleUpdateErr = triggerErr
+
+	if staleUpdateErr == nil {
+		t.Error("expected stale admin update (expected_revision=1 vs server=2) to be rejected with 409, but it succeeded")
+	} else {
+		apiErr, ok := staleUpdateErr.(*apis.ApiError)
+		if !ok || apiErr.Status != 409 {
+			t.Errorf("expected 409 Conflict for stale revision, got: %v", staleUpdateErr)
+		}
+	}
+
+	// --- Step 4: Admin with correct expected_revision=2 must succeed ---
+	freshAdminCopy, err := app.FindRecordById("dashboards", dashRec.Id)
+	if err != nil {
+		t.Fatal(err)
+	}
+	freshAdminCopy.Set("layout", map[string]any{
+		"id":     "superuser-test-dash",
+		"name":   "Admin Fresh Edit",
+		"layout": []any{},
+	})
+	freshAdminCopy.Set("expected_revision", 2)
+
+	evFreshUpdate := &core.RecordRequestEvent{
+		RequestEvent: &core.RequestEvent{App: app, Auth: admin},
+		Record:       freshAdminCopy,
+	}
+	evFreshUpdate.Collection = dashboardsCol
+
+	if err := app.OnRecordUpdateRequest("dashboards").Trigger(evFreshUpdate, func(e *core.RecordRequestEvent) error {
+		return app.Save(e.Record)
+	}); err != nil {
+		t.Fatalf("expected admin update with correct expected_revision=2 to succeed, got: %v", err)
+	}
+
+	finalRec, err := app.FindRecordById("dashboards", dashRec.Id)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if finalRec.GetInt("revision") != 3 {
+		t.Errorf("expected revision=3 after successful admin update, got %d", finalRec.GetInt("revision"))
 	}
 }
 

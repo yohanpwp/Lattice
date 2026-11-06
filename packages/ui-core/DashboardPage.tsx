@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useState } from "react";
-import type { PageDefinition, SchemaDefinition } from "@lattice/types";
+import type { DashboardLayout, PageDefinition, SchemaDefinition } from "@lattice/types";
 import type { ProductClient } from "@lattice/sdk";
 import { loadDashboardLayout, type LoadedLayout } from "./dashboardLoader";
 import { Dashboard } from "./Dashboard";
@@ -10,6 +10,8 @@ import { CreateSchemaModal } from "./CreateSchemaModal";
 import { WorkspaceMembersModal } from "./WorkspaceMembersModal";
 import { WorkspaceModulesModal } from "./WorkspaceModulesModal";
 import { CustomerJobTrackingView } from "./CustomerJobTrackingView";
+import { PageEditorModal } from "./PageEditorModal";
+import { DashboardEditorModal } from "./DashboardEditorModal";
 
 interface DashboardPageProps {
   client: ProductClient;
@@ -31,6 +33,9 @@ export function DashboardPage({ client, onSignOut, onChangeWorkspace }: Dashboar
   const [createSchemaModalOpen, setCreateSchemaModalOpen] = useState(false);
   const [membersModalOpen, setMembersModalOpen] = useState(false);
   const [modulesModalOpen, setModulesModalOpen] = useState(false);
+  const [pageEditorOpen, setPageEditorOpen] = useState(false);
+  const [editingPage, setEditingPage] = useState<PageDefinition | null>(null);
+  const [dashboardEditorOpen, setDashboardEditorOpen] = useState(false);
 
   const fetchSchemas = useCallback(async () => {
     try {
@@ -59,6 +64,47 @@ export function DashboardPage({ client, onSignOut, onChangeWorkspace }: Dashboar
       // Fallback gracefully if app_pages collection does not exist or user offline
     }
   }, [client]);
+
+  const handleSavePage = useCallback(
+    async (pageDef: PageDefinition) => {
+      const existing = pages.find((p) => p.page_id === pageDef.page_id);
+      if (existing) {
+        await client.updatePage(pageDef.page_id, pageDef);
+      } else {
+        await client.createPage(pageDef);
+      }
+      await fetchPages();
+      setActiveTab(pageDef.page_id);
+    },
+    [client, pages, fetchPages]
+  );
+
+  const handleDeletePage = useCallback(
+    async (pageId: string) => {
+      await client.deletePage(pageId);
+      await fetchPages();
+      setActiveTab("dashboard");
+    },
+    [client, fetchPages]
+  );
+
+  const handleDeleteSchema = useCallback(
+    async (schemaId: string) => {
+      await client.deleteSchema(schemaId);
+      await fetchSchemas();
+      await fetchPages();
+      setActiveTab("dashboard");
+    },
+    [client, fetchSchemas, fetchPages]
+  );
+
+  const handleSaveDashboard = useCallback(
+    async (layout: DashboardLayout, options?: { expectedRevision?: number }) => {
+      const saved = await client.saveDashboardLayout(layout, "main", options);
+      setLoaded({ layout: saved, source: "saved", revision: saved.revision });
+    },
+    [client]
+  );
 
   const fetchDisabledModules = useCallback(async () => {
     try {
@@ -103,6 +149,20 @@ export function DashboardPage({ client, onSignOut, onChangeWorkspace }: Dashboar
       })
       .catch(() => {});
 
+    // Subscribe to realtime updates on dashboards collection for multi-session sync
+    client
+      .collection("dashboards")
+      .subscribe("*", () => {
+        if (!unsubscribed) {
+          loadDashboardLayout(client, client.config.collections).then((result) => {
+            if (!unsubscribed) {
+              setLoaded(result);
+            }
+          });
+        }
+      })
+      .catch(() => {});
+
     // Subscribe to realtime updates on workspace modules
     const unsubModules = client.subscribeWorkspaceModules(() => {
       if (!unsubscribed) {
@@ -116,6 +176,9 @@ export function DashboardPage({ client, onSignOut, onChangeWorkspace }: Dashboar
       unsubscribed = true;
       try {
         client.collection("app_pages").unsubscribe("*").catch(() => {});
+      } catch {}
+      try {
+        client.collection("dashboards").unsubscribe("*").catch(() => {});
       } catch {}
       unsubModules();
     };
@@ -223,6 +286,11 @@ export function DashboardPage({ client, onSignOut, onChangeWorkspace }: Dashboar
         onSelectTab={setActiveTab}
         canCreateSchema={isOwnerOrAdmin}
         onCreateSchemaClick={() => setCreateSchemaModalOpen(true)}
+        canCreatePage={isOwnerOrAdmin}
+        onCreatePageClick={() => {
+          setEditingPage(null);
+          setPageEditorOpen(true);
+        }}
         showDashboard={isDashboardEnabled}
         showCustomerJobTracking={isCustomerJobTrackingEnabled}
       />
@@ -234,6 +302,17 @@ export function DashboardPage({ client, onSignOut, onChangeWorkspace }: Dashboar
 
         {activeTab === "dashboard" && (
           <>
+            {isOwnerOrAdmin && loaded && (
+              <div style={{ display: "flex", justifyContent: "flex-end", marginBottom: "0.75rem" }}>
+                <button
+                  type="button"
+                  className="lattice-btn-secondary"
+                  onClick={() => setDashboardEditorOpen(true)}
+                >
+                  ⚙️ Customize Dashboard
+                </button>
+              </div>
+            )}
             {!loaded && <p className="yp-muted">Loading dashboard…</p>}
             {loaded?.warning && (
               <p className="app-notice" role="status">
@@ -259,7 +338,15 @@ export function DashboardPage({ client, onSignOut, onChangeWorkspace }: Dashboar
         )}
 
         {activeTab !== "dashboard" && activeTab !== "customer_job_tracking" && selectedPage && (
-          <DynamicPageView client={client} page={selectedPage} schemas={schemas} />
+          <DynamicPageView
+            client={client}
+            page={selectedPage}
+            schemas={schemas}
+            onEditPage={(p) => {
+              setEditingPage(p);
+              setPageEditorOpen(true);
+            }}
+          />
         )}
 
         {activeTab !== "dashboard" && activeTab !== "customer_job_tracking" && !selectedPage && selectedSchema && (
@@ -267,7 +354,9 @@ export function DashboardPage({ client, onSignOut, onChangeWorkspace }: Dashboar
             client={client}
             schema={selectedSchema}
             schemas={schemas}
+            pages={pages}
             onSchemaUpdated={handleSchemaUpdated}
+            onDeleteSchema={handleDeleteSchema}
           />
         )}
 
@@ -296,6 +385,30 @@ export function DashboardPage({ client, onSignOut, onChangeWorkspace }: Dashboar
           await fetchSchemas();
           setActiveTab(def.schema_id);
         }}
+      />
+
+      <PageEditorModal
+        isOpen={pageEditorOpen}
+        onClose={() => {
+          setPageEditorOpen(false);
+          setEditingPage(null);
+        }}
+        client={client}
+        schemas={schemas}
+        page={editingPage}
+        onSave={handleSavePage}
+        onDelete={handleDeletePage}
+      />
+
+      <DashboardEditorModal
+        isOpen={dashboardEditorOpen}
+        onClose={() => setDashboardEditorOpen(false)}
+        client={client}
+        schemas={schemas}
+        currentLayout={loaded?.layout || { id: "main", name: "Workspace Overview", layout: [] }}
+        currentRevision={loaded?.source === "saved" ? (loaded?.revision ?? 1) : 0}
+        dashboardName="main"
+        onSave={handleSaveDashboard}
       />
 
       <WorkspaceMembersModal

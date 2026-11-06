@@ -26,4 +26,6 @@ export * from "./DynamicPageView";
 export * from "./TableView";
 export * from "./KanbanView";
 export * from "./MasterDetailView";
+export * from "./PageEditorModal";
+export * from "./DashboardEditorModal";
 export * from "@lattice/types";

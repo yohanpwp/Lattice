@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import type { FieldDefinition, SchemaDefinition } from "@lattice/types";
+import type { FieldDefinition, PageDefinition, SchemaDefinition } from "@lattice/types";
 import type { ProductClient } from "@lattice/sdk";
 import { SchemaRecordModal } from "./SchemaRecordModal";
 import { ConfirmModal } from "./ConfirmModal";
@@ -8,7 +8,9 @@ export interface SchemaViewProps {
   client: ProductClient;
   schema: SchemaDefinition;
   schemas?: SchemaDefinition[];
+  pages?: PageDefinition[];
   onSchemaUpdated?: (updated: SchemaDefinition) => void;
+  onDeleteSchema?: (schemaId: string) => Promise<void>;
 }
 
 interface AddFieldModalProps {
@@ -224,8 +226,11 @@ function AddFieldModal({ isOpen, onClose, onAdd, existingFieldNames }: AddFieldM
   );
 }
 
-export function SchemaView({ client, schema, schemas, onSchemaUpdated }: SchemaViewProps) {
+export function SchemaView({ client, schema, schemas, pages, onSchemaUpdated, onDeleteSchema }: SchemaViewProps) {
   const [currentSchema, setCurrentSchema] = useState<SchemaDefinition>(schema);
+  const [deleteSchemaModalOpen, setDeleteSchemaModalOpen] = useState(false);
+  const [deleteConfirmationInput, setDeleteConfirmationInput] = useState("");
+  const [deletingSchema, setDeletingSchema] = useState(false);
   useEffect(() => {
     setCurrentSchema(schema);
   }, [schema]);
@@ -464,6 +469,21 @@ export function SchemaView({ client, schema, schemas, onSchemaUpdated }: SchemaV
             </button>
           )}
 
+          {client.isOwnerOrAdmin && onDeleteSchema && (
+            <button
+              type="button"
+              className="lattice-btn-table-danger"
+              style={{ padding: "0.4rem 0.75rem", borderRadius: "4px" }}
+              onClick={() => {
+                setDeleteConfirmationInput("");
+                setDeleteSchemaModalOpen(true);
+              }}
+              title="Delete this dataset and all its records"
+            >
+              🗑️ Delete Dataset
+            </button>
+          )}
+
           {canCreate && (
             <button
               type="button"
@@ -550,7 +570,7 @@ export function SchemaView({ client, schema, schemas, onSchemaUpdated }: SchemaV
                 return (
                   <tr key={itemId}>
                     {displayFields.map((field) => (
-                      <td key={field.name}>{renderCellValue(item[field.name], field)}</td>
+                      <td key={field.name}>{renderCellValue(item[field.name], field, client, item)}</td>
                     ))}
                     {hasActions && (
                       <td style={{ textAlign: "right" }}>
@@ -637,11 +657,163 @@ export function SchemaView({ client, schema, schemas, onSchemaUpdated }: SchemaV
         onAdd={handleAddField}
         existingFieldNames={(currentSchema.fields || []).map((f) => f.name)}
       />
+
+      {deleteSchemaModalOpen && (
+        <div className="lattice-modal-overlay" role="dialog" aria-modal="true">
+          <div className="lattice-modal-dialog">
+            <header className="lattice-modal-header">
+              <h2>Confirm Dataset Deletion</h2>
+              <button
+                type="button"
+                className="lattice-modal-close"
+                onClick={() => setDeleteSchemaModalOpen(false)}
+                aria-label="Close"
+              >
+                ✕
+              </button>
+            </header>
+
+            <div style={{ margin: "1rem 0" }}>
+              <p style={{ color: "var(--yp-danger, #ef4444)", fontWeight: "bold" }}>
+                Warning: Deleting dataset "{currentSchema.name}" ({currentSchema.schema_id}) will permanently drop the collection and delete all {totalItems} records. This action cannot be undone.
+              </p>
+
+              {pages && pages.filter((p) => p.collection === currentSchema.schema_id).length > 0 && (
+                <div className="lattice-alert-error" style={{ margin: "1rem 0" }}>
+                  <strong>Dependent Pages:</strong> The following pages reference this dataset and will lose their data source:
+                  <ul style={{ margin: "0.5rem 0 0 1.25rem" }}>
+                    {pages
+                      .filter((p) => p.collection === currentSchema.schema_id)
+                      .map((p) => (
+                        <li key={p.page_id}>
+                          {p.name} (<code>{p.page_id}</code>)
+                        </li>
+                      ))}
+                  </ul>
+                </div>
+              )}
+
+              <p style={{ marginTop: "1rem" }}>
+                To confirm deletion, please type the dataset identifier <code>{currentSchema.schema_id}</code> below:
+              </p>
+              <input
+                type="text"
+                className="lattice-input"
+                style={{ marginTop: "0.5rem" }}
+                placeholder={`Type "${currentSchema.schema_id}" to confirm`}
+                value={deleteConfirmationInput}
+                onChange={(e) => setDeleteConfirmationInput(e.target.value)}
+              />
+            </div>
+
+            <footer className="lattice-modal-footer">
+              <button
+                type="button"
+                className="lattice-btn-secondary"
+                onClick={() => setDeleteSchemaModalOpen(false)}
+                disabled={deletingSchema}
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                className="lattice-btn-danger"
+                disabled={deleteConfirmationInput.trim() !== currentSchema.schema_id || deletingSchema}
+                onClick={async () => {
+                  if (deleteConfirmationInput.trim() !== currentSchema.schema_id || !onDeleteSchema) return;
+                  setDeletingSchema(true);
+                  try {
+                    await onDeleteSchema(currentSchema.schema_id);
+                    setDeleteSchemaModalOpen(false);
+                  } catch (err: unknown) {
+                    setError(err instanceof Error ? err.message : "Failed to delete schema");
+                  } finally {
+                    setDeletingSchema(false);
+                  }
+                }}
+              >
+                {deletingSchema ? "Deleting Dataset…" : "Delete Dataset Permanently"}
+              </button>
+            </footer>
+          </div>
+        </div>
+      )}
     </section>
   );
 }
 
-function renderCellValue(value: unknown, field: FieldDefinition) {
+export function FileCell({
+  client,
+  record,
+  filename,
+}: {
+  client?: ProductClient;
+  record?: Record<string, unknown>;
+  filename: string;
+}) {
+  const [downloading, setDownloading] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  const handleDownload = async (e: React.MouseEvent) => {
+    e.preventDefault();
+    if (!client?.pb || !record) return;
+    setDownloading(true);
+    setError(null);
+    try {
+      const token = await client.pb.files.getToken();
+      const url = client.pb.files.getURL(record, filename, { token });
+      const a = document.createElement("a");
+      a.href = url;
+      a.download = filename;
+      a.target = "_blank";
+      document.body.appendChild(a);
+      a.click();
+      document.body.removeChild(a);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Failed to download file");
+    } finally {
+      setDownloading(false);
+    }
+  };
+
+  return (
+    <span className="lattice-file-cell">
+      <button
+        type="button"
+        className="lattice-btn-link lattice-file-download-btn"
+        onClick={handleDownload}
+        disabled={downloading}
+        title={error || `Download ${filename}`}
+        style={{
+          background: "none",
+          border: "none",
+          padding: 0,
+          cursor: "pointer",
+          color: "inherit",
+          font: "inherit",
+          textDecoration: "underline",
+        }}
+      >
+        📎 {filename} {downloading ? "…" : "⬇"}
+      </button>
+      {error && (
+        <span
+          className="lattice-text-error"
+          style={{ fontSize: "0.75rem", display: "block", color: "var(--lattice-danger, red)" }}
+        >
+          {error}
+        </span>
+      )}
+    </span>
+  );
+}
+
+function renderCellValue(
+  value: unknown,
+  field: FieldDefinition,
+  client?: ProductClient,
+  record?: Record<string, unknown>,
+) {
   if (value === null || value === undefined || value === "") {
     return <span className="lattice-cell-null">—</span>;
   }
@@ -663,6 +835,9 @@ function renderCellValue(value: unknown, field: FieldDefinition) {
   }
 
   if (field.type === "file") {
+    if (client?.pb && record) {
+      return <FileCell client={client} record={record} filename={String(value)} />;
+    }
     return <span className="lattice-badge lattice-badge--pill">📎 {String(value)}</span>;
   }
 

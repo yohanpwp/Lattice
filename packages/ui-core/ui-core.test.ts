@@ -34,12 +34,18 @@ import {
   KanbanView,
   MasterDetailView,
   SchemaView,
+  FileCell,
   WorkspaceSetupForm,
   AcceptInviteForm,
   WorkspaceMembersModal,
   WorkspaceModulesModal,
   CustomerJobTrackingSetupModal,
   CustomerJobTrackingView,
+  PageEditorModal,
+  DashboardEditorModal,
+  isDashboardDraftDirty,
+  dashboardEditorDraftReducer,
+  type DashboardEditorDraftState,
   jobModalDraftReducer,
   buildJobCreatePayload,
   type JobModalDraftState,
@@ -50,7 +56,7 @@ import {
   DashboardPage,
   type DataClient,
 } from "./index";
-import type { SchemaDefinition, PageDefinition } from "@lattice/types";
+import type { SchemaDefinition, PageDefinition, DashboardLayout } from "@lattice/types";
 import { createMemoryStorage } from "@lattice/sdk";
 
 describe("workspace URL normalization and storage", () => {
@@ -171,7 +177,7 @@ describe("formatting and column helpers", () => {
     expect(rowLabel({ title: "My Title", id: "123" })).toBe("My Title");
     expect(rowLabel({ label: "My Label", id: "123" })).toBe("My Label");
     expect(rowLabel({ id: "123" })).toBe("123");
-    expect(rowLabel({})).toBe("—");
+    expect(rowLabel({})).toBe("â€”");
   });
 });
 
@@ -338,9 +344,9 @@ describe("generated validators", () => {
 describe("schema navigation and validation", () => {
   const sampleSchema: SchemaDefinition = {
     schema_id: "inventory",
-    name: "คลังสินค้า",
+    name: "à¸„à¸¥à¸±à¸‡à¸ªà¸´à¸™à¸„à¹‰à¸²",
     description: "Warehouse inventory stock",
-    icon: "📦",
+    icon: "ðŸ“¦",
     fields: [
       { name: "sku", label: "SKU Code", type: "text", required: true },
       { name: "stock", label: "In Stock", type: "number", required: true },
@@ -374,7 +380,7 @@ describe("schema navigation and validation", () => {
       name: "Inventory Board",
       view_type: "kanban",
       collection: "inventory",
-      icon: "📌",
+      icon: "ðŸ“Œ",
     };
 
     const html = renderToString(
@@ -388,9 +394,9 @@ describe("schema navigation and validation", () => {
 
     expect(html).toContain("Dashboard Overview");
     expect(html).toContain("Inventory Board");
-    expect(html).toContain("📌");
-    expect(html).toContain("คลังสินค้า");
-    expect(html).toContain("📦");
+    expect(html).toContain("ðŸ“Œ");
+    expect(html).toContain("à¸„à¸¥à¸±à¸‡à¸ªà¸´à¸™à¸„à¹‰à¸²");
+    expect(html).toContain("ðŸ“¦");
     // Webview navigation must NOT have + New Schema or + New Page buttons
     expect(html).not.toContain("+ New Schema");
     expect(html).not.toContain("+ New Page");
@@ -799,13 +805,13 @@ describe("schema navigation and validation", () => {
       {
         id: "dashboard",
         name: "Dashboard & Analytics",
-        icon: "📊",
+        icon: "ðŸ“Š",
         enabled: true,
       },
       {
         id: "customers",
         name: "Customers Directory",
-        icon: "👥",
+        icon: "ðŸ‘¥",
         dataset_id: "customers",
         page_ids: ["cust_table"],
         enabled: true,
@@ -813,7 +819,7 @@ describe("schema navigation and validation", () => {
       {
         id: "feature_billing",
         name: "Feature: Billing",
-        icon: "⚡",
+        icon: "âš¡",
         feature_flag: "billing",
         enabled: false,
       },
@@ -839,7 +845,7 @@ describe("schema navigation and validation", () => {
 
     expect(html).toContain("Workspace Modules &amp; Capabilities");
     expect(html).toContain("Total Modules");
-    expect(html).toContain("Search modules by name, dataset, or tag…");
+    expect(html).toContain("Search modules by name, dataset, or tagâ€¦");
     expect(html).toContain("Datasets");
     expect(html).toContain("Features");
     expect(html).toContain("Close");
@@ -862,14 +868,14 @@ describe("schema navigation and validation", () => {
       {
         id: "customer_job_tracking",
         name: "Customer & Job Tracking",
-        icon: "💼",
+        icon: "ðŸ’¼",
         enabled: true,
         compatible: true,
       },
       {
         id: "future_module",
         name: "Future Module V2",
-        icon: "🚀",
+        icon: "ðŸš€",
         enabled: false,
         compatible: false,
         compatibility_error: 'incompatible module version: version "2.0.0" is not supported (supported major version: 1)',
@@ -877,7 +883,7 @@ describe("schema navigation and validation", () => {
       {
         id: "standard_disabled_mod",
         name: "Inventory Tracking",
-        icon: "📦",
+        icon: "ðŸ“¦",
         enabled: false,
         compatible: true,
       },
@@ -896,7 +902,7 @@ describe("schema navigation and validation", () => {
     // Summary metrics include Incompatible count
     expect(cleanHtml).toContain("Incompatible");
     expect(cleanHtml).toContain("lattice-status-badge--incompatible");
-    expect(cleanHtml).toContain("✕</span> Incompatible");
+    expect(cleanHtml).toContain("âœ•</span> Incompatible");
 
     // Incompatible module action button is disabled and labeled Incompatible, NOT Enable
     expect(cleanHtml).toContain('disabled=""');
@@ -942,7 +948,7 @@ describe("schema navigation and validation", () => {
     );
 
     expect(html).toContain("Customers");
-    expect(html).toContain("records…");
+    expect(html).toContain("recordsâ€¦");
     expect(html).toContain("+ Add Field");
     expect(html).toContain("+ Add Record");
   });
@@ -1045,7 +1051,7 @@ describe("schema navigation and validation", () => {
       }),
     );
 
-    expect(html).toContain("Search customers…");
+    expect(html).toContain("Search customersâ€¦");
     expect(html).toContain("Dataset");
     expect(html).toContain("Enter ID manually");
     expect(html).toContain("Customer");
@@ -1123,8 +1129,8 @@ describe("schema navigation and validation", () => {
     expect(cleanHtml).toContain("2. Job Dataset");
     expect(cleanHtml).toContain("Work Orders (work_orders)");
     expect(cleanHtml).toContain("Summary (text)");
-    expect(cleanHtml).toContain("Client → client_directory");
-    expect(cleanHtml).toContain("Assigned Tech → users");
+    expect(cleanHtml).toContain("Client â†’ client_directory");
+    expect(cleanHtml).toContain("Assigned Tech â†’ users");
     expect(cleanHtml).toContain("Team Access &amp; Isolation Rules");
   });
 
@@ -1166,13 +1172,13 @@ describe("schema navigation and validation", () => {
     );
 
     const cleanHtml = html.replace(/<!-- -->/g, "");
-    expect(cleanHtml).toContain("⚠️ Setup Interrupted");
+    expect(cleanHtml).toContain("âš ï¸ Setup Interrupted");
     expect(cleanHtml).toContain("Why setup stopped:");
     expect(cleanHtml).toContain("Failed to provision jobs collection: disk error");
     expect(cleanHtml).toContain("Datasets preserved in workspace:");
     expect(cleanHtml).toContain("<code>customers</code> (created and ready)");
     expect(cleanHtml).toContain("Safe to retry:</strong> Existing datasets will be reused without creating duplicates.");
-    expect(cleanHtml).toContain("🔄 Retry Setup");
+    expect(cleanHtml).toContain("ðŸ”„ Retry Setup");
   });
 
   it("renders CustomerJobTrackingSetupModal recovery card on rule protection failure carrying created datasets and blocked operations", () => {
@@ -1194,7 +1200,7 @@ describe("schema navigation and validation", () => {
     );
 
     const cleanHtml = html.replace(/<!-- -->/g, "");
-    expect(cleanHtml).toContain("⚠️ Setup Interrupted");
+    expect(cleanHtml).toContain("âš ï¸ Setup Interrupted");
     expect(cleanHtml).toContain("Why setup stopped:");
     expect(cleanHtml).toContain("incompatible rules on customers dataset");
     expect(cleanHtml).toContain("Datasets preserved in workspace:");
@@ -1202,7 +1208,7 @@ describe("schema navigation and validation", () => {
     expect(cleanHtml).toContain("<code>jobs</code> (created and ready)");
     expect(cleanHtml).toContain("Blocked operations:</strong> view, list");
     expect(cleanHtml).toContain("Safe to retry:</strong> Existing datasets will be reused without creating duplicates.");
-    expect(cleanHtml).toContain("🔄 Retry Setup");
+    expect(cleanHtml).toContain("ðŸ”„ Retry Setup");
   });
 
   it("renders CustomerJobTrackingSetupModal recovery card on installation save failure carrying created datasets", () => {
@@ -1223,14 +1229,14 @@ describe("schema navigation and validation", () => {
     );
 
     const cleanHtml = html.replace(/<!-- -->/g, "");
-    expect(cleanHtml).toContain("⚠️ Setup Interrupted");
+    expect(cleanHtml).toContain("âš ï¸ Setup Interrupted");
     expect(cleanHtml).toContain("Why setup stopped:");
     expect(cleanHtml).toContain("failed to save installation record to workspace_modules");
     expect(cleanHtml).toContain("Datasets preserved in workspace:");
     expect(cleanHtml).toContain("<code>customers</code> (created and ready)");
     expect(cleanHtml).toContain("<code>jobs</code> (created and ready)");
     expect(cleanHtml).toContain("Safe to retry:</strong> Existing datasets will be reused without creating duplicates.");
-    expect(cleanHtml).toContain("🔄 Retry Setup");
+    expect(cleanHtml).toContain("ðŸ”„ Retry Setup");
   });
 
   it("renders SchemaNavigation with Jobs & Customers tab when enabled", () => {
@@ -1459,7 +1465,7 @@ describe("schema navigation and validation", () => {
     );
 
     const cleanHtml = html.replace(/<!-- -->/g, "");
-    expect(cleanHtml).toContain("Search jobs by title…");
+    expect(cleanHtml).toContain("Search jobs by titleâ€¦");
     expect(cleanHtml).toContain("Showing page 1 of 1 (0 total jobs)");
     expect(cleanHtml).toContain("Previous");
     expect(cleanHtml).toContain("Next");
@@ -1506,8 +1512,8 @@ describe("schema navigation and validation", () => {
     );
 
     const cleanHtml = html.replace(/<!-- -->/g, "");
-    expect(cleanHtml).toContain('placeholder="Search customers by name…"');
-    expect(cleanHtml).not.toContain('placeholder="Search customers by name or phone…"');
+    expect(cleanHtml).toContain('placeholder="Search customers by nameâ€¦"');
+    expect(cleanHtml).not.toContain('placeholder="Search customers by name or phoneâ€¦"');
     expect(cleanHtml).not.toContain("Phone (Optional)");
   });
 
@@ -1719,9 +1725,9 @@ describe("schema navigation and validation", () => {
 
     const cleanHtml = html.replace(/<!-- -->/g, "");
     expect(cleanHtml).toContain("Emergency Pipe Repair");
-    expect(cleanHtml).toContain("👤 Apex Hospital");
+    expect(cleanHtml).toContain("ðŸ‘¤ Apex Hospital");
     expect(cleanHtml).toContain('href="tel:+1-555-0199"');
-    expect(cleanHtml).toContain("📞 +1-555-0199");
+    expect(cleanHtml).toContain("ðŸ“ž +1-555-0199");
   });
 
   it("CustomerJobTrackingView renders empty state and loading state correctly", () => {
@@ -1743,7 +1749,7 @@ describe("schema navigation and validation", () => {
         initialLoadingJobs: true,
       }),
     );
-    expect(loadingHtml).toContain("Loading jobs…");
+    expect(loadingHtml).toContain("Loading jobsâ€¦");
 
     // Empty state
     const emptyHtml = renderToString(
@@ -1878,7 +1884,7 @@ describe("schema navigation and validation", () => {
     // Check job card renders boolean as "Yes" and file with paperclip icon
     expect(cleanHtml).toContain("Is Urgent:</strong> Yes");
     expect(cleanHtml).toContain("Priority:</strong> High");
-    expect(cleanHtml).toContain("Work Order PDF:</strong> 📎 work_order_123.pdf");
+    expect(cleanHtml).toContain("Work Order PDF:</strong> ðŸ“Ž work_order_123.pdf");
   });
 
   it("clears draft values and attached files when create-job modal is cancelled/closed and reopened, preventing leaked attachments on next submission", () => {
@@ -2009,3 +2015,401 @@ describe("schema navigation and validation", () => {
   });
 });
 
+describe("Admin Workspace: Page & Dashboard Management", () => {
+  const sampleSchema: SchemaDefinition = {
+    schema_id: "projects",
+    name: "Projects",
+    fields: [
+      { name: "title", label: "Title", type: "text", required: true },
+      { name: "budget", label: "Budget", type: "number" },
+      { name: "status", label: "Status", type: "select", options: ["Active", "Completed"] },
+    ],
+  };
+
+  const mockClient = {
+    isOwnerOrAdmin: true,
+    hasDatasetPermission: () => true,
+    collection: () => ({
+      getList: async () => ({ items: [], totalPages: 1, totalItems: 0 }),
+      subscribe: () => Promise.resolve(() => {}),
+      unsubscribe: () => Promise.resolve(),
+    }),
+  } as unknown as Parameters<typeof PageEditorModal>[0]["client"];
+
+  it("renders PageEditorModal for creating and editing pages with publishing toggle", () => {
+    // 1. Create mode
+    const createHtml = renderToString(
+      React.createElement(PageEditorModal, {
+        isOpen: true,
+        onClose: () => {},
+        client: mockClient,
+        schemas: [sampleSchema],
+        onSave: async () => {},
+      })
+    );
+    expect(createHtml).toContain("Create Custom Page");
+    expect(createHtml).toContain("Page Name");
+    expect(createHtml).toContain("Page Identifier (slug)");
+    expect(createHtml).toContain("Publish Page to Workspace");
+    expect(createHtml).toContain("Navigation Sort Order");
+
+    // 2. Edit mode
+    const editHtml = renderToString(
+      React.createElement(PageEditorModal, {
+        isOpen: true,
+        onClose: () => {},
+        client: mockClient,
+        schemas: [sampleSchema],
+        page: {
+          page_id: "projects-table",
+          name: "Projects Table",
+          view_type: "table",
+          collection: "projects",
+          published: false,
+          nav_order: 5,
+        },
+        onSave: async () => {},
+        onDelete: async () => {},
+      })
+    );
+    expect(editHtml).toContain("Edit Page: Projects Table");
+    expect(editHtml).toContain("Delete Page");
+  });
+
+  it("renders DashboardEditorModal with widget configuration and preview", () => {
+    const rawHtml = renderToString(
+      React.createElement(DashboardEditorModal, {
+        isOpen: true,
+        onClose: () => {},
+        client: mockClient,
+        schemas: [sampleSchema],
+        currentLayout: {
+          id: "main",
+          name: "Workspace Overview",
+          layout: [
+            {
+              id: "w1",
+              type: "kpi",
+              collection: "projects",
+              x: 0,
+              y: 0,
+              w: 4,
+              h: 2,
+              props: { metric: "count" },
+            },
+          ],
+        },
+        onSave: async () => {},
+      })
+    );
+    const html = rawHtml.replace(/<!-- -->/g, "");
+    expect(html).toContain("Customize Workspace Dashboard");
+    expect(html).toContain("Configure Widgets (1)");
+    expect(html).toContain("Preview Layout");
+    expect(html).toContain("KPI Summary Card");
+    expect(html).toContain("Recent Records Table");
+  });
+
+  it("DashboardEditorModal preserves draft on live updates and displays conflict resolution controls", () => {
+    const initialLayout = {
+      id: "main",
+      name: "Workspace Overview",
+      layout: [
+        {
+          id: "w1",
+          type: "kpi" as const,
+          collection: "projects",
+          x: 0,
+          y: 0,
+          w: 4,
+          h: 2,
+          props: { metric: "count" },
+        },
+      ],
+    };
+
+    const serverUpdatedLayout = {
+      id: "main",
+      name: "Workspace Overview - Remote Admin Update",
+      layout: [
+        {
+          id: "w1",
+          type: "kpi" as const,
+          collection: "projects",
+          x: 0,
+          y: 0,
+          w: 6,
+          h: 3,
+          props: { metric: "count" },
+        },
+        {
+          id: "w2",
+          type: "table" as const,
+          collection: "projects",
+          x: 6,
+          y: 0,
+          w: 6,
+          h: 4,
+          props: { limit: 5 },
+        },
+      ],
+    };
+
+    // 1. Reducer test: Not dirty -> incoming update seamlessly replaces layout
+    let state: DashboardEditorDraftState = dashboardEditorDraftReducer(
+      {
+        baselineLayout: initialLayout,
+        layoutName: "Workspace Overview",
+        widgets: initialLayout.layout,
+        incomingConflict: null,
+      },
+      { type: "INCOMING_LAYOUT_UPDATE", incomingLayout: serverUpdatedLayout }
+    );
+    expect(state.incomingConflict).toBeNull();
+    expect(state.layoutName).toBe("Workspace Overview - Remote Admin Update");
+    expect(state.widgets.length).toBe(2);
+
+    // 2. Reducer test: Dirty draft -> incoming update triggers conflict and preserves user's draft
+    state = dashboardEditorDraftReducer(state, { type: "SET_NAME", name: "My Unsaved Custom Dashboard" });
+    expect(isDashboardDraftDirty(state.baselineLayout, state.layoutName, state.widgets)).toBe(true);
+
+    const concurrentServerLayout = {
+      id: "main",
+      name: "Third Party Saved Layout",
+      layout: [],
+    };
+    state = dashboardEditorDraftReducer(state, {
+      type: "INCOMING_LAYOUT_UPDATE",
+      incomingLayout: concurrentServerLayout,
+    });
+    // Draft name and widgets remain untouched
+    expect(state.layoutName).toBe("My Unsaved Custom Dashboard");
+    expect(state.widgets.length).toBe(2);
+    // Conflict is recorded
+    expect(state.incomingConflict).toEqual(concurrentServerLayout);
+
+    // 3. Reducer test: Keep My Draft updates baseline to acknowledged server version without changing user's draft
+    const keptState = dashboardEditorDraftReducer(state, { type: "RESOLVE_KEEP_DRAFT" });
+    expect(keptState.incomingConflict).toBeNull();
+    expect(keptState.layoutName).toBe("My Unsaved Custom Dashboard");
+    expect(keptState.baselineLayout).toEqual(concurrentServerLayout);
+
+    // Later edits with the same server layout active do NOT re-trigger the conflict
+    const stateEditedAfterKeep = dashboardEditorDraftReducer(keptState, {
+      type: "SET_NAME",
+      name: "My Unsaved Custom Dashboard - Later Modification",
+    });
+    const stateReevaluated = dashboardEditorDraftReducer(stateEditedAfterKeep, {
+      type: "INCOMING_LAYOUT_UPDATE",
+      incomingLayout: concurrentServerLayout,
+    });
+    expect(stateReevaluated.incomingConflict).toBeNull();
+
+    // A subsequent, different remote layout arriving later DOES trigger a new conflict
+    const newerServerLayout = {
+      id: "main",
+      name: "Fourth Version Remote",
+      layout: [],
+    };
+    const stateSubsequentConflict = dashboardEditorDraftReducer(stateReevaluated, {
+      type: "INCOMING_LAYOUT_UPDATE",
+      incomingLayout: newerServerLayout,
+    });
+    expect(stateSubsequentConflict.incomingConflict).toEqual(newerServerLayout);
+
+    // 4. Reducer test: Load Server Version overwrites with incoming layout
+    const loadedState = dashboardEditorDraftReducer(state, { type: "RESOLVE_LOAD_SERVER" });
+    expect(loadedState.incomingConflict).toBeNull();
+    expect(loadedState.layoutName).toBe("Third Party Saved Layout");
+    expect(loadedState.widgets.length).toBe(0);
+
+    // 5. Component render test: Render modal when incomingConflict is active
+    const conflictHtml = renderToString(
+      React.createElement(DashboardEditorModal, {
+        isOpen: true,
+        onClose: () => {},
+        client: mockClient,
+        schemas: [sampleSchema],
+        currentLayout: initialLayout,
+        initialIncomingConflict: concurrentServerLayout,
+        onSave: async () => {},
+      })
+    ).replace(/<!-- -->/g, "");
+
+    expect(conflictHtml).toContain("Live Update Detected:");
+    expect(conflictHtml).toContain("Another session saved changes to this dashboard layout. Your current draft is preserved.");
+    expect(conflictHtml).toContain("Load Server Version");
+    expect(conflictHtml).toContain("Keep My Draft");
+    expect(conflictHtml).toContain("Resolve live update above before saving.");
+    expect(conflictHtml).toMatch(/<button[^>]*disabled[^>]*>Save &amp; Publish Dashboard<\/button>/);
+  });
+
+  it("DashboardEditorModal passes expectedRevision on save and handles 409 conflict gracefully", async () => {
+    let passedOptions: { expectedRevision?: number } | undefined;
+    const savePromise = async (_layout: DashboardLayout, options?: { expectedRevision?: number }) => {
+      passedOptions = options;
+      const err = new Error("Conflict detected");
+      (err as any).status = 409;
+      throw err;
+    };
+
+    const initialLayout: DashboardLayout = {
+      id: "main",
+      name: "Initial Dashboard",
+      layout: [],
+    };
+
+    const html = renderToString(
+      React.createElement(DashboardEditorModal, {
+        isOpen: true,
+        onClose: () => {},
+        client: mockClient,
+        schemas: [sampleSchema],
+        currentLayout: initialLayout,
+        currentRevision: 3,
+        onSave: savePromise,
+      })
+    ).replace(/<!-- -->/g, "");
+
+    expect(html).toContain("Customize Workspace Dashboard");
+    expect(html).toContain("Initial Dashboard");
+  });
+
+  it("DashboardEditorModal resolves realtime conflict using incoming revision directly without spurious increment", async () => {
+    let savedExpectedRevision: number | undefined;
+    const savePromise = async (_layout: DashboardLayout, options?: { expectedRevision?: number }) => {
+      savedExpectedRevision = options?.expectedRevision;
+    };
+
+    const initialLayout: DashboardLayout = {
+      id: "main",
+      name: "My Unsaved Local Draft",
+      layout: [
+        {
+          id: "w1",
+          type: "table" as const,
+          collection: "orders",
+          x: 0,
+          y: 0,
+          w: 6,
+          h: 4,
+          props: {},
+        },
+      ],
+    };
+
+    const concurrentServerLayout: DashboardLayout = {
+      id: "main",
+      name: "Remote Concurrent Layout",
+      layout: [],
+    };
+
+    // Render modal with an initial incoming conflict carrying revision 2
+    const htmlWithConflict = renderToString(
+      React.createElement(DashboardEditorModal, {
+        isOpen: true,
+        onClose: () => {},
+        client: mockClient,
+        schemas: [sampleSchema],
+        currentLayout: initialLayout,
+        currentRevision: 1, // original baseline was 1
+        initialIncomingConflict: {
+          layout: concurrentServerLayout,
+          revision: 2, // server advanced to revision 2
+        },
+        onSave: savePromise,
+      })
+    ).replace(/<!-- -->/g, "");
+
+    expect(htmlWithConflict).toContain("Live Update Detected:");
+    expect(htmlWithConflict).toContain("Keep My Draft");
+    expect(htmlWithConflict).toContain("Load Server Version");
+  });
+
+  it("SchemaNavigation displays draft badges for unpublished pages and New Page action for admins", () => {
+    const publishedPage: PageDefinition = {
+      page_id: "p1",
+      name: "Public Page",
+      view_type: "table",
+      collection: "projects",
+      published: true,
+    };
+    const draftPage: PageDefinition = {
+      page_id: "p2",
+      name: "Draft Board",
+      view_type: "kanban",
+      collection: "projects",
+      published: false,
+    };
+
+    const html = renderToString(
+      React.createElement(SchemaNavigation, {
+        pages: [publishedPage, draftPage],
+        schemas: [sampleSchema],
+        activeTab: "p1",
+        onSelectTab: () => {},
+        canCreatePage: true,
+        onCreatePageClick: () => {},
+        canCreateSchema: true,
+        onCreateSchemaClick: () => {},
+      })
+    );
+    expect(html).toContain("Public Page");
+    expect(html).toContain("Draft Board");
+    expect(html).toContain("Draft");
+    expect(html).toContain("New Page");
+    expect(html).toContain("New Dataset");
+  });
+
+  it("SchemaView provides confirmed dataset deletion with dependent page warnings", () => {
+    const dependentPage: PageDefinition = {
+      page_id: "proj-page",
+      name: "Project Tracker",
+      view_type: "table",
+      collection: "projects",
+    };
+
+    const html = renderToString(
+      React.createElement(SchemaView, {
+        client: mockClient,
+        schema: sampleSchema,
+        schemas: [sampleSchema],
+        pages: [dependentPage],
+        onDeleteSchema: async () => {},
+      })
+    );
+    expect(html).toContain("Delete Dataset");
+  });
+
+  it("FileCell renders actionable file download trigger with filename and download icon", () => {
+    let tokenRequested = false;
+    let urlBuilt = false;
+    const mockFileClient = {
+      pb: {
+        files: {
+          getToken: async () => {
+            tokenRequested = true;
+            return "mock_file_token_xyz";
+          },
+          getURL: (record: Record<string, unknown>, filename: string, options?: { token?: string }) => {
+            urlBuilt = true;
+            expect(options?.token).toBe("mock_file_token_xyz");
+            return `/api/files/projects/${record.id}/${filename}?token=${options?.token}`;
+          },
+        },
+      },
+    } as unknown as Parameters<typeof FileCell>[0]["client"];
+
+    const html = renderToString(
+      React.createElement(FileCell, {
+        client: mockFileClient,
+        record: { id: "rec_123", collectionName: "projects" },
+        filename: "spec_sheet.pdf",
+      })
+    );
+
+    expect(html).toContain("spec_sheet.pdf");
+    expect(html).toContain("lattice-file-download-btn");
+    expect(html).toContain("â¬‡");
+  });
+});

@@ -8,10 +8,12 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"net/http"
 	"net/mail"
 	"os"
 	"path/filepath"
 	"reflect"
+	"strconv"
 	"strings"
 	"sync"
 	"time"
@@ -41,6 +43,29 @@ var (
 	ErrPermissionDenied      = errors.New("permission denied")
 	ErrInvalidInvitation     = errors.New("invitation is invalid, expired, or already accepted")
 )
+
+var (
+	managedModulesMu sync.RWMutex
+	managedModules   = map[string]bool{
+		"customer_job_tracking": true,
+	}
+
+	dashboardSyncMu sync.Mutex
+)
+
+// RegisterManagedModule registers a module identifier that cannot be directly modified via the generic records API.
+func RegisterManagedModule(id string) {
+	managedModulesMu.Lock()
+	defer managedModulesMu.Unlock()
+	managedModules[id] = true
+}
+
+// IsManagedModule returns whether the specified module ID is a protected managed module.
+func IsManagedModule(id string) bool {
+	managedModulesMu.RLock()
+	defer managedModulesMu.RUnlock()
+	return managedModules[id]
+}
 
 type DatasetPermission struct {
 	Read   bool   `json:"read"`
@@ -684,6 +709,41 @@ func ReissueInvitation(app core.App, caller *core.Record, id string) (string, *c
 	return newToken, inv, nil
 }
 
+// CheckActiveAccount returns an unauthorized error if the authenticated user account is disabled.
+func CheckActiveAccount(auth *core.Record) error {
+	if auth != nil && auth.GetBool("disabled") {
+		return apis.NewUnauthorizedError("Your account has been disabled.", nil)
+	}
+	return nil
+}
+
+// RegisterDashboardRevisionHook registers an OnRecordUpdate hook that atomically advances
+// the revision counter on every dashboard update, regardless of the caller (admin, owner,
+// or PocketBase superuser).  Keeping this at the persistence boundary means no write
+// path can bypass it.  The HTTP-layer OCC check in OnRecordUpdateRequest remains
+// responsible for validating expected_revision before the write reaches this hook.
+func RegisterDashboardRevisionHook(app core.App) {
+	app.OnRecordUpdate("dashboards").BindFunc(func(e *core.RecordEvent) error {
+		// Revision advancement: if the HTTP OCC hook already set a higher revision,
+		// use that value.  Otherwise (superuser / internal path that bypassed the HTTP
+		// hook), read the original value from the before-save snapshot and increment.
+		orig := e.Record.Original()
+		origRevision := 0
+		if orig != nil {
+			origRevision = orig.GetInt("revision")
+		}
+		if origRevision <= 0 {
+			origRevision = 1
+		}
+		currentRevision := e.Record.GetInt("revision")
+		if currentRevision <= origRevision {
+			// Not yet incremented — superuser or internal write; advance now.
+			e.Record.Set("revision", origRevision+1)
+		}
+		return e.Next()
+	})
+}
+
 // RegisterAuthnHooks registers server-side hooks enforcing RBAC, active account checks, and assigned record scoping.
 func RegisterAuthnHooks(app core.App) {
 	// 1. Reject disabled accounts on password login
@@ -724,12 +784,7 @@ func RegisterAuthnHooks(app core.App) {
 		return e.Next()
 	})
 
-	checkActiveAccount := func(auth *core.Record) error {
-		if auth != nil && auth.GetBool("disabled") {
-			return apis.NewUnauthorizedError("Your account has been disabled.", nil)
-		}
-		return nil
-	}
+	checkActiveAccount := CheckActiveAccount
 
 	// 4. Protect users collection mutations
 	app.OnRecordCreateRequest("users").BindFunc(func(e *core.RecordRequestEvent) error {
@@ -861,7 +916,8 @@ func RegisterAuthnHooks(app core.App) {
 		return e.Next()
 	})
 
-	// 5. Page and dashboard administration: owner and admin write only, active accounts only
+	// 5. Page and dashboard administration: owner and admin write only, active accounts only,
+	// with strict contract and reference validation
 	app.OnRecordCreateRequest("app_pages", "dashboards").BindFunc(func(e *core.RecordRequestEvent) error {
 		if err := checkActiveAccount(e.Auth); err != nil {
 			return err
@@ -875,6 +931,37 @@ func RegisterAuthnHooks(app core.App) {
 		if !IsOwnerOrAdmin(e.Auth) {
 			return apis.NewForbiddenError("Only workspace owners and admins can configure pages and dashboards.", nil)
 		}
+
+		if e.Record.Collection().Name == "app_pages" {
+			if err := validatePageRecord(app, e.Record); err != nil {
+				return apis.NewBadRequestError("Invalid page definition: "+err.Error(), err)
+			}
+		} else if e.Record.Collection().Name == "dashboards" {
+			dashboardSyncMu.Lock()
+			defer dashboardSyncMu.Unlock()
+
+			if err := validateDashboardRecord(app, e.Record); err != nil {
+				return apis.NewBadRequestError("Invalid dashboard layout: "+err.Error(), err)
+			}
+
+			// Atomic first-create check: ensure a dashboard with this name does not already exist
+			existing, err := app.FindFirstRecordByFilter("dashboards", "name = {:name}", map[string]any{
+				"name": e.Record.GetString("name"),
+			})
+			if err == nil && existing != nil {
+				return apis.NewApiError(
+					http.StatusConflict,
+					fmt.Sprintf("Dashboard %q already exists. Use update with expected_revision to modify it.", e.Record.GetString("name")),
+					nil,
+				)
+			}
+
+			if e.Record.GetInt("revision") <= 0 {
+				e.Record.Set("revision", 1)
+			}
+			return e.Next()
+		}
+
 		return e.Next()
 	})
 
@@ -890,6 +977,134 @@ func RegisterAuthnHooks(app core.App) {
 		}
 		if !IsOwnerOrAdmin(e.Auth) {
 			return apis.NewForbiddenError("Only workspace owners and admins can configure pages and dashboards.", nil)
+		}
+
+		if e.Record.Collection().Name == "app_pages" {
+			if err := validatePageRecord(app, e.Record); err != nil {
+				return apis.NewBadRequestError("Invalid page definition: "+err.Error(), err)
+			}
+		} else if e.Record.Collection().Name == "dashboards" {
+			dashboardSyncMu.Lock()
+			defer dashboardSyncMu.Unlock()
+
+			if err := validateDashboardRecord(app, e.Record); err != nil {
+				return apis.NewBadRequestError("Invalid dashboard layout: "+err.Error(), err)
+			}
+
+			// Atomic optimistic concurrency control for dashboards:
+			// Fetch original record from SQLite within the serialized section.
+			// NOTE: Revision advancement itself happens in RegisterDashboardRevisionHook
+			// (OnRecordSave), which fires for all write paths including superuser.
+			// This hook's responsibility is solely OCC validation for HTTP callers.
+			origRecord, err := app.FindRecordById("dashboards", e.Record.Id)
+			if err != nil || origRecord == nil {
+				return apis.NewNotFoundError("Dashboard record not found.", err)
+			}
+
+			origRevision := origRecord.GetInt("revision")
+			if origRevision <= 0 {
+				origRevision = 1
+			}
+
+			expectedRev, found := extractExpectedRevision(e)
+			if !found {
+				return apis.NewBadRequestError("expected_revision is required for dashboard updates to prevent silent write loss.", nil)
+			}
+
+			if expectedRev != int64(origRevision) {
+				return apis.NewApiError(
+					http.StatusConflict,
+					fmt.Sprintf("Dashboard layout conflict: current server revision is %d, but expected revision was %d.", origRevision, expectedRev),
+					nil,
+				)
+			}
+			// Revision advancement is delegated to RegisterDashboardRevisionHook.
+			return e.Next()
+		}
+
+		return e.Next()
+	})
+
+	// 5b. app_pages read paths: Dataset-aware visibility for authenticated members.
+	// Members only list/view published pages for datasets where they hold 'read' permission.
+	app.OnRecordsListRequest("app_pages").BindFunc(func(e *core.RecordsListRequestEvent) error {
+		if err := checkActiveAccount(e.Auth); err != nil {
+			return err
+		}
+		if e.HasSuperuserAuth() {
+			return e.Next()
+		}
+		if e.Auth == nil {
+			return apis.NewUnauthorizedError("Authentication required.", nil)
+		}
+		if IsOwnerOrAdmin(e.Auth) {
+			return e.Next()
+		}
+
+		filtered := make([]*core.Record, 0, len(e.Records))
+		filteredItems := make([]any, 0, len(e.Records))
+		for _, rec := range e.Records {
+			if !rec.GetBool("published") {
+				continue
+			}
+			targetCol := rec.GetString("collection")
+			if targetCol != "" && !CheckDatasetAction(e.Auth, targetCol, "read") {
+				continue
+			}
+			filtered = append(filtered, rec)
+			filteredItems = append(filteredItems, rec)
+		}
+		originalCount := len(e.Records)
+		e.Records = filtered
+		if e.Result != nil {
+			e.Result.Items = filteredItems
+			if len(filtered) < originalCount {
+				e.Result.TotalItems -= (originalCount - len(filtered))
+				if e.Result.TotalItems < 0 {
+					e.Result.TotalItems = 0
+				}
+			}
+		}
+		return e.Next()
+	})
+
+	app.OnRecordViewRequest("app_pages").BindFunc(func(e *core.RecordRequestEvent) error {
+		if err := checkActiveAccount(e.Auth); err != nil {
+			return err
+		}
+		if e.HasSuperuserAuth() {
+			return e.Next()
+		}
+		if e.Auth == nil {
+			return apis.NewUnauthorizedError("Authentication required.", nil)
+		}
+		if IsOwnerOrAdmin(e.Auth) {
+			return e.Next()
+		}
+
+		if !e.Record.GetBool("published") {
+			return apis.NewNotFoundError("Page not found.", nil)
+		}
+		targetCol := e.Record.GetString("collection")
+		if targetCol != "" && !CheckDatasetAction(e.Auth, targetCol, "read") {
+			return apis.NewNotFoundError("Page not found.", nil)
+		}
+		return e.Next()
+	})
+
+	app.OnRecordEnrich("app_pages").BindFunc(func(e *core.RecordEnrichEvent) error {
+		if e.RequestInfo == nil || e.RequestInfo.Auth == nil {
+			return e.Next()
+		}
+		if e.RequestInfo.HasSuperuserAuth() || IsOwnerOrAdmin(e.RequestInfo.Auth) {
+			return e.Next()
+		}
+		if !e.Record.GetBool("published") {
+			return apis.NewNotFoundError("Page not found.", nil)
+		}
+		targetCol := e.Record.GetString("collection")
+		if targetCol != "" && !CheckDatasetAction(e.RequestInfo.Auth, targetCol, "read") {
+			return apis.NewNotFoundError("Page not found.", nil)
 		}
 		return e.Next()
 	})
@@ -907,6 +1122,179 @@ func RegisterAuthnHooks(app core.App) {
 		if !IsOwnerOrAdmin(e.Auth) {
 			return apis.NewForbiddenError("Only workspace owners and admins can configure pages and dashboards.", nil)
 		}
+		return e.Next()
+	})
+
+	// 5c. workspace_modules protection: managed modules cannot be created, updated, or deleted directly via records API
+	validateWorkspaceModuleMutation := func(rec *core.Record) error {
+		if rec == nil {
+			return nil
+		}
+		modID := rec.GetString("module_id")
+		if modID == "" {
+			return apis.NewBadRequestError("module_id is required", nil)
+		}
+		if IsManagedModule(modID) {
+			return apis.NewBadRequestError(fmt.Sprintf("Managed module %q cannot be modified directly via the records API. Use /v1/workspace/modules.", modID), nil)
+		}
+		return nil
+	}
+
+	app.OnRecordCreateRequest("workspace_modules").BindFunc(func(e *core.RecordRequestEvent) error {
+		if err := checkActiveAccount(e.Auth); err != nil {
+			return err
+		}
+		if e.HasSuperuserAuth() {
+			return e.Next()
+		}
+		if e.Auth == nil {
+			return apis.NewUnauthorizedError("Authentication required.", nil)
+		}
+		if !IsOwnerOrAdmin(e.Auth) {
+			return apis.NewForbiddenError("Only workspace owners and admins can configure modules.", nil)
+		}
+		if err := validateWorkspaceModuleMutation(e.Record); err != nil {
+			return err
+		}
+		return e.Next()
+	})
+
+	app.OnRecordUpdateRequest("workspace_modules").BindFunc(func(e *core.RecordRequestEvent) error {
+		if err := checkActiveAccount(e.Auth); err != nil {
+			return err
+		}
+		if e.HasSuperuserAuth() {
+			return e.Next()
+		}
+		if e.Auth == nil {
+			return apis.NewUnauthorizedError("Authentication required.", nil)
+		}
+		if !IsOwnerOrAdmin(e.Auth) {
+			return apis.NewForbiddenError("Only workspace owners and admins can configure modules.", nil)
+		}
+
+		// Look up existing record in database before update
+		origRecord, err := app.FindRecordById("workspace_modules", e.Record.Id)
+		if err != nil || origRecord == nil {
+			return apis.NewNotFoundError("Module installation not found.", nil)
+		}
+
+		origModID := origRecord.GetString("module_id")
+		newModID := e.Record.GetString("module_id")
+
+		// 1. module_id is immutable on update to prevent renaming managed modules to bypass guards
+		if newModID != "" && newModID != origModID {
+			return apis.NewBadRequestError("module_id cannot be changed", nil)
+		}
+
+		// 2. Validate that neither original nor requested module_id targets a managed module
+		if IsManagedModule(origModID) || IsManagedModule(newModID) {
+			return apis.NewBadRequestError(fmt.Sprintf("Managed module %q cannot be modified directly via the records API. Use /v1/workspace/modules.", origModID), nil)
+		}
+
+		if err := validateWorkspaceModuleMutation(e.Record); err != nil {
+			return err
+		}
+		return e.Next()
+	})
+
+	app.OnRecordDeleteRequest("workspace_modules").BindFunc(func(e *core.RecordRequestEvent) error {
+		if err := checkActiveAccount(e.Auth); err != nil {
+			return err
+		}
+		if e.HasSuperuserAuth() {
+			return e.Next()
+		}
+		if e.Auth == nil {
+			return apis.NewUnauthorizedError("Authentication required.", nil)
+		}
+		if !IsOwnerOrAdmin(e.Auth) {
+			return apis.NewForbiddenError("Only workspace owners and admins can configure modules.", nil)
+		}
+
+		origRecord, err := app.FindRecordById("workspace_modules", e.Record.Id)
+		if err == nil && origRecord != nil {
+			origModID := origRecord.GetString("module_id")
+			if IsManagedModule(origModID) {
+				return apis.NewBadRequestError(fmt.Sprintf("Managed module %q cannot be deleted directly via the records API. Use /v1/workspace/modules.", origModID), nil)
+			}
+		}
+
+		if err := validateWorkspaceModuleMutation(e.Record); err != nil {
+			return err
+		}
+		return e.Next()
+	})
+
+	// 5d. File download protection: enforce Lattice permissions and assigned scope on all file requests
+	app.OnFileDownloadRequest().BindFunc(func(e *core.FileDownloadRequestEvent) error {
+		col := e.Collection
+		if col == nil && e.Record != nil {
+			col = e.Record.Collection()
+		}
+		if col == nil || col.System || strings.HasPrefix(col.Name, "_") || tenant.PlatformCollections[col.Name] {
+			return e.Next()
+		}
+
+		// Resolve the authenticating user (via ?token= file token, e.Auth, or Authorization header)
+		var auth *core.Record
+		if e.Request != nil && e.Request.URL != nil {
+			token := e.Request.URL.Query().Get("token")
+			if token != "" {
+				auth, _ = e.App.FindAuthRecordByToken(token, core.TokenTypeFile)
+			}
+		}
+		if auth == nil && e.Auth != nil {
+			auth = e.Auth
+		}
+		if auth == nil && e.Request != nil && e.Request.Header != nil {
+			if authHeader := e.Request.Header.Get("Authorization"); authHeader != "" {
+				authHeader = strings.TrimPrefix(authHeader, "Bearer ")
+				auth, _ = e.App.FindAuthRecordByToken(authHeader, core.TokenTypeFile)
+				if auth == nil {
+					auth, _ = e.App.FindAuthRecordByToken(authHeader, core.TokenTypeAuth)
+				}
+			}
+		}
+
+		// Unauthenticated access to business dataset files is strictly denied
+		if auth == nil {
+			return apis.NewNotFoundError("File not found.", nil)
+		}
+
+		if err := checkActiveAccount(auth); err != nil {
+			return apis.NewNotFoundError("File not found.", nil)
+		}
+
+		if auth.IsSuperuser() || IsOwnerOrAdmin(auth) {
+			return e.Next()
+		}
+
+		if auth.GetString("role") != RoleMember {
+			return apis.NewNotFoundError("File not found.", nil)
+		}
+
+		// Member must hold read permission on the dataset
+		if !CheckDatasetAction(auth, col.Name, "read") {
+			return apis.NewNotFoundError("File not found.", nil)
+		}
+
+		// Enforce assigned scope if configured (strictly fails closed if metadata or assignment is unavailable)
+		perms := GetUserPermissions(auth)
+		p, hasP := perms[col.Name]
+		if hasP && p.Scope == ScopeAssigned {
+			if e.Record == nil {
+				return apis.NewNotFoundError("File not found.", nil)
+			}
+			schemaDef, err := findSchemaDefinition(e.App, col.Name)
+			if err != nil || schemaDef == nil || schemaDef.AssigneeField == "" {
+				return apis.NewNotFoundError("File not found.", nil)
+			}
+			if e.Record.GetString(schemaDef.AssigneeField) != auth.Id {
+				return apis.NewNotFoundError("File not found.", nil)
+			}
+		}
+
 		return e.Next()
 	})
 
@@ -983,26 +1371,26 @@ func RegisterAuthnHooks(app core.App) {
 			return e.Next()
 		}
 
-		// Assigned scope filtering in list hook (enforces assigned scoping on broad or unmigrated rules)
+		// Assigned scope filtering in list hook (enforces assigned scoping on broad or unmigrated rules, fails closed)
 		if !IsOwnerOrAdmin(e.Auth) {
-			schemaDef, _ := findSchemaDefinition(app, e.Collection.Name)
-			if schemaDef != nil && schemaDef.AssigneeField != "" {
-				perms := GetUserPermissions(e.Auth)
-				p, hasP := perms[e.Collection.Name]
-				if hasP && p.Scope == ScopeAssigned {
-					filteredRecords := make([]*core.Record, 0, len(e.Records))
-					filteredItems := make([]any, 0, len(e.Records))
+			perms := GetUserPermissions(e.Auth)
+			p, hasP := perms[e.Collection.Name]
+			if hasP && p.Scope == ScopeAssigned {
+				schemaDef, _ := findSchemaDefinition(app, e.Collection.Name)
+				filteredRecords := make([]*core.Record, 0, len(e.Records))
+				filteredItems := make([]any, 0, len(e.Records))
+				if schemaDef != nil && schemaDef.AssigneeField != "" {
 					for _, rec := range e.Records {
 						if rec.GetString(schemaDef.AssigneeField) == e.Auth.Id {
 							filteredRecords = append(filteredRecords, rec)
 							filteredItems = append(filteredItems, rec)
 						}
 					}
-					e.Records = filteredRecords
-					if e.Result != nil {
-						e.Result.Items = filteredItems
-						e.Result.TotalItems = len(filteredRecords)
-					}
+				}
+				e.Records = filteredRecords
+				if e.Result != nil {
+					e.Result.Items = filteredItems
+					e.Result.TotalItems = len(filteredRecords)
 				}
 			}
 		}
@@ -1030,16 +1418,14 @@ func RegisterAuthnHooks(app core.App) {
 			return apis.NewNotFoundError("Record not found.", nil)
 		}
 
-		// Assigned scope check for view
+		// Assigned scope check for view (strictly fails closed)
 		if !IsOwnerOrAdmin(e.Auth) {
-			schemaDef, _ := findSchemaDefinition(app, colName)
-			if schemaDef != nil && schemaDef.AssigneeField != "" {
-				perms := GetUserPermissions(e.Auth)
-				p, hasP := perms[colName]
-				if hasP && p.Scope == ScopeAssigned {
-					if e.Record.GetString(schemaDef.AssigneeField) != e.Auth.Id {
-						return apis.NewNotFoundError("Record not found.", nil)
-					}
+			perms := GetUserPermissions(e.Auth)
+			p, hasP := perms[colName]
+			if hasP && p.Scope == ScopeAssigned {
+				schemaDef, err := findSchemaDefinition(app, colName)
+				if err != nil || schemaDef == nil || schemaDef.AssigneeField == "" || e.Record.GetString(schemaDef.AssigneeField) != e.Auth.Id {
+					return apis.NewNotFoundError("Record not found.", nil)
 				}
 			}
 		}
@@ -1107,21 +1493,22 @@ func RegisterAuthnHooks(app core.App) {
 				return apis.NewNotFoundError("Record not found.", nil)
 			}
 
-			schemaDef, _ := findSchemaDefinition(app, colName)
-			if schemaDef != nil && schemaDef.AssigneeField != "" {
-				perms := GetUserPermissions(e.Auth)
-				p, hasP := perms[colName]
-				if hasP && p.Scope == ScopeAssigned {
-					// 1. Original record MUST be assigned to the caller
-					if origRecord.GetString(schemaDef.AssigneeField) != e.Auth.Id {
-						return apis.NewNotFoundError("Record not found.", nil)
-					}
-					// 2. Member cannot reassign to someone else; preserve assignment if omitted or empty
-					if e.Record.GetString(schemaDef.AssigneeField) == "" {
-						e.Record.Set(schemaDef.AssigneeField, e.Auth.Id)
-					} else if e.Record.GetString(schemaDef.AssigneeField) != e.Auth.Id {
-						return apis.NewForbiddenError("You cannot change the assignment of this record.", nil)
-					}
+			perms := GetUserPermissions(e.Auth)
+			p, hasP := perms[colName]
+			if hasP && p.Scope == ScopeAssigned {
+				schemaDef, err := findSchemaDefinition(app, colName)
+				if err != nil || schemaDef == nil || schemaDef.AssigneeField == "" {
+					return apis.NewNotFoundError("Record not found.", nil)
+				}
+				// 1. Original record MUST be assigned to the caller
+				if origRecord.GetString(schemaDef.AssigneeField) != e.Auth.Id {
+					return apis.NewNotFoundError("Record not found.", nil)
+				}
+				// 2. Member cannot reassign to someone else; preserve assignment if omitted or empty
+				if e.Record.GetString(schemaDef.AssigneeField) == "" {
+					e.Record.Set(schemaDef.AssigneeField, e.Auth.Id)
+				} else if e.Record.GetString(schemaDef.AssigneeField) != e.Auth.Id {
+					return apis.NewForbiddenError("You cannot change the assignment of this record.", nil)
 				}
 			}
 		}
@@ -1156,14 +1543,15 @@ func RegisterAuthnHooks(app core.App) {
 				return apis.NewNotFoundError("Record not found.", nil)
 			}
 
-			schemaDef, _ := findSchemaDefinition(app, colName)
-			if schemaDef != nil && schemaDef.AssigneeField != "" {
-				perms := GetUserPermissions(e.Auth)
-				p, hasP := perms[colName]
-				if hasP && p.Scope == ScopeAssigned {
-					if origRecord.GetString(schemaDef.AssigneeField) != e.Auth.Id {
-						return apis.NewNotFoundError("Record not found.", nil)
-					}
+			perms := GetUserPermissions(e.Auth)
+			p, hasP := perms[colName]
+			if hasP && p.Scope == ScopeAssigned {
+				schemaDef, err := findSchemaDefinition(app, colName)
+				if err != nil || schemaDef == nil || schemaDef.AssigneeField == "" {
+					return apis.NewNotFoundError("Record not found.", nil)
+				}
+				if origRecord.GetString(schemaDef.AssigneeField) != e.Auth.Id {
+					return apis.NewNotFoundError("Record not found.", nil)
 				}
 			}
 		}
@@ -1200,4 +1588,331 @@ func findSchemaDefinition(app core.App, schemaID string) (*struct{ AssigneeField
 	}
 
 	return nil, errors.New("not found")
+}
+
+func parseJSONValue(val any) (any, error) {
+	if val == nil {
+		return map[string]any{}, nil
+	}
+	switch v := val.(type) {
+	case string:
+		if strings.TrimSpace(v) == "" {
+			return map[string]any{}, nil
+		}
+		var res any
+		if err := json.Unmarshal([]byte(v), &res); err != nil {
+			return nil, err
+		}
+		return res, nil
+	case []byte:
+		if len(v) == 0 {
+			return map[string]any{}, nil
+		}
+		var res any
+		if err := json.Unmarshal(v, &res); err != nil {
+			return nil, err
+		}
+		return res, nil
+	case types.JSONRaw:
+		if len(v) == 0 {
+			return map[string]any{}, nil
+		}
+		var res any
+		if err := json.Unmarshal([]byte(v), &res); err != nil {
+			return nil, err
+		}
+		return res, nil
+	default:
+		data, err := json.Marshal(v)
+		if err != nil {
+			return nil, err
+		}
+		var res any
+		if err := json.Unmarshal(data, &res); err != nil {
+			return nil, err
+		}
+		return res, nil
+	}
+}
+
+func validatePageRecord(app core.App, rec *core.Record) error {
+	parsedCfg, err := parseJSONValue(rec.Get("config"))
+	if err != nil {
+		return fmt.Errorf("invalid config JSON: %w", err)
+	}
+
+	doc := map[string]any{
+		"page_id":    rec.GetString("page_id"),
+		"name":       rec.GetString("name"),
+		"view_type":  rec.GetString("view_type"),
+		"collection": rec.GetString("collection"),
+		"published":  rec.GetBool("published"),
+		"nav_order":  rec.GetInt("nav_order"),
+		"config":     parsedCfg,
+	}
+	if rec.Id != "" {
+		doc["id"] = rec.Id
+	}
+	if desc := rec.GetString("description"); desc != "" {
+		doc["description"] = desc
+	}
+	if icon := rec.GetString("icon"); icon != "" {
+		doc["icon"] = icon
+	}
+
+	if err := tenant.ValidateContractDocument("PageDefinition", doc); err != nil {
+		return fmt.Errorf("contract validation failed: %w", err)
+	}
+
+	targetColName := rec.GetString("collection")
+	if tenant.PlatformCollections[targetColName] || strings.HasPrefix(targetColName, "_") {
+		return fmt.Errorf("cannot target reserved system collection %q", targetColName)
+	}
+	targetCol, err := app.FindCollectionByNameOrId(targetColName)
+	if err != nil || targetCol == nil {
+		return fmt.Errorf("referenced collection %q does not exist", targetColName)
+	}
+
+	cfgMap, _ := parsedCfg.(map[string]any)
+	viewType := rec.GetString("view_type")
+
+	switch viewType {
+	case "kanban":
+		groupByField, _ := cfgMap["groupByField"].(string)
+		if groupByField == "" {
+			return errors.New("kanban view requires 'groupByField' in config")
+		}
+		if targetCol.Fields.GetByName(groupByField) == nil {
+			return fmt.Errorf("groupByField %q does not exist in collection %q", groupByField, targetColName)
+		}
+		if cardFields, ok := cfgMap["cardFields"].([]any); ok {
+			for _, cf := range cardFields {
+				if cfStr, ok := cf.(string); ok && cfStr != "" {
+					if targetCol.Fields.GetByName(cfStr) == nil {
+						return fmt.Errorf("cardField %q does not exist in collection %q", cfStr, targetColName)
+					}
+				}
+			}
+		}
+	case "table":
+		if cols, ok := cfgMap["columns"].([]any); ok {
+			for _, c := range cols {
+				if cStr, ok := c.(string); ok && cStr != "" {
+					if targetCol.Fields.GetByName(cStr) == nil {
+						return fmt.Errorf("column %q does not exist in collection %q", cStr, targetColName)
+					}
+				}
+			}
+		}
+	case "master_detail":
+		detailColStr, _ := cfgMap["detailCollection"].(string)
+		if detailColStr == "" {
+			return errors.New("master_detail view requires 'detailCollection' in config")
+		}
+		if tenant.PlatformCollections[detailColStr] || strings.HasPrefix(detailColStr, "_") {
+			return fmt.Errorf("detailCollection cannot target reserved system collection %q", detailColStr)
+		}
+		detailCol, err := app.FindCollectionByNameOrId(detailColStr)
+		if err != nil || detailCol == nil {
+			return fmt.Errorf("detailCollection %q does not exist", detailColStr)
+		}
+
+		relFieldStr, _ := cfgMap["relationField"].(string)
+		if relFieldStr == "" {
+			return errors.New("master_detail view requires 'relationField' in config")
+		}
+		field := detailCol.Fields.GetByName(relFieldStr)
+		if field == nil {
+			return fmt.Errorf("relationField %q does not exist in child collection %q", relFieldStr, detailColStr)
+		}
+		relField, ok := field.(*core.RelationField)
+		if !ok {
+			return fmt.Errorf("relationField %q in child collection %q must be a relation field", relFieldStr, detailColStr)
+		}
+		if relField.CollectionId != targetCol.Id && relField.CollectionId != targetCol.Name {
+			return fmt.Errorf("relationField %q in child collection %q targets %q, expected parent collection %q", relFieldStr, detailColStr, relField.CollectionId, targetCol.Name)
+		}
+	}
+	return nil
+}
+
+func validateDashboardRecord(app core.App, rec *core.Record) error {
+	parsedLayout, err := parseJSONValue(rec.Get("layout"))
+	if err != nil {
+		return fmt.Errorf("invalid layout JSON: %w", err)
+	}
+
+	var fullDoc map[string]any
+	if lMap, ok := parsedLayout.(map[string]any); ok {
+		rawWidgets, hasLayout := lMap["layout"]
+		if !hasLayout || rawWidgets == nil {
+			return errors.New("dashboard layout object must contain a 'layout' array of widgets")
+		}
+		if _, isArr := rawWidgets.([]any); !isArr {
+			return errors.New("'layout' property must be an array of widgets")
+		}
+		fullDoc = lMap
+	} else if lArr, ok := parsedLayout.([]any); ok {
+		idVal := rec.Id
+		if idVal == "" {
+			idVal = rec.GetString("name")
+		}
+		fullDoc = map[string]any{
+			"id":     idVal,
+			"name":   rec.GetString("name"),
+			"layout": lArr,
+		}
+	} else {
+		return errors.New("layout must be a JSON object or array of widgets")
+	}
+
+	if fullDoc["id"] == "" || fullDoc["id"] == nil {
+		fullDoc["id"] = rec.GetString("name")
+		if fullDoc["id"] == "" {
+			fullDoc["id"] = "main"
+		}
+	}
+	if fullDoc["name"] == "" || fullDoc["name"] == nil {
+		fullDoc["name"] = rec.GetString("name")
+		if fullDoc["name"] == "" {
+			fullDoc["name"] = "main"
+		}
+	}
+
+	if err := tenant.ValidateContractDocument("DashboardLayout", fullDoc); err != nil {
+		return fmt.Errorf("contract validation failed: %w", err)
+	}
+
+	widgets, _ := fullDoc["layout"].([]any)
+	for i, w := range widgets {
+		wMap, ok := w.(map[string]any)
+		if !ok {
+			return fmt.Errorf("widget[%d] must be an object", i)
+		}
+		colName, _ := wMap["collection"].(string)
+		if colName == "" {
+			return fmt.Errorf("widget[%d] requires collection", i)
+		}
+		if tenant.PlatformCollections[colName] || strings.HasPrefix(colName, "_") {
+			return fmt.Errorf("widget[%d] cannot target reserved collection %q", i, colName)
+		}
+		targetCol, err := app.FindCollectionByNameOrId(colName)
+		if err != nil || targetCol == nil {
+			return fmt.Errorf("widget[%d] references nonexistent collection %q", i, colName)
+		}
+
+		// Validate coordinates and dimensions
+		var x, y, width, height float64
+		if xv, ok := wMap["x"].(float64); ok { x = xv }
+		if yv, ok := wMap["y"].(float64); ok { y = yv }
+		if wv, ok := wMap["w"].(float64); ok { width = wv }
+		if hv, ok := wMap["h"].(float64); ok { height = hv }
+		if x < 0 || y < 0 || width < 1 || width > 12 || height < 1 {
+			return fmt.Errorf("widget[%d] has invalid grid bounds (x=%v, y=%v, w=%v, h=%v)", i, x, y, width, height)
+		}
+
+		// Validate props
+		if props, ok := wMap["props"].(map[string]any); ok {
+			if fields, ok := props["fields"].([]any); ok {
+				for _, f := range fields {
+					if fStr, ok := f.(string); ok && fStr != "" {
+						if targetCol.Fields.GetByName(fStr) == nil {
+							return fmt.Errorf("widget[%d] references field %q not present in collection %q", i, fStr, colName)
+						}
+					}
+				}
+			}
+			if groupBy, ok := props["groupBy"].(string); ok && groupBy != "" {
+				baseField := strings.Split(groupBy, ":")[0]
+				if targetCol.Fields.GetByName(baseField) == nil {
+					return fmt.Errorf("widget[%d] groupBy field %q not present in collection %q", i, baseField, colName)
+				}
+			}
+			if metric, ok := props["metric"].(string); ok && metric != "" && metric != "count" {
+				parts := strings.Split(metric, ":")
+				if len(parts) == 2 {
+					if targetCol.Fields.GetByName(parts[1]) == nil {
+						return fmt.Errorf("widget[%d] metric field %q not present in collection %q", i, parts[1], colName)
+					}
+				}
+			}
+		}
+	}
+
+	// Persist the normalized and validated document into the record so what is saved matches what was validated.
+	normalizedBytes, err := json.Marshal(fullDoc)
+	if err != nil {
+		return fmt.Errorf("failed to serialize normalized dashboard layout: %w", err)
+	}
+	rec.Set("layout", string(normalizedBytes))
+	return nil
+}
+
+func extractExpectedRevision(e *core.RecordRequestEvent) (int64, bool) {
+	if e == nil {
+		return 0, false
+	}
+
+	// 1. Check router.Event's custom store (used in tests or handlers)
+	if v := e.Get("expected_revision"); v != nil {
+		switch val := v.(type) {
+		case int64:
+			return val, true
+		case int:
+			return int64(val), true
+		case float64:
+			return int64(val), true
+		case string:
+			if n, err := strconv.ParseInt(strings.Trim(val, `"`), 10, 64); err == nil {
+				return n, true
+			}
+		}
+	}
+
+	// 2. Safely inspect RequestInfo if an HTTP request is attached
+	if e.RequestEvent != nil && e.RequestEvent.Request != nil {
+		reqInfo, err := e.RequestInfo()
+		if err == nil && reqInfo != nil {
+			// Check Body
+			if reqInfo.Body != nil {
+				for _, key := range []string{"expected_revision", "expectedRevision"} {
+					if v, ok := reqInfo.Body[key]; ok && v != nil {
+						switch val := v.(type) {
+						case float64:
+							return int64(val), true
+						case int:
+							return int64(val), true
+						case int64:
+							return val, true
+						case string:
+							if n, err := strconv.ParseInt(strings.Trim(val, `"`), 10, 64); err == nil {
+								return n, true
+							}
+						}
+					}
+				}
+			}
+			// Check Query
+			if reqInfo.Query != nil {
+				for _, key := range []string{"expected_revision", "expectedRevision"} {
+					if s, ok := reqInfo.Query[key]; ok && s != "" {
+						if n, err := strconv.ParseInt(strings.Trim(s, `"`), 10, 64); err == nil {
+							return n, true
+						}
+					}
+				}
+			}
+			// Check Headers
+			if reqInfo.Headers != nil {
+				if ifMatch := reqInfo.Headers["if-match"]; ifMatch != "" {
+					trimmed := strings.Trim(strings.TrimSpace(ifMatch), `"`)
+					if n, err := strconv.ParseInt(trimmed, 10, 64); err == nil {
+						return n, true
+					}
+				}
+			}
+		}
+	}
+
+	return 0, false
 }

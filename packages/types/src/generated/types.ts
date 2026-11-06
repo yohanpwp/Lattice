@@ -292,6 +292,10 @@ export interface FieldDefinition {
  */
 export interface PageDefinition {
   /**
+   * PocketBase record ID.
+   */
+  id?: string;
+  /**
    * Unique identifier for this page (e.g. orders-board, inventory-table).
    */
   page_id: string;
@@ -315,6 +319,14 @@ export interface PageDefinition {
    * Primary schema/collection ID this page binds to.
    */
   collection: string;
+  /**
+   * Whether the page is published workspace-wide to members.
+   */
+  published?: boolean;
+  /**
+   * Navigation display sort order in the workspace navigation bar.
+   */
+  nav_order?: number;
   config?: PageConfig;
   /**
    * Creation timestamp.

@@ -4,6 +4,7 @@ import {
   assertFeatures,
   assertSchemaDefinition,
   assertPageDefinition,
+  assertDashboardLayout,
   assertWorkspaceUser,
   assertWorkspaceSetupRequest,
   assertWorkspaceInvitation,
@@ -15,6 +16,7 @@ import {
   type Features,
   type SchemaDefinition,
   type PageDefinition,
+  type DashboardLayout,
   type WorkspaceUser,
   type WorkspaceSetupRequest,
   type WorkspaceInvitation,
@@ -280,17 +282,20 @@ export class ProductClient {
   async getPages(): Promise<PageDefinition[]> {
     try {
       const records = await this.pb.collection("app_pages").getFullList({
-        sort: "created",
+        sort: "nav_order,created",
         requestKey: null,
       });
       return records.map((rec) =>
         assertPageDefinition({
+          id: rec.id,
           page_id: rec.page_id,
           name: rec.name,
           description: rec.description || undefined,
           icon: rec.icon || undefined,
           view_type: rec.view_type,
           collection: rec.collection,
+          published: rec.published !== false,
+          nav_order: typeof rec.nav_order === "number" ? rec.nav_order : undefined,
           config: rec.config ?? {},
           created: rec.created,
           updated: rec.updated,
@@ -314,12 +319,15 @@ export class ProductClient {
         { requestKey: null },
       );
       return assertPageDefinition({
+        id: rec.id,
         page_id: rec.page_id,
         name: rec.name,
         description: rec.description || undefined,
         icon: rec.icon || undefined,
         view_type: rec.view_type,
         collection: rec.collection,
+        published: rec.published !== false,
+        nav_order: typeof rec.nav_order === "number" ? rec.nav_order : undefined,
         config: rec.config ?? {},
         created: rec.created,
         updated: rec.updated,
@@ -332,18 +340,53 @@ export class ProductClient {
   }
 
   /**
+   * Resolves a page identifier (either PocketBase record ID or human page_id slug)
+   * to the authoritative PocketBase record ID.
+   */
+  private async resolvePageRecordId(recordIdOrPageId: string): Promise<string> {
+    try {
+      const byPageId = await this.pb
+        .collection("app_pages")
+        .getFirstListItem(this.filter("page_id = {:id}", { id: recordIdOrPageId }), { requestKey: null });
+      if (byPageId && byPageId.id) {
+        return byPageId.id;
+      }
+    } catch {
+      // Not found by page_id
+    }
+
+    try {
+      const byRecId = await this.pb.collection("app_pages").getOne(recordIdOrPageId, { requestKey: null });
+      if (byRecId && byRecId.id) {
+        return byRecId.id;
+      }
+    } catch {
+      // Not found by record id
+    }
+
+    return recordIdOrPageId;
+  }
+
+  /**
    * Creates a custom page definition in app_pages (requires Owner or Admin).
    */
   async createPage(page: PageDefinition): Promise<PageDefinition> {
-    const valid = assertPageDefinition(page);
+    const valid = assertPageDefinition({
+      ...page,
+      published: page.published ?? true,
+      nav_order: page.nav_order ?? 0,
+    });
     const rec = await this.pb.collection("app_pages").create(valid);
     return assertPageDefinition({
+      id: rec.id,
       page_id: rec.page_id,
       name: rec.name,
       description: rec.description || undefined,
       icon: rec.icon || undefined,
       view_type: rec.view_type,
       collection: rec.collection,
+      published: rec.published !== false,
+      nav_order: typeof rec.nav_order === "number" ? rec.nav_order : undefined,
       config: rec.config ?? {},
       created: rec.created,
       updated: rec.updated,
@@ -353,15 +396,19 @@ export class ProductClient {
   /**
    * Updates an existing custom page definition in app_pages (requires Owner or Admin).
    */
-  async updatePage(recordId: string, page: Partial<PageDefinition>): Promise<PageDefinition> {
-    const rec = await this.pb.collection("app_pages").update(recordId, page);
+  async updatePage(recordIdOrPageId: string, page: Partial<PageDefinition>): Promise<PageDefinition> {
+    const recId = await this.resolvePageRecordId(recordIdOrPageId);
+    const rec = await this.pb.collection("app_pages").update(recId, page);
     return assertPageDefinition({
+      id: rec.id,
       page_id: rec.page_id,
       name: rec.name,
       description: rec.description || undefined,
       icon: rec.icon || undefined,
       view_type: rec.view_type,
       collection: rec.collection,
+      published: rec.published !== false,
+      nav_order: typeof rec.nav_order === "number" ? rec.nav_order : undefined,
       config: rec.config ?? {},
       created: rec.created,
       updated: rec.updated,
@@ -371,8 +418,125 @@ export class ProductClient {
   /**
    * Deletes a custom page definition from app_pages (requires Owner or Admin).
    */
-  async deletePage(recordId: string): Promise<void> {
-    await this.pb.collection("app_pages").delete(recordId);
+  async deletePage(recordIdOrPageId: string): Promise<void> {
+    const recId = await this.resolvePageRecordId(recordIdOrPageId);
+    await this.pb.collection("app_pages").delete(recId);
+  }
+
+  /**
+   * Loads a saved dashboard layout by name from the `dashboards` collection.
+   */
+  async getDashboardLayout(
+    name = "main"
+  ): Promise<(DashboardLayout & { revision?: number; recordId?: string }) | null> {
+    try {
+      const rec = await this.pb.collection("dashboards").getFirstListItem(
+        this.filter("name = {:name}", { name }),
+        { requestKey: null },
+      );
+      const layout = assertDashboardLayout(rec.layout);
+      return {
+        ...layout,
+        revision: typeof rec.revision === "number" && rec.revision > 0 ? rec.revision : 1,
+        recordId: rec.id,
+      };
+    } catch (err) {
+      const status = (err as { status?: number } | null)?.status;
+      if (status === 404) return null;
+      throw err;
+    }
+  }
+
+  /**
+   * Saves and publishes a shared or user-specific dashboard layout in the `dashboards` collection.
+   * Uses optimistic concurrency control via `expectedRevision` to avoid silent write loss.
+   * An expectedRevision of 0 asserts a first-time create; if a dashboard already exists, throws a 409 Conflict.
+   * Requires owner or admin role.
+   */
+  async saveDashboardLayout(
+    layout: DashboardLayout,
+    name = "main",
+    options?: { expectedRevision?: number },
+  ): Promise<DashboardLayout & { revision?: number }> {
+    const valid = assertDashboardLayout(layout);
+
+    // Explicit first-create assertion: client expects no pre-existing dashboard record
+    if (options?.expectedRevision === 0) {
+      const existing = await this.pb
+        .collection("dashboards")
+        .getFirstListItem(this.filter("name = {:name}", { name }), { requestKey: null })
+        .catch(() => null);
+      if (existing) {
+        const err = new Error(`Dashboard layout conflict: dashboard "${name}" already exists on server.`);
+        (err as { status?: number }).status = 409;
+        throw err;
+      }
+      try {
+        const created = await this.pb.collection("dashboards").create({
+          name,
+          layout: valid,
+          revision: 1,
+        });
+        const resLayout = assertDashboardLayout(created.layout);
+        return {
+          ...resLayout,
+          revision: typeof created.revision === "number" ? created.revision : 1,
+        };
+      } catch (err: unknown) {
+        const status = (err as { status?: number })?.status;
+        if (status === 400 || (err as { message?: string })?.message?.includes("UNIQUE")) {
+          (err as { status?: number }).status = 409;
+        }
+        throw err;
+      }
+    }
+
+    const existing = await this.pb
+      .collection("dashboards")
+      .getFirstListItem(this.filter("name = {:name}", { name }), { requestKey: null })
+      .catch(() => null);
+
+    if (existing) {
+      const expectedRevision =
+        options?.expectedRevision ??
+        (typeof existing.revision === "number" && existing.revision > 0 ? existing.revision : 1);
+      const updated = await this.pb.collection("dashboards").update(existing.id, {
+        name,
+        layout: valid,
+        expected_revision: expectedRevision,
+      });
+      const resLayout = assertDashboardLayout(updated.layout);
+      return {
+        ...resLayout,
+        revision: typeof updated.revision === "number" ? updated.revision : expectedRevision + 1,
+      };
+    } else {
+      if (typeof options?.expectedRevision === "number" && options.expectedRevision > 0) {
+        const err = new Error(
+          `Dashboard layout conflict: dashboard "${name}" does not exist to update (expected revision ${options.expectedRevision}).`
+        );
+        (err as { status?: number }).status = 409;
+        throw err;
+      }
+      try {
+        const created = await this.pb.collection("dashboards").create({
+          name,
+          layout: valid,
+          revision: 1,
+        });
+        const resLayout = assertDashboardLayout(created.layout);
+        return {
+          ...resLayout,
+          revision: typeof created.revision === "number" ? created.revision : 1,
+        };
+      } catch (err: unknown) {
+        const status = (err as { status?: number })?.status;
+        if (status === 400 || (err as { message?: string })?.message?.includes("UNIQUE")) {
+          (err as { status?: number }).status = 409;
+        }
+        throw err;
+      }
+    }
   }
 
   /**
@@ -705,6 +869,22 @@ export class ProductClient {
       } catch {
         // Fallback gracefully if server is unreachable
       }
+
+      // Also query workspace_modules directly for unmanaged module status
+      try {
+        const records = await this.pb.collection("workspace_modules").getFullList({ requestKey: null });
+        for (const rec of records) {
+          if (rec.module_id) {
+            if (rec.enabled === false) {
+              disabled.add(rec.module_id);
+            } else if (rec.enabled === true) {
+              disabled.delete(rec.module_id);
+            }
+          }
+        }
+      } catch {
+        // Fallback gracefully
+      }
     }
 
     return Array.from(disabled);
@@ -809,6 +989,25 @@ export class ProductClient {
         body: { enabled },
         requestKey: null,
       });
+    } else {
+      // Persist workspace-wide module status in workspace_modules collection
+      const existing = await this.pb
+        .collection("workspace_modules")
+        .getFirstListItem(this.filter("module_id = {:id}", { id: moduleId }), { requestKey: null })
+        .catch(() => null);
+
+      if (existing) {
+        await this.pb.collection("workspace_modules").update(existing.id, {
+          enabled,
+        });
+      } else {
+        await this.pb.collection("workspace_modules").create({
+          module_id: moduleId,
+          enabled,
+          version: "1.0.0",
+          mapping: {},
+        });
+      }
     }
 
     const current = await this.getDisabledModules();

@@ -603,6 +603,10 @@ export const pageDefinitionSchema = {
     "collection"
   ],
   "properties": {
+    "id": {
+      "type": "string",
+      "description": "PocketBase record ID."
+    },
     "page_id": {
       "type": "string",
       "pattern": "^[a-z][a-z0-9_-]{1,40}$",
@@ -635,6 +639,15 @@ export const pageDefinitionSchema = {
       "type": "string",
       "pattern": "^[a-zA-Z_][a-zA-Z0-9_]*$",
       "description": "Primary schema/collection ID this page binds to."
+    },
+    "published": {
+      "type": "boolean",
+      "description": "Whether the page is published workspace-wide to members."
+    },
+    "nav_order": {
+      "type": "integer",
+      "minimum": 0,
+      "description": "Navigation display sort order in the workspace navigation bar."
     },
     "config": {
       "$ref": "#/$defs/PageConfig"

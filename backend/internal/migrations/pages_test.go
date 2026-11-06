@@ -24,8 +24,9 @@ func TestAppPagesMigration(t *testing.T) {
 		t.Fatalf("expected app_pages collection to exist, got error: %v", err)
 	}
 
-	// 2. Verify API rules require authentication and owner/admin for modifications
-	readRule := "@request.auth.id != '' && @request.auth.disabled != true"
+	// 2. Verify API rules require authentication and owner/admin for modifications,
+	// and enforce that members can only list/view published pages.
+	readRule := "@request.auth.id != '' && @request.auth.disabled != true && (@request.auth.role = 'owner' || @request.auth.role = 'admin' || published = true)"
 	writeRule := "@request.auth.disabled != true && (@request.auth.role = 'owner' || @request.auth.role = 'admin')"
 	if col.ListRule == nil || *col.ListRule != readRule {
 		t.Errorf("expected ListRule %q, got %v", readRule, col.ListRule)
@@ -44,7 +45,7 @@ func TestAppPagesMigration(t *testing.T) {
 	}
 
 	// 3. Verify fields exist
-	requiredFields := []string{"page_id", "name", "view_type", "collection", "config"}
+	requiredFields := []string{"page_id", "name", "view_type", "collection", "config", "published", "nav_order"}
 	for _, fieldName := range requiredFields {
 		f := col.Fields.GetByName(fieldName)
 		if f == nil {
@@ -90,6 +91,80 @@ func TestAppPagesMigration(t *testing.T) {
 	for _, name := range discovered {
 		if name == "app_pages" {
 			t.Errorf("app_pages should be excluded from DiscoveredCollections, but was found")
+		}
+	}
+}
+
+func TestAppPagesUpgrade_MoreThan500Records(t *testing.T) {
+	app, err := tests.NewTestApp(t.TempDir())
+	if err != nil {
+		t.Fatalf("failed to create test app: %v", err)
+	}
+	t.Cleanup(app.Cleanup)
+
+	col, err := app.FindCollectionByNameOrId("app_pages")
+	if err != nil {
+		t.Fatalf("expected app_pages to exist: %v", err)
+	}
+
+	// Insert 550 records simulating pre-migration records where published was 0 / false
+	totalRecords := 550
+	for i := 1; i <= totalRecords; i++ {
+		rec := core.NewRecord(col)
+		rec.Set("page_id", "page-"+string(rune('a'+(i%26)))+"-"+string(rune('0'+(i%10)))+"-"+string(rune('0'+((i/10)%10)))+"-"+string(rune('0'+((i/100)%10))))
+		rec.Set("name", "Test Page")
+		rec.Set("view_type", "table")
+		rec.Set("collection", "orders")
+		rec.Set("config", map[string]any{"columns": []string{"id"}})
+		rec.Set("published", false) // Simulate pre-migration false / 0
+		rec.Set("nav_order", nil)
+		if err := app.Save(rec); err != nil {
+			t.Fatalf("failed to seed page %d: %v", i, err)
+		}
+	}
+
+	// Verify records were inserted with published == false
+	falseCount := 0
+	records, err := app.FindAllRecords("app_pages")
+	if err != nil {
+		t.Fatalf("failed to query all app_pages: %v", err)
+	}
+	for _, r := range records {
+		if !r.GetBool("published") {
+			falseCount++
+		}
+	}
+	if falseCount < totalRecords {
+		t.Fatalf("expected at least %d unpublished records before migration step, got %d", totalRecords, falseCount)
+	}
+
+	// Run the registered migration (1798000000_update_app_pages_publishing.go)
+	var targetMigration *core.Migration
+	for _, m := range core.AppMigrations.Items() {
+		if m.File == "1798000000_update_app_pages_publishing.go" {
+			targetMigration = m
+			break
+		}
+	}
+	if targetMigration == nil {
+		t.Fatalf("expected 1798000000_update_app_pages_publishing.go to be registered in AppMigrations")
+	}
+
+	if err := targetMigration.Up(app); err != nil {
+		t.Fatalf("registered migration Up failed: %v", err)
+	}
+
+	// Verify ALL records are now published == true and nav_order == 0
+	recordsAfter, err := app.FindAllRecords("app_pages")
+	if err != nil {
+		t.Fatalf("failed to query all app_pages after upgrade: %v", err)
+	}
+	if len(recordsAfter) < totalRecords {
+		t.Fatalf("expected at least %d records, got %d", totalRecords, len(recordsAfter))
+	}
+	for _, r := range recordsAfter {
+		if !r.GetBool("published") {
+			t.Errorf("expected page %s to be published after upgrade, but was false", r.Id)
 		}
 	}
 }

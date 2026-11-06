@@ -56,6 +56,7 @@ func StartWithSecrets(app core.App, tenantID string, flags *features.Flags, reg 
 	}()
 
 	authz.RegisterAuthnHooks(app)
+	authz.RegisterDashboardRevisionHook(app)
 
 	// Bind default API rules for newly created business collections so authenticated
 	// tenant members can immediately view and manage records without manual rule setup.
